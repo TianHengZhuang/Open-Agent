@@ -22,7 +22,7 @@ export default function VerifyEmailPage() {
 function VerifyContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { verifyEmail } = useAuth();
+  const { verifyEmail, resendVerification } = useAuth();
   const [status, setStatus] = useState<'verifying' | 'success' | 'error'>('verifying');
   const [message, setMessage] = useState('');
   const [email, setEmail] = useState('');
@@ -47,13 +47,21 @@ function VerifyContent() {
         });
     } else {
       setStatus('error');
-      setMessage('Invalid verification link. Please check your email for the correct link.');
+      setMessage(
+        emailParam
+          ? `We couldn't find a verification link for ${emailParam}. Check your email for the latest link, or request a new one below.`
+          : 'Invalid verification link. Please check your email for the correct link.',
+      );
     }
   }, [searchParams, verifyEmail]);
 
   const handleResend = async () => {
-    // In a real app, you'd call a resend verification endpoint
-    setMessage('If an account exists, a new verification email has been sent.');
+    try {
+      const message = await resendVerification(email);
+      setMessage(message);
+    } catch {
+      setMessage('Could not resend the verification email. Please try again.');
+    }
   };
 
   if (status === 'verifying') {
@@ -94,7 +102,7 @@ function VerifyContent() {
               <Button onClick={() => router.push('/dashboard')} className="w-full">
                 Continue to Dashboard
               </Button>
-              <Button variant="outline" onClick={() => router.push('/login')} className="w-full">
+              <Button variant="outline" onClick={() => router.push('/')} className="w-full">
                 Sign In
               </Button>
             </div>
@@ -102,8 +110,8 @@ function VerifyContent() {
 
           {status === 'error' && (
             <div className="space-y-3">
-              <Button onClick={() => router.push('/login')} className="w-full">
-                Try Signing In
+              <Button onClick={() => router.push('/')} className="w-full">
+                Try Again
               </Button>
               <Button variant="outline" onClick={handleResend} className="w-full">
                 Resend Verification Email

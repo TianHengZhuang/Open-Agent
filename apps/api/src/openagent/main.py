@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 import redis.asyncio as redis
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from openagent.api import v1_router
 from openagent.core.config import get_settings
@@ -14,7 +15,13 @@ from openagent.core.security.headers import (
     RequestTimeoutMiddleware,
     SecurityHeadersMiddleware,
 )
-from openagent.db.session import async_session_maker, close_db, init_db
+from openagent.db import session as db_session
+from openagent.db.session import (
+    close_db,
+    ensure_schema,
+    init_db,
+    is_sqlite_url,
+)
 from openagent.middleware import (
     ErrorHandlingMiddleware,
     RequestCorrelationMiddleware,
@@ -44,11 +51,11 @@ async def _probe_dependencies(fail_fast: bool) -> None:
     settings = get_settings()
 
     async def _probe_db() -> None:
-        maker = async_session_maker
+        maker = db_session.async_session_maker
         if maker is None:
             raise RuntimeError(_ENGINE_NOT_INITIALIZED)
         async with maker() as session:
-            await session.execute("SELECT 1")
+            await session.execute(text("SELECT 1"))
 
     async def _probe_redis() -> None:
         client = redis.from_url(settings.REDIS_URL, socket_connect_timeout=REDIS_PROBE_CONNECT_TIMEOUT)
@@ -124,6 +131,11 @@ async def lifespan(app: FastAPI):
         register_official()
     init_db()
     logger.info("Database initialized")
+    if is_sqlite_url(settings.DATABASE_URL):
+        # Zero-dependency local mode: bootstrap the schema from the model
+        # metadata so `pnpm dev` needs no Docker, PostgreSQL or Alembic.
+        await ensure_schema()
+        logger.info("SQLite schema ensured", database=settings.DATABASE_URL)
     # Fail fast in production when dependencies are unreachable; warn in dev.
     await _probe_dependencies(fail_fast=settings.is_production)
     yield

@@ -37,7 +37,7 @@ export function UserMenu() {
   const doLogout = async () => {
     await logout();
     toast({ kind: 'success', title: 'Signed out' });
-    router.push('/login');
+    router.push('/');
   };
 
   return (

@@ -832,3 +832,10 @@ __all__ = [
     "SecurityAlertRow",
 ]
 
+# Some models declare a column index both via `index=True` and an explicit
+# Index("ix_<table>_<col>", ...) sharing the same name. create_all would emit
+# two CREATE INDEX statements and fail ("index ... already exists"). Normalize
+# the metadata once, after all models are registered.
+from openagent.db.sqlite_compat import dedupe_index_names as _dedupe_index_names
+
+_dedupe_index_names(Base.metadata)

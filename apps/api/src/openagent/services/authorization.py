@@ -297,7 +297,19 @@ class AuthorizationService:
                 "conversation:read",
             ],
         }
-        return set(role_permissions.get(legacy_role, []))
+        role_value = getattr(legacy_role, "value", legacy_role)
+        if role_value == "owner":
+            # Owners get every organisation permission, including domains added
+            # after this legacy map (packages, skills, presets, marketplace,
+            # publishers, reviews). Platform permissions stay platform-only.
+            from openagent.db.models.permission import SYSTEM_PERMISSIONS
+
+            return {
+                f"{resource}:{action}"
+                for resource, action, _desc, _danger in SYSTEM_PERMISSIONS
+                if resource != "platform"
+            }
+        return set(role_permissions.get(role_value, []))
     
     def check_permission(self, context: AuthorizationContext, permission: str) -> bool:
         """Check if context has a specific permission."""

@@ -37,8 +37,8 @@ export default function SdkPage() {
   ];
   const tsInstall = sdk.data?.install.typescript ?? 'npm install @openagent/sdk';
   const pyInstall = sdk.data?.install.python ?? 'pip install openagent';
-  const tsExample = `import { OpenAgent } from '@openagent/sdk';\n\nconst client = new OpenAgent({ baseUrl: process.env.OPENAGENT_API, token: process.env.OPENAGENT_TOKEN });\nconst ext = await client.extensions.validate('<extension-id>', { files: {} });\nconsole.log(ext.ok);`;
-  const pyExample = `import os\nfrom openagent import OpenAgent\n\nclient = OpenAgent(base_url=os.environ['OPENAGENT_API'], token=os.environ['OPENAGENT_TOKEN'])\nreport = client.extensions.validate('<extension-id>', files={})\nprint(report['ok'])`;
+  const tsExample = `import { OpenAgent } from '@openagent/sdk';\n\nconst client = new OpenAgent({ baseUrl: 'http://localhost:8000/api/v1', token: 'YOUR_API_TOKEN' });\nconst ext = await client.extensions.validate('<extension-id>', { files: {} });\nconsole.log(ext.ok);`;
+  const pyExample = `import os\nfrom openagent import OpenAgent\n\nclient = OpenAgent(base_url='http://localhost:8000/api/v1', token='YOUR_API_TOKEN')\nreport = client.extensions.validate('<extension-id>', files={})\nprint(report['ok'])`;
 
   return (
     <Protected>

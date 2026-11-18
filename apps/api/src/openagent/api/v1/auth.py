@@ -9,6 +9,7 @@ import structlog
 
 from openagent.db.session import get_db
 from openagent.db.models import User, UserStatus, Session
+from openagent.services.workspaces import ensure_personal_workspace
 from openagent.schemas.base import ApiErrorResponse
 from openagent.services.auth import (
     AuthenticationService,
@@ -44,6 +45,7 @@ class RegisterResponse(BaseModel):
     message: str
     user_id: str
     verification_sent: bool
+    email_verified: bool = False
 
 
 class LoginRequest(BaseModel):
@@ -63,6 +65,14 @@ class VerifyEmailRequest(BaseModel):
 
 
 class VerifyEmailResponse(BaseModel):
+    message: str
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
+
+
+class ResendVerificationResponse(BaseModel):
     message: str
 
 
@@ -256,10 +266,31 @@ async def register(
         
         await db.commit()
         
+        if not auth_service.email_delivers:
+            # No mail channel is configured (development or SMTP-less
+            # self-hosting): the emailed verification link can never arrive,
+            # so complete verification now — otherwise every new account
+            # would be stuck unable to sign in.
+            user.email_verified = True
+            user.status = UserStatus.ACTIVE
+            await db.commit()
+
+        # Every user needs an organization: the dashboard, workflows and runs
+        # are all org-scoped, so an account without one can sign in but can
+        # never do anything. Provision a personal workspace on first signup.
+        await ensure_personal_workspace(db, user)
+        await db.commit()
+
+        email_verified = user.email_verified
         return RegisterResponse(
-            message="Registration successful. Please check your email to verify your account.",
+            message=(
+                "Registration successful. Please check your email to verify your account."
+                if not email_verified
+                else "Registration successful. You can now sign in."
+            ),
             user_id=str(user.id),
-            verification_sent=True,
+            verification_sent=not email_verified,
+            email_verified=email_verified,
         )
     
     except EmailAlreadyExistsError:
@@ -280,6 +311,94 @@ async def register(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"error": e.message, "code": e.code},
         )
+
+
+LOCAL_USER_EMAIL = "local@openagent"
+
+
+class LocalSessionResponse(BaseModel):
+    user: dict
+    session_token: str
+    expires_at: datetime
+
+
+def _is_loopback(request: Request) -> bool:
+    host = request.client.host if request.client else ""
+    return host in {"127.0.0.1", "::1", "localhost", "testclient"}
+
+
+@router.post("/local-session", response_model=LocalSessionResponse)
+async def local_session(
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    """Sign the local operator in without a password.
+
+    Only enabled with ``OPENAGENT_AUTH_MODE=local``, never in production, and
+    only for loopback clients. Organization, permissions and sessions behave
+    exactly like a normal login — this replaces the password prompt, not auth.
+    """
+    settings = get_settings()
+    if settings.OPENAGENT_AUTH_MODE.lower() != "local" or settings.OPENAGENT_ENV == "production":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "Local mode is not enabled", "code": "LOCAL_MODE_DISABLED"},
+        )
+    if not _is_loopback(request):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "Local sign-in is only available from this computer",
+                "code": "LOCAL_MODE_LOOPBACK_ONLY",
+            },
+        )
+
+    result = await db.execute(select(User).where(User.email == LOCAL_USER_EMAIL))
+    user = result.scalar_one_or_none()
+    if user is None:
+        user = User(
+            email=LOCAL_USER_EMAIL,
+            display_name="Local User",
+            email_verified=True,
+            status=UserStatus.ACTIVE,
+        )
+        db.add(user)
+        await db.flush()
+    else:
+        user.status = UserStatus.ACTIVE
+        user.email_verified = True
+
+    await ensure_personal_workspace(db, user, seed_starter=True)
+
+    token, token_hash, expires_at = create_token_pair(60 * 24 * 30)
+    session = Session(
+        user_id=user.id,
+        token_hash=token_hash,
+        expires_at=expires_at,
+        user_agent=request.headers.get("User-Agent"),
+        ip_address=request.client.host if request.client else None,
+        last_seen_at=datetime.now(timezone.utc),
+    )
+    db.add(session)
+    await db.commit()
+    set_session_cookie(response, token, expires_at, remember_me=True)
+
+    return LocalSessionResponse(
+        user={
+            "id": str(user.id),
+            "email": user.email,
+            "display_name": user.display_name,
+            "avatar_url": user.avatar_url,
+            "status": user.status.value if hasattr(user.status, "value") else str(user.status),
+            "email_verified": user.email_verified,
+            "is_superadmin": user.is_superadmin,
+            "is_platform_owner": False,
+            "created_at": user.created_at.isoformat() if user.created_at else datetime.now(timezone.utc).isoformat(),
+        },
+        session_token=token,
+        expires_at=expires_at,
+    )
 
 
 @router.post(
@@ -451,6 +570,39 @@ async def verify_email(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"error": e.message, "code": e.code},
         )
+
+
+@router.post(
+    "/resend-verification",
+    response_model=ResendVerificationResponse,
+    responses={
+        422: {"model": ApiErrorResponse},
+        429: {"model": ApiErrorResponse},
+    },
+)
+async def resend_verification(
+    request: Request,
+    data: ResendVerificationRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Re-send the email verification link for a pending account."""
+    await check_auth_rate_limit(request, "resend_verification", data.email)
+
+    auth_service = AuthenticationService(db)
+
+    await auth_service.resend_verification(
+        email=data.email,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("User-Agent"),
+        request_id=getattr(request.state, "request_id", None),
+    )
+    await db.commit()
+
+    # Always the same response so this endpoint cannot be used to probe
+    # which email addresses have accounts.
+    return ResendVerificationResponse(
+        message="If an account exists and still needs verification, a new link has been sent."
+    )
 
 
 @router.post(

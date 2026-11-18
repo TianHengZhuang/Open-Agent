@@ -5,6 +5,8 @@ import type { Env } from "@openagent/config";
 // so the global logger must exist before any test module is evaluated.
 const env: Env = {
   OPENAGENT_ENV: "development",
+  OPENAGENT_AUTH_MODE: "production",
+  NEXT_PUBLIC_OPENAGENT_AUTH_MODE: "production",
   LOG_LEVEL: "error",
   API_URL: "http://localhost:8000",
   WEB_URL: "http://localhost:3000",

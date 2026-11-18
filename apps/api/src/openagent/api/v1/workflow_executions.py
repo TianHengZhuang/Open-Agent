@@ -73,7 +73,7 @@ class ExecutionListResponse(PaginatedResponse[ExecutionResponse]):
 class ExecutionDetailResponse(ExecutionResponse):
     """Execution with node runs and events."""
     node_runs: List[Dict[str, Any]] = []
-    events: List[Dict[str, Any]] = []
+    events: List[EventResponse] = []
 
 
 class CancelResponse(BaseModel):
@@ -333,11 +333,14 @@ async def get_execution(
                 "node_type": nr.get("node_type"),
                 "node_name": nr.get("node_name"),
                 "status": nr.get("status"),
+                "inputs": nr.get("inputs"),
                 "outputs": nr.get("outputs"),
                 "error": nr.get("error"),
                 "error_code": nr.get("error_code"),
+                "reason": nr.get("reason"),
                 "started_at": nr.get("started_at"),
                 "completed_at": nr.get("completed_at"),
+                "duration_ms": nr.get("duration_ms"),
                 "attempt": nr.get("attempt", 1),
             })
     
@@ -353,7 +356,7 @@ async def get_execution(
             id=e.id,
             execution_id=e.workflow_execution_id,
             event_type=e.event_type,
-            node_id=str(e.node_id) if e.node_id else None,
+            node_id=(e.payload or {}).get("node_id"),
             sequence=e.sequence,
             timestamp=e.timestamp,
             payload=e.payload,
@@ -371,6 +374,7 @@ async def get_execution(
         error_code=execution.error_code,
         error_message=execution.error_message,
         created_at=execution.created_at,
+        output=(execution.metadata or {}).get("output"),
         node_runs=node_runs,
         events=events,
     )
@@ -661,11 +665,14 @@ class NodeRunResponse(BaseModel):
     node_type: str
     node_name: str
     status: str
+    inputs: Optional[Dict[str, Any]] = None
     outputs: Dict[str, Any] = {}
     error: Optional[str] = None
     error_code: Optional[str] = None
+    reason: Optional[str] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    duration_ms: Optional[int] = None
     attempt: int = 1
 
 
@@ -705,11 +712,14 @@ async def get_execution_node_runs(
                 node_type=nr.get("node_type", ""),
                 node_name=nr.get("node_name", ""),
                 status=nr.get("status", "unknown"),
+                inputs=nr.get("inputs"),
                 outputs=nr.get("outputs", {}),
                 error=nr.get("error"),
                 error_code=nr.get("error_code"),
+                reason=nr.get("reason"),
                 started_at=nr.get("started_at"),
                 completed_at=nr.get("completed_at"),
+                duration_ms=nr.get("duration_ms"),
                 attempt=nr.get("attempt", 1),
             ))
     

@@ -10,6 +10,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
 from openagent.schemas.base import ApiError, ApiErrorResponse, ErrorDetail
+from openagent.services.authorization import AuthorizationError
 
 logger = structlog.get_logger("openagent.errors")
 
@@ -56,6 +57,8 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         except HTTPException as e:
             return self._handle_http_exception(request, e)
+        except AuthorizationError as e:
+            return self._handle_authorization_error(request, e)
         except ValidationError as e:
             return self._handle_validation_error(request, e)
         except Exception as e:
@@ -65,6 +68,13 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
         request_id = request_id_for(request)
         status_code = exc.status_code
         code = self._get_error_code(status_code)
+        message = str(exc.detail)
+        # Routes raise dict details like {"error": "...", "code": "..."};
+        # str(dict) leaks a Python repr into the UI, so unwrap it and keep
+        # the semantic code (e.g. INVALID_CREDENTIALS) when present.
+        if isinstance(exc.detail, dict):
+            code = str(exc.detail.get("code") or code)
+            message = str(exc.detail.get("message") or exc.detail.get("error") or message)
 
         logger.warning(
             "HTTP exception",
@@ -76,11 +86,28 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
 
         error = ApiError(
             code=code,
-            message=str(exc.detail),
+            message=message,
             request_id=request_id,
             status_code=status_code,
         )
         return JSONResponse(status_code=status_code, content=ApiErrorResponse(error=error).model_dump())
+
+    def _handle_authorization_error(self, request: Request, exc: AuthorizationError) -> JSONResponse:
+        request_id = request_id_for(request)
+        logger.warning(
+            "Authorization denied",
+            request_id=request_id,
+            code=getattr(exc, "code", "FORBIDDEN"),
+            required_permission=getattr(exc, "required_permission", None),
+            path=request.url.path,
+        )
+        error = ApiError(
+            code=getattr(exc, "code", None) or "FORBIDDEN",
+            message=getattr(exc, "message", None) or str(exc),
+            request_id=request_id,
+            status_code=403,
+        )
+        return JSONResponse(status_code=403, content=ApiErrorResponse(error=error).model_dump())
 
     def _handle_validation_error(self, request: Request, exc: ValidationError) -> JSONResponse:
         request_id = request_id_for(request)
@@ -146,9 +173,13 @@ def register_error_handlers(app: FastAPI, is_development: bool = False) -> None:
     async def _validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
         return renderer._handle_validation_error(request, exc)
 
+    async def _authorization_handler(request: Request, exc: AuthorizationError) -> JSONResponse:
+        return renderer._handle_authorization_error(request, exc)
+
     async def _unexpected_handler(request: Request, exc: Exception) -> JSONResponse:
         return renderer._handle_unexpected_error(request, exc)
 
+    app.add_exception_handler(AuthorizationError, _authorization_handler)
     app.add_exception_handler(HTTPException, _http_handler)
     # RequestValidationError subclasses ValidationError; register both so
     # nothing falls back to FastAPI's {"detail": ...} shape.

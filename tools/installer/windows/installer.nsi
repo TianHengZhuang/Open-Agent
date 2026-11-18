@@ -24,7 +24,9 @@ SetCompressor /SOLID lzma
 VIProductVersion "1.0.0.0"
 VIAddVersionKey "ProductName" "OpenAgent"
 VIAddVersionKey "FileDescription" "OpenAgent local AI automation platform"
-VIAddVersionKey "LegalCopyright " "MIT"
+VIAddVersionKey "FileVersion" "1.0.0.0"
+VIAddVersionKey "ProductVersion" "1.0.0.0"
+VIAddVersionKey "LegalCopyright" "MIT"
 
 Section "OpenAgent" SecCore
   SectionIn RO

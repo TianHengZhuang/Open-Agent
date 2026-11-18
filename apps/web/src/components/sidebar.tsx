@@ -4,9 +4,10 @@ import * as React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { Logo, LogoMark } from '@/components/brand';
 import {
-  LayoutDashboard,
   Bot,
+  LayoutDashboard,
   GitBranch,
   Play,
   Wrench,
@@ -92,14 +93,20 @@ export function Sidebar({ collapsed = false, onToggle, mobile = false }: Sidebar
         aria-current={active ? 'page' : undefined}
         title={collapsed && !mobile ? item.name : undefined}
         className={cn(
-          'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          'group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           active
-            ? 'bg-primary text-primary-foreground'
-            : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+            ? 'bg-primary/10 text-primary'
+            : 'text-muted-foreground hover:bg-accent/70 hover:text-foreground',
           collapsed && !mobile && 'justify-center px-2',
         )}
       >
-        <item.icon className="h-5 w-5 shrink-0" aria-hidden />
+        {active && !collapsed && (
+          <span
+            className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary"
+            aria-hidden
+          />
+        )}
+        <item.icon className={cn('h-5 w-5 shrink-0', active ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground')} aria-hidden />
         {(!collapsed || mobile) && <span>{item.name}</span>}
       </Link>
     );
@@ -115,13 +122,21 @@ export function Sidebar({ collapsed = false, onToggle, mobile = false }: Sidebar
         mobile && 'fixed left-0 top-0 z-50 lg:hidden',
       )}
     >
-      <div className="flex h-16 items-center justify-between border-b border-sidebar-border px-4">
-        {(!collapsed || mobile) && (
-          <Link href="/" className="flex items-center gap-2 text-lg font-semibold" aria-label="OpenAgent home">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <Bot className="h-4 w-4" aria-hidden />
-            </span>
-            <span>OpenAgent</span>
+      <div
+        className={cn(
+          'flex h-16 items-center border-b border-sidebar-border',
+          collapsed && !mobile
+            ? 'flex-col justify-center gap-0.5 px-2'
+            : 'justify-between gap-1 px-4',
+        )}
+      >
+        {(!collapsed || mobile) ? (
+          <Link href="/" className="min-w-0" aria-label="OpenAgent home">
+            <Logo />
+          </Link>
+        ) : (
+          <Link href="/" className="flex items-center justify-center" aria-label="OpenAgent home">
+            <LogoMark className="h-4 w-auto" />
           </Link>
         )}
         {onToggle && (
@@ -129,10 +144,7 @@ export function Sidebar({ collapsed = false, onToggle, mobile = false }: Sidebar
             onClick={onToggle}
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             aria-expanded={!collapsed}
-            className={cn(
-              'rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground',
-              collapsed && !mobile && 'mx-auto',
-            )}
+            className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </button>
@@ -142,7 +154,7 @@ export function Sidebar({ collapsed = false, onToggle, mobile = false }: Sidebar
       <nav className="flex-1 space-y-1 overflow-y-auto p-3" aria-label="Primary">
         {primaryNav.map(renderLink)}
         {(!collapsed || mobile) && (
-          <p className="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <p className="px-3 pb-1 pt-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
             Developer
           </p>
         )}
@@ -180,7 +192,10 @@ export function Sidebar({ collapsed = false, onToggle, mobile = false }: Sidebar
 
       <div className="border-t border-sidebar-border p-3">
         {(!collapsed || mobile) ? (
-          <p className="text-center text-[11px] text-muted-foreground">OpenAgent v0.1.0 · Ctrl+K for commands</p>
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-background/60 px-2.5 py-1.5">
+            <p className="text-[11px] text-muted-foreground">OpenAgent v0.1.0</p>
+            <kbd className="oa-kbd">Ctrl K</kbd>
+          </div>
         ) : (
           <p className="text-center text-[11px] text-muted-foreground" aria-hidden>v0.1</p>
         )}

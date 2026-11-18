@@ -483,6 +483,54 @@ async def list_memories(
     }
 
 
+@router.get("/search", response_model=MemorySearchResponse)
+async def search_memories(
+    organization_id: UUID,
+    request: Request,
+    payload: MemorySearch = Body(...),
+    auth_context=Depends(get_current_org_context),
+    db: AsyncSession = Depends(get_db),
+):
+    _check_org(organization_id, auth_context)
+    await require_permission("agent:read")(request, db)
+    
+    service = _service(db)
+    try:
+        start = datetime.now()
+        memories = await service.retrieve_memories(
+            organization_id=organization_id,
+            query=payload.query or "",
+            scope_filter=payload.scope,
+            memory_type_filter=payload.memory_type,
+            tags=payload.tags,
+            agent_id=payload.agent_id,
+            user_id=payload.user_id,
+            task_id=payload.task_id,
+            conversation_id=payload.conversation_id,
+            team_id=payload.team_id,
+            limit=payload.limit,
+            offset=payload.offset,
+            use_vector_search=payload.use_vector_search,
+            query_embedding=None,  # Would need to generate from query
+            similarity_threshold=payload.similarity_threshold,
+            filters=payload.filters,
+        )
+        search_time = (datetime.now() - start).total_seconds() * 1000
+        
+        total = await service.memory_repo.count(
+            organization_id=organization_id,
+        )
+    except Exception as exc:
+        _fail(exc)
+    
+    return MemorySearchResponse(
+        memories=[MemoryResponse.model_validate(m, from_attributes=True) for m in memories],
+        total=total,
+        query=payload.query or "",
+        search_time_ms=search_time,
+    )
+
+
 @router.get("/{memory_id}", response_model=MemoryDetailResponse)
 async def get_memory(
     organization_id: UUID,
@@ -677,54 +725,6 @@ async def delete_memory(
         _fail(exc)
     
     return {"status": "deleted"}
-
-
-@router.get("/search", response_model=MemorySearchResponse)
-async def search_memories(
-    organization_id: UUID,
-    request: Request,
-    payload: MemorySearch = Body(...),
-    auth_context=Depends(get_current_org_context),
-    db: AsyncSession = Depends(get_db),
-):
-    _check_org(organization_id, auth_context)
-    await require_permission("agent:read")(request, db)
-    
-    service = _service(db)
-    try:
-        start = datetime.now()
-        memories = await service.retrieve_memories(
-            organization_id=organization_id,
-            query=payload.query or "",
-            scope_filter=payload.scope,
-            memory_type_filter=payload.memory_type,
-            tags=payload.tags,
-            agent_id=payload.agent_id,
-            user_id=payload.user_id,
-            task_id=payload.task_id,
-            conversation_id=payload.conversation_id,
-            team_id=payload.team_id,
-            limit=payload.limit,
-            offset=payload.offset,
-            use_vector_search=payload.use_vector_search,
-            query_embedding=None,  # Would need to generate from query
-            similarity_threshold=payload.similarity_threshold,
-            filters=payload.filters,
-        )
-        search_time = (datetime.now() - start).total_seconds() * 1000
-        
-        total = await service.memory_repo.count(
-            organization_id=organization_id,
-        )
-    except Exception as exc:
-        _fail(exc)
-    
-    return MemorySearchResponse(
-        memories=[MemoryResponse.model_validate(m, from_attributes=True) for m in memories],
-        total=total,
-        query=payload.query or "",
-        search_time_ms=search_time,
-    )
 
 
 # ==================== Review Endpoints ====================

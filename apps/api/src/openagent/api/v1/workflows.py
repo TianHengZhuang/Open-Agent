@@ -938,33 +938,116 @@ async def list_executions(
     return ExecutionListResponse(data=items, meta=create_pagination_meta(page, page_size, total))
 
 
+class WorkflowRunRequest(BaseModel):
+    """Run a workflow.
+
+    ``definition`` runs the builder's current (possibly unsaved) graph — the
+    n8n-style test run. Without it the latest saved version runs.
+    """
+
+    definition: Optional[Dict[str, Any]] = None
+    input: Optional[Dict[str, Any]] = None
+    version: Optional[str] = Field(default=None, max_length=50)
+
+
 @router.post(
     "/{workflow_id}/execute",
     responses={
         401: {"model": ApiErrorResponse},
         403: {"model": ApiErrorResponse},
         404: {"model": ApiErrorResponse},
-        501: {"model": ApiErrorResponse},
+        409: {"model": ApiErrorResponse},
     },
 )
 async def execute_workflow(
     request: Request,
     organization_id: UUID,
     workflow_id: UUID,
+    data: Optional[WorkflowRunRequest] = None,
     auth_context=Depends(get_current_org_context),
     db: AsyncSession = Depends(get_db),
 ):
-    """Placeholder: real execution ships with the execution engine.
+    """Execute a workflow synchronously on the local engine.
 
-    The builder calls this honestly and surfaces the 501 to the user
-    instead of faking a run.
+    Deterministic nodes run for real; provider-dependent nodes are reported as
+    skipped with a reason. Every node run is persisted on the execution so the
+    builder can show inputs, outputs, timing and errors.
     """
     await require_permission("workflow:execute")(request, db)
-    await _get_workflow_or_404(db, organization_id, workflow_id)
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail={
-            "error": "Workflow execution is not implemented yet. Authoring, validation, and versioning are available; the execution engine ships in a later phase.",
-            "code": "EXECUTION_ENGINE_NOT_IMPLEMENTED",
-        },
-    )
+    workflow = await _get_workflow_or_404(db, organization_id, workflow_id)
+
+    if workflow.status == WorkflowStatus.ARCHIVED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error": "Archived workflows cannot be executed", "code": "WORKFLOW_ARCHIVED"},
+        )
+
+    from openagent.runtime.local_engine import run_workflow
+
+    try:
+        result = await run_workflow(
+            db,
+            workflow=workflow,
+            organization_id=organization_id,
+            triggered_by=auth_context.user_id,
+            definition=data.definition if data else None,
+            trigger_input=(data.input if data else None) or {},
+            version_label=data.version if data else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error": str(exc), "code": "WORKFLOW_NOT_RUNNABLE"},
+        )
+
+    return result
+
+
+class WorkflowNodeRunRequest(BaseModel):
+    """Execute a single node (n8n's "Test step")."""
+
+    node_id: str = Field(min_length=1, max_length=200)
+    definition: Optional[Dict[str, Any]] = None
+    input: Optional[Dict[str, Any]] = None
+
+
+@router.post(
+    "/{workflow_id}/execute-node",
+    responses={
+        401: {"model": ApiErrorResponse},
+        403: {"model": ApiErrorResponse},
+        404: {"model": ApiErrorResponse},
+        409: {"model": ApiErrorResponse},
+    },
+)
+async def execute_workflow_node(
+    request: Request,
+    organization_id: UUID,
+    workflow_id: UUID,
+    data: WorkflowNodeRunRequest,
+    auth_context=Depends(get_current_org_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Run one node in isolation, without running the rest of the graph."""
+    await require_permission("workflow:execute")(request, db)
+    workflow = await _get_workflow_or_404(db, organization_id, workflow_id)
+
+    definition = data.definition
+    if definition is None:
+        latest = await _latest_version(db, workflow.id)
+        if latest is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"error": "Workflow has no versions to run", "code": "NO_VERSIONS"},
+            )
+        definition = latest.definition or {}
+
+    from openagent.runtime.local_engine import run_single_node
+
+    try:
+        return await run_single_node(definition, data.node_id, data.input or {})
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": str(exc), "code": "NODE_NOT_FOUND"},
+        )

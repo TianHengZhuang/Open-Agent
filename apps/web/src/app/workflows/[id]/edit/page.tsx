@@ -17,12 +17,15 @@ import { ErrorState } from "@/components/ui/states";
 import {
   useWorkflow,
   useWorkflowMutations,
+  type WorkflowRunResult,
 } from "@/features/workflows/workflows-api";
 import { useWorkflowEditor } from "@/features/workflows/use-workflow-editor";
 import { WorkflowCanvas } from "@/components/workflows/WorkflowCanvas";
 import { NodePalette } from "@/components/workflows/NodePalette";
 import { Inspector } from "@/components/workflows/Inspector";
 import { ValidationPanel } from "@/components/workflows/ValidationPanel";
+import { RunPanel } from "@/components/workflows/RunPanel";
+import { KoroPanel } from "@/components/workflows/KoroPanel";
 import {
   downloadEnvelope,
   importDefinition,
@@ -34,6 +37,7 @@ import {
   Save,
   Rocket,
   Play,
+  Sparkles,
   Undo2,
   Redo2,
   Download,
@@ -60,6 +64,15 @@ export default function WorkflowBuilderPage() {
   });
   const [name, setName] = React.useState(workflow?.name ?? "");
   const [draftNotice, setDraftNotice] = React.useState(false);
+  const [runResult, setRunResult] = React.useState<WorkflowRunResult | null>(null);
+  const [runOpen, setRunOpen] = React.useState(false);
+  const [runError, setRunError] = React.useState<string | null>(null);
+  const [koroOpen, setKoroOpen] = React.useState(false);
+  const runStatus = React.useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const run of runResult?.node_runs ?? []) map[run.node_id] = run.status;
+    return map;
+  }, [runResult]);
 
   // Load saved definition when it arrives (once per version).
   const loadedVersion = React.useRef<string | null>(null);
@@ -244,25 +257,38 @@ export default function WorkflowBuilderPage() {
     }
   };
 
-  const doRun = async () => {
+  const doRun = async (input: Record<string, unknown> = {}) => {
+    setRunOpen(true);
+    setRunError(null);
     try {
-      await mutations.execute.mutateAsync(workflow.id);
-      toast({ kind: "success", title: "Run started" });
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 501) {
-        toast({
-          kind: "info",
-          title: "Execution engine not yet available",
-          description:
-            "Your graph is saved and validated. Runs ship in a later phase — nothing was faked.",
-        });
-      } else {
+      // Runs the canvas as-is — unsaved edits count, like n8n's test run.
+      const result = await mutations.execute.mutateAsync({
+        id: workflow.id,
+        definition: editor.definition,
+        input,
+      });
+      setRunResult(result);
+      if (result.status === "failed") {
         toast({
           kind: "error",
-          title: "Run failed",
-          description: toUserMessage(e),
+          title: result.message,
+          description: result.error_message ?? undefined,
+        });
+      } else if (result.status === "waiting") {
+        toast({ kind: "info", title: result.message });
+      } else {
+        toast({
+          kind: "success",
+          title: result.message,
+          description: `${result.summary?.succeeded ?? 0} node(s) succeeded · ${
+            result.summary?.duration_ms ?? 0
+          } ms`,
         });
       }
+    } catch (e) {
+      const message = toUserMessage(e);
+      setRunError(message);
+      toast({ kind: "error", title: "Run failed", description: message });
     }
   };
 
@@ -290,7 +316,7 @@ export default function WorkflowBuilderPage() {
       <Layout>
         <div className="oa-page max-w-none">
           {/* toolbar */}
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3">
+          <div className="oa-panel sticky top-[68px] z-20 flex flex-wrap items-center gap-2 bg-card/90 px-3 py-2.5 backdrop-blur-xl">
             <Link
               href={`/workflows/${workflow.id}`}
               aria-label="Back to workflow detail"
@@ -298,13 +324,15 @@ export default function WorkflowBuilderPage() {
             >
               <ArrowLeft className="h-4 w-4" />
             </Link>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={!canEdit}
-              aria-label="Workflow name"
-              className="h-9 w-56 font-semibold"
-            />
+            <div className="w-56 shrink-0">
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                disabled={!canEdit}
+                aria-label="Workflow name"
+                className="h-9 border-transparent bg-transparent px-2 text-base font-semibold hover:border-border focus:border-primary"
+              />
+            </div>
             <StatusBadge status={workflow.status} />
             <SaveStatus
               online={online}
@@ -332,6 +360,15 @@ export default function WorkflowBuilderPage() {
               )}
             </span>
             <span className="ml-auto flex flex-wrap items-center gap-1.5">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setKoroOpen(true)}
+                title="Koro — local automation copilot"
+              >
+                <Sparkles className="mr-1.5 h-3.5 w-3.5 text-primary" />
+                Koro
+              </Button>
               <button
                 onClick={editor.undo}
                 disabled={!editor.canUndo || !canEdit}
@@ -411,11 +448,13 @@ export default function WorkflowBuilderPage() {
               <PermissionGate permission="workflow:execute">
                 <Button
                   size="sm"
-                  onClick={doRun}
-                  disabled={workflow.status !== "active"}
+                  onClick={() => doRun()}
+                  loading={mutations.execute.isPending}
+                  disabled={!canEdit}
+                  title="Run the current canvas with the local execution engine"
                 >
                   <Play className="mr-1.5 h-3.5 w-3.5" />
-                  Run
+                  Test workflow
                 </Button>
               </PermissionGate>
             </span>
@@ -457,21 +496,69 @@ export default function WorkflowBuilderPage() {
             </p>
           )}
 
-          {/* editor grid */}
-          <div className="grid gap-3 xl:grid-cols-[240px_minmax(0,1fr)_320px] lg:grid-cols-[220px_minmax(0,1fr)]">
-            <div className="hidden h-[560px] lg:block">
+          {/* editor grid — full-height studio on wide screens */}
+          <div className="grid gap-3 lg:grid-cols-[230px_minmax(0,1fr)] xl:h-[calc(100dvh-19.5rem)] xl:min-h-[560px] xl:grid-cols-[248px_minmax(0,1fr)_336px] xl:grid-rows-[minmax(0,1fr)]">
+            <div className="hidden h-[540px] min-h-0 lg:block xl:h-auto">
               <NodePalette editor={editor} disabled={!canEdit} />
             </div>
-            <WorkflowCanvas editor={editor} readOnly={!canEdit} />
-            <div className="grid gap-3 lg:col-span-2 xl:col-span-1 xl:grid-cols-1">
-              <div className="h-[300px] xl:h-[280px]">
-                <Inspector editor={editor} disabled={!canEdit} />
+            <div className="h-[540px] min-h-0 xl:h-auto">
+              <WorkflowCanvas
+                editor={editor}
+                readOnly={!canEdit}
+                runStatus={runStatus}
+              />
+            </div>
+            <div className="grid min-h-0 gap-3 lg:col-span-2 lg:grid-cols-2 xl:col-span-1 xl:h-full xl:grid-cols-1 xl:grid-rows-[minmax(0,1fr)_240px]">
+              <div className="h-[320px] min-h-0 xl:h-auto">
+                <Inspector
+                  editor={editor}
+                  disabled={!canEdit}
+                  onTestStep={(nodeId, input) =>
+                    mutations.executeNode.mutateAsync({
+                      id: workflow.id,
+                      node_id: nodeId,
+                      definition: editor.definition,
+                      input,
+                    })
+                  }
+                />
               </div>
-              <div className="h-[260px]">
+              <div className="h-[320px] min-h-0 xl:h-[240px]">
                 <ValidationPanel editor={editor} />
               </div>
             </div>
           </div>
+
+          <KoroPanel
+            open={koroOpen}
+            onClose={() => setKoroOpen(false)}
+            workflowId={workflow.id}
+            workflowName={workflow.name}
+            onResult={(result) => {
+              const action = result.actions[0];
+              if (action?.status === "ok" && action.type !== "none") {
+                toast({ kind: "success", title: "Koro", description: action.detail });
+              }
+              if (result.workflow_id && result.workflow_id !== workflow.id) {
+                router.push(`/workflows/${result.workflow_id}/edit`);
+                return;
+              }
+              if (["run", "publish", "unpublish"].includes(action?.type ?? "")) refetch();
+            }}
+          />
+
+          {runOpen && (
+            <RunPanel
+              result={runResult}
+              running={mutations.execute.isPending}
+              error={runError}
+              onClose={() => setRunOpen(false)}
+              onRerun={(input) => doRun(input)}
+              onSelectNode={(nodeId) =>
+                editor.select({ kind: "node", id: nodeId })
+              }
+            />
+          )}
 
           <p className="oa-caption">
             Shortcuts: Del removes · Ctrl+Z / Ctrl+Y undo/redo · Ctrl+C/V/D

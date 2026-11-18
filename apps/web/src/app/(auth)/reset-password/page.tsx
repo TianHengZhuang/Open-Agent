@@ -118,7 +118,7 @@ function ResetForm() {
             <CardDescription>{message}</CardDescription>
           </CardHeader>
           <CardContent className="text-center">
-            <Button onClick={() => router.push('/login')} className="w-full">
+            <Button onClick={() => router.push('/')} className="w-full">
               Sign In with New Password
             </Button>
           </CardContent>
@@ -214,8 +214,8 @@ function ResetForm() {
         </CardContent>
         <CardFooter className="flex justify-center">
           <p className="text-sm text-gray-600">
-            <Link href="/login" className="text-indigo-600 hover:text-indigo-500 font-medium">
-              Back to Sign In
+            <Link href="/" className="text-indigo-600 hover:text-indigo-500 font-medium">
+              Back to Dashboard
             </Link>
           </p>
         </CardFooter>

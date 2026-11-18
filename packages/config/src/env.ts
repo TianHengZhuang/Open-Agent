@@ -4,6 +4,12 @@ export const EnvSchema = z.object({
   OPENAGENT_ENV: z
     .enum(["development", "staging", "production"])
     .default("development"),
+  OPENAGENT_AUTH_MODE: z
+    .enum(["local", "production"])
+    .default("production"),
+  NEXT_PUBLIC_OPENAGENT_AUTH_MODE: z
+    .enum(["local", "production"])
+    .default("production"),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
   API_URL: z.string().url().default("http://localhost:8000"),
   WEB_URL: z.string().url().default("http://localhost:3000"),

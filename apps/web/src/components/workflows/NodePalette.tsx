@@ -112,27 +112,35 @@ export function NodePalette({ editor, disabled = false }: { editor: WorkflowEdit
     (x as TriggerMeta).type !== undefined && TRIGGER_CATALOG.includes(x as TriggerMeta);
 
   return (
-    <div className="flex h-full flex-col rounded-lg border bg-card">
-      <div className="space-y-2 border-b p-3">
-        <h2 className="text-sm font-semibold">Palette</h2>
+    <div className="oa-panel flex h-full flex-col overflow-hidden">
+      <div className="space-y-2.5 border-b border-border/70 p-3">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Plus className="h-4 w-4" aria-hidden />
+          </span>
+          <div>
+            <h2 className="text-sm font-semibold leading-tight">Palette</h2>
+            <p className="oa-caption">Drag a node onto the canvas</p>
+          </div>
+        </div>
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search palette…"
+            placeholder="Search nodes…"
             aria-label="Search node palette"
-            className="h-8 pl-8 text-sm"
+            className="h-8 rounded-lg border-transparent bg-muted/60 pl-8 text-sm focus:border-primary"
           />
         </div>
-        <Select value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Filter by category" className="h-8 text-sm">
+        <Select value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Filter by category" className="h-8 rounded-lg border-transparent bg-muted/60 text-sm">
           <option value="all">All categories</option>
           {definitionsByCategory().map((g) => (
             <option key={g.category} value={g.category}>{g.category}</option>
           ))}
         </Select>
       </div>
-      <div className="flex-1 space-y-4 overflow-y-auto p-3">
+      <div className="oa-scroll flex-1 space-y-4 overflow-y-auto p-3">
         {showFavs && (
           <section aria-label="Favorites">
             <h3 className="oa-caption mb-1.5 flex items-center gap-1 font-medium uppercase tracking-wide">
@@ -217,8 +225,8 @@ export function NodePalette({ editor, disabled = false }: { editor: WorkflowEdit
           <p className="py-6 text-center text-sm text-muted-foreground">No palette items match.</p>
         )}
       </div>
-      <p className="border-t p-3 text-[11px] text-muted-foreground">
-        Click + to place at canvas center, or drag onto the canvas.
+      <p className="border-t border-border/70 p-3 text-[11px] text-muted-foreground">
+        <span className="oa-kbd mr-1">+</span> adds at center · drag to place freely
       </p>
     </div>
   );
@@ -251,11 +259,16 @@ function PaletteRow({
     <li
       draggable={!disabled}
       onDragStart={onDragStart}
-      className="flex cursor-grab items-start gap-2.5 rounded-md border bg-background p-2.5 transition-colors hover:border-primary/50 active:cursor-grabbing"
+      className="group flex cursor-grab items-start gap-2.5 rounded-xl border border-transparent p-2 transition-colors hover:border-border/70 hover:bg-accent/60 active:cursor-grabbing"
       title={`Drag to canvas, or use the + button (${item.description})`}
     >
-      <span className="mt-0.5 shrink-0">
-        <item.icon className={cnIcon(isTrigger)} aria-hidden />
+      <span
+        className={cn(
+          'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg',
+          isTrigger ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' : 'bg-primary/10 text-primary',
+        )}
+      >
+        <item.icon className="h-4 w-4" aria-hidden />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-medium leading-tight">{item.label}</span>
@@ -266,7 +279,10 @@ function PaletteRow({
         disabled={disabled}
         aria-label={fav ? `Remove ${item.label} from favorites` : `Add ${item.label} to favorites`}
         aria-pressed={fav}
-        className="shrink-0 rounded-md p-1.5 hover:bg-accent disabled:opacity-40"
+        className={cn(
+          'shrink-0 rounded-md p-1.5 transition-opacity hover:bg-background disabled:opacity-40',
+          fav ? 'opacity-100' : 'opacity-60 group-hover:opacity-100 focus:opacity-100',
+        )}
       >
         <Star className={cn('h-3.5 w-3.5', fav ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground')} aria-hidden />
       </button>
@@ -274,7 +290,7 @@ function PaletteRow({
         onClick={onAdd}
         disabled={disabled}
         aria-label={`Add ${item.label} to canvas`}
-        className="shrink-0 rounded-md border p-1.5 hover:bg-accent disabled:opacity-40"
+        className="shrink-0 rounded-md border border-border/70 bg-background p-1.5 text-muted-foreground opacity-60 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100 focus:opacity-100 disabled:opacity-40"
       >
         <Plus className="h-3.5 w-3.5" aria-hidden />
       </button>
@@ -282,6 +298,3 @@ function PaletteRow({
   );
 }
 
-function cnIcon(isTrigger: boolean): string {
-  return isTrigger ? 'h-4 w-4 text-amber-600 dark:text-amber-400' : 'h-4 w-4 text-primary';
-}

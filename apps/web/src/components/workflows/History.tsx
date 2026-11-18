@@ -107,7 +107,7 @@ export function RunHistory({ workflowId }: { workflowId: string }) {
         loading={isLoading}
         onRetry={() => refetch()}
         emptyTitle="No runs yet"
-        emptyDescription="Execution history appears here once the execution engine ships. Runs are never faked."
+        emptyDescription="Run the workflow from the builder (Test workflow) or this page to see per-node results here."
       />
       <p className="oa-caption mt-2">{total} run{total === 1 ? '' : 's'}</p>
     </>

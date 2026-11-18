@@ -4,12 +4,15 @@ from fastapi import APIRouter
 
 from openagent.api.health import router as health_router
 from openagent.api.v1.auth import router as auth_router
+from openagent.api.v1.organizations import router as organizations_router
 from openagent.api.v1.rbac import router as rbac_router
 from openagent.api.v1.teams import router as teams_router
 from openagent.api.v1.invitations import router as invitations_router
 from openagent.api.v1.service_accounts import router as service_accounts_router
 from openagent.api.v1.workflows import router as workflows_router
 from openagent.api.v1.workflow_executions import router as workflow_executions_router
+from openagent.api.v1.workflow_hooks import router as workflow_hooks_router
+from openagent.api.v1.koro import router as koro_router
 from openagent.api.v1.agents import router as agents_router
 from openagent.api.v1.tools import router as tools_router
 from openagent.api.v1.mcp import router as mcp_router
@@ -102,12 +105,15 @@ from openagent.api.v1.developer import (
 router = APIRouter()
 router.include_router(health_router)
 router.include_router(auth_router)
+router.include_router(organizations_router)
 router.include_router(rbac_router)
 router.include_router(teams_router)
 router.include_router(invitations_router)
 router.include_router(service_accounts_router)
 router.include_router(workflows_router)
 router.include_router(workflow_executions_router)
+router.include_router(workflow_hooks_router)
+router.include_router(koro_router)
 router.include_router(agents_router)
 router.include_router(tools_router)
 router.include_router(mcp_router)
@@ -193,6 +199,8 @@ __all__ = [
     "agents_router",
     "workflows_router",
     "workflow_executions_router",
+    "workflow_hooks_router",
+    "koro_router",
     "tools_router",
     "mcp_router",
     "auth_router",

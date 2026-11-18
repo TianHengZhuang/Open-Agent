@@ -1,0 +1,52 @@
+{
+  "name": "@openagent/electron",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenAgent desktop app (Electron wrapper around the Next.js web UI)",
+  "main": "src/main.js",
+  "scripts": {
+    "dev": "electron .",
+    "start": "electron .",
+    "dist": "electron-builder --win nsis portable",
+    "dist:win": "electron-builder --win nsis portable",
+    "lint": "prettier --check \"src/**/*.{js,json}\"",
+    "typecheck": "node --check src/main.js && node --check src/preload.js && echo OK",
+    "test": "node --check src/main.js && node --check src/preload.js && echo OK",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3",
+    "prettier": "^3.2.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "build": {
+    "appId": "ai.openagent.desktop",
+    "productName": "OpenAgent",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "OpenAgent"
+    },
+    "portable": {
+      "artifactName": "OpenAgent-Portable-${version}.exe"
+    }
+  }
+}

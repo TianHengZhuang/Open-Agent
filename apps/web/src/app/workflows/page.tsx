@@ -8,7 +8,7 @@ import { Protected } from '@/components/protected';
 import { PageHeader } from '@/components/ui/page';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/form';
+import { Select, Switch } from '@/components/ui/form';
 import { DataTable, type Column } from '@/components/ui/table';
 import { StatusBadge } from '@/components/ui/status';
 import { ConfirmDialog } from '@/components/ui/dialog';
@@ -19,7 +19,7 @@ import { toUserMessage } from '@/lib/api';
 import { useSearchParamsState } from '@/lib/queries';
 import { useWorkflows, useWorkflowMutations } from '@/features/workflows/workflows-api';
 import type { WorkflowRecord } from '@/features/workflows/types';
-import { Plus, Search, Pencil, Copy, Trash2 } from 'lucide-react';
+import { Plus, Search, Pencil, Copy, Trash2, GitBranch } from 'lucide-react';
 
 export default function WorkflowsPage() {
   const [q, setQ] = React.useState('');
@@ -30,7 +30,26 @@ export default function WorkflowsPage() {
   const { items, total, isLoading, error, refetch } = useWorkflows(
     debounced || status ? { search: debounced || undefined, status: status || undefined } : undefined,
   );
-  const { duplicate, remove } = useWorkflowMutations();
+  const { duplicate, remove, publish, unpublish } = useWorkflowMutations();
+  const [togglingId, setTogglingId] = React.useState<string | null>(null);
+
+  // n8n's Active switch: publishing makes webhooks/schedules live, unpublishing
+  // takes them offline without touching the saved versions.
+  const onToggleActive = async (wf: WorkflowRecord, next: boolean) => {
+    setTogglingId(wf.id);
+    try {
+      await (next ? publish : unpublish).mutateAsync(wf.id);
+      toast({
+        kind: 'success',
+        title: next ? `“${wf.name}” is active` : `“${wf.name}” is inactive`,
+        description: next ? 'Its production webhook is live.' : 'Its production webhook stopped listening.',
+      });
+    } catch (e) {
+      toast({ kind: 'error', title: 'Could not change activation', description: toUserMessage(e) });
+    } finally {
+      setTogglingId(null);
+    }
+  };
   const { toast } = useToast();
   const router = useRouter();
 
@@ -59,13 +78,31 @@ export default function WorkflowsPage() {
     {
       key: 'name', header: 'Name', sortable: true, accessor: (r) => r.name,
       render: (r) => (
-        <span>
-          <Link href={`/workflows/${r.id}`} className="font-medium text-primary hover:underline">{r.name}</Link>
-          <span className="oa-caption ml-2">{r.slug}</span>
+        <span className="flex items-center gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <GitBranch className="h-4 w-4" aria-hidden />
+          </span>
+          <span className="min-w-0">
+            <Link href={`/workflows/${r.id}`} className="block truncate font-medium text-foreground hover:text-primary hover:underline">{r.name}</Link>
+            <span className="oa-caption block truncate">{r.slug}</span>
+          </span>
         </span>
       ),
     },
     { key: 'status', header: 'Status', render: (r) => <StatusBadge status={r.status || 'draft'} /> },
+    {
+      key: 'active', header: 'Active',
+      render: (r) => r.status === 'archived'
+        ? <span className="text-muted-foreground">—</span>
+        : (
+          <Switch
+            checked={r.status === 'active'}
+            disabled={togglingId === r.id}
+            label={`${r.status === 'active' ? 'Deactivate' : 'Activate'} ${r.name}`}
+            onCheckedChange={(v) => onToggleActive(r, v)}
+          />
+        ),
+    },
     {
       key: 'versions', header: 'Versions',
       render: (r) => <span className="tabular-nums text-muted-foreground">{r.version_count}</span>,
@@ -102,7 +139,7 @@ export default function WorkflowsPage() {
         <div className="oa-page">
           <PageHeader
             title="Workflows"
-            description="Author multi-step automations in the visual builder. Execution ships in a later phase."
+            description="Author multi-step automations in the visual builder, then test-run the canvas locally."
             breadcrumbs={[{ label: 'Home', href: '/' }, { label: 'Workflows' }]}
             actions={
               <PermissionGate permission="workflow:create">
@@ -110,17 +147,20 @@ export default function WorkflowsPage() {
               </PermissionGate>
             }
           />
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="flex flex-col gap-2 rounded-xl border border-border/70 bg-card p-2.5 shadow-card sm:flex-row">
             <div className="relative w-full max-w-sm">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
               <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search workflows…" aria-label="Search workflows" className="pl-9" />
             </div>
-            <Select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Filter by status" className="sm:w-44">
+            <Select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Filter by status" className="rounded-lg border-transparent bg-muted/60 sm:w-44">
               <option value="">All statuses</option>
               <option value="draft">Draft</option>
               <option value="active">Active</option>
               <option value="archived">Archived</option>
             </Select>
+            <span className="ml-auto hidden items-center gap-1.5 self-center text-xs text-muted-foreground md:flex">
+              <kbd className="oa-kbd">Ctrl K</kbd> to jump to anything
+            </span>
           </div>
           <DataTable
             columns={columns}

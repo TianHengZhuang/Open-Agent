@@ -1,8 +1,25 @@
 # Non-Docker
 
-Run everything from source without Docker. You still need real PostgreSQL 15+ and Redis 7+ — OpenAgent depends on PostgreSQL-specific functionality (async SQLAlchemy, JSONB, Alembic migrations), so SQLite is not a substitute.
+Run everything from source without Docker. There are two profiles:
 
-## Steps
+- **Zero-dependency local (default):** `pnpm dev` runs the Next.js web app and
+the FastAPI backend on an embedded SQLite database. No PostgreSQL, no Redis,
+no Docker. This is the fastest way to reach the browser dashboard; the API
+bootstraps its schema from the models at startup. Some advanced features that
+depend on Redis queues or PostgreSQL-only indexing are limited in this mode.
+- **Full local stack:** PostgreSQL 15+ and Redis 7+ (below). Use
+`pnpm dev --db=postgres` for the complete feature set.
+
+## Zero-dependency local mode
+
+```bash
+git clone https://github.com/mdsabibahamedsad/Open-Agent.git
+cd Open-Agent
+pnpm install
+pnpm dev            # web: http://localhost:3000  api: http://localhost:8000
+```
+
+## Full PostgreSQL + Redis profile
 
 ```bash
 pnpm setup          # deps + .env
@@ -14,10 +31,11 @@ apps/api/.venv/Scripts/python -m pip install -e "apps/api[dev]"   # Windows
 # source apps/api/.venv/bin/activate && pip install -e "apps/api[dev]"  # macOS/Linux
 
 pnpm db:setup       # migrate + seed dev data
-pnpm dev:local      # web + api + worker with one banner, Ctrl+C stops all
+pnpm dev --db=postgres   # web + api against PostgreSQL/Redis, Ctrl+C stops all
 ```
 
-Individual services: `pnpm dev:web`, `pnpm dev:api`, `pnpm dev:worker`.
+Individual services: `pnpm dev:web`, `pnpm dev:api`, `pnpm dev:worker` (worker
+needs Redis).
 
 ## If Postgres/Redis are missing
 

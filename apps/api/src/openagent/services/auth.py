@@ -32,7 +32,11 @@ from openagent.core.security import (
     hash_recovery_codes,
 )
 from openagent.core.config import get_settings
-from openagent.services.email import EmailService, create_email_provider_from_settings
+from openagent.services.email import (
+    DevelopmentEmailProvider,
+    EmailService,
+    create_email_provider_from_settings,
+)
 
 logger = structlog.get_logger("openagent.auth")
 
@@ -95,6 +99,16 @@ class AuthenticationService:
         self.settings = get_settings()
         self.email_service = EmailService(create_email_provider_from_settings())
     
+    @property
+    def email_delivers(self) -> bool:
+        """True when a real mail provider actually delivers messages.
+
+        False for the console-only development provider (development
+        environment or SMTP not configured) — there a verification link
+        sent by email can never reach the user.
+        """
+        return not isinstance(self.email_service.provider, DevelopmentEmailProvider)
+
     async def _log_security_event(
         self,
         event_type: SecurityEventType,
@@ -217,6 +231,82 @@ class AuthenticationService:
         
         return user, verification_token
     
+    async def resend_verification(
+        self,
+        email: str,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+        request_id: str | None = None,
+    ) -> bool:
+        """Re-send the email verification link for a pending account.
+
+        Returns True when the account was verified or a new link was sent.
+        Callers must return a uniform response so this cannot be used to
+        probe which email addresses have accounts.
+        """
+        email = email.lower()
+
+        result = await self.db.execute(
+            select(User).where(User.email == email)
+        )
+        user = result.scalar_one_or_none()
+
+        if not user or user.email_verified or user.status in (UserStatus.SUSPENDED, UserStatus.INACTIVE):
+            await self._log_security_event(
+                SecurityEventType.EMAIL_VERIFICATION_SENT,
+                user_id=user.id if user else None,
+                ip_address=ip_address,
+                user_agent=user_agent,
+                metadata={"email": email, "success": False, "reason": "not_required"},
+                request_id=request_id,
+            )
+            return False
+
+        if not self.email_delivers:
+            # No mail channel is configured, so the link can never arrive.
+            # Same policy as registration: complete verification now instead
+            # of leaving the account permanently unable to sign in.
+            user.email_verified = True
+            user.status = UserStatus.ACTIVE
+            await self.db.flush()
+
+            await self._log_security_event(
+                SecurityEventType.EMAIL_VERIFICATION_COMPLETED,
+                user_id=user.id,
+                metadata={"email": email, "auto_verified": True},
+                request_id=request_id,
+            )
+            return True
+
+        verification_token, token_hash, expires_at = create_token_pair()
+        self.db.add(
+            EmailVerificationToken(
+                user_id=user.id,
+                token_hash=token_hash,
+                email=email,
+                expires_at=expires_at,
+            )
+        )
+        await self.db.flush()
+
+        verification_url = f"{self.settings.FRONTEND_VERIFY_EMAIL_URL}?token={verification_token}"
+        await self.email_service.send_verification_email(
+            to=email,
+            verification_url=verification_url,
+            display_name=user.display_name,
+        )
+
+        await self._log_security_event(
+            SecurityEventType.EMAIL_VERIFICATION_SENT,
+            user_id=user.id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            metadata={"email": email, "resend": True},
+            request_id=request_id,
+        )
+
+        return True
+
     async def verify_email(self, token: str, request_id: Optional[str] = None) -> User:
         """Verify email with token."""
         token_hash = hash_token(token)

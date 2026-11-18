@@ -13,6 +13,8 @@ class Settings(BaseSettings):
 
     # Application
     OPENAGENT_ENV: str = Field(default="development")
+    # "local" enables loopback-only automatic sign-in (no password prompt).
+    OPENAGENT_AUTH_MODE: str = Field(default="standard")
     LOG_LEVEL: str = Field(default="info")
     API_URL: str = Field(default="http://localhost:8000")
     WEB_URL: str = Field(default="http://localhost:3000")
@@ -60,7 +62,7 @@ class Settings(BaseSettings):
     SMTP_USERNAME: str = Field(default="")
     SMTP_PASSWORD: str = Field(default="")
     SMTP_USE_TLS: bool = Field(default=True)
-    SMTP_FROM_EMAIL: str = Field(default="noreply@openagent.local")
+    SMTP_FROM_EMAIL: str = Field(default="noreply@openagent.dev")
     SMTP_FROM_NAME: str = Field(default="OpenAgent")
 
     # Master Account
@@ -75,6 +77,13 @@ class Settings(BaseSettings):
     # Internal worker service authentication (MP25: service token, short-lived
     # credentials are minted per task; the token itself is a bootstrap secret).
     WORKER_SERVICE_TOKEN: str = Field(default="")
+
+    # Koro: local-first automation copilot. Talks to any OpenAI-compatible local
+    # server (Ollama by default) running a small model (~400 MB quantised).
+    OPENAGENT_KORO_BASE_URL: str = Field(default="http://127.0.0.1:11434/v1")
+    OPENAGENT_KORO_MODEL: str = Field(default="qwen2.5:0.5b-instruct")
+    OPENAGENT_KORO_TIMEOUT_SECONDS: float = Field(default=60.0)
+    OPENAGENT_KORO_MODEL_SIZE: str = Field(default="~400 MB")
 
     @property
     def cors_origins_list(self) -> list[str]:

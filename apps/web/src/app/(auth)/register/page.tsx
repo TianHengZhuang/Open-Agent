@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
@@ -15,43 +15,59 @@ import { Separator } from '@/components/ui/separator';
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { register, error, clearError } = useAuth();
+  const { register, login, error, clearError } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Auth errors are shared app state — clear any stale error carried over
+    // from another page (e.g. a failed sign-in) so this form starts clean.
+    clearError();
+  }, [clearError]);
+
+  useEffect(() => {
+    // Keep the validation message in sync while the user edits the fields.
+    setFormError(null);
+  }, [password, confirmPassword]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     clearError();
+    setFormError(null);
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match');
+      setFormError('Passwords do not match');
       return;
     }
 
     if (password.length < 10) {
-      setError('Password must be at least 10 characters');
+      setFormError('Password must be at least 10 characters');
       return;
     }
 
     setIsLoading(true);
 
     try {
-      await register(email, password, displayName || undefined);
-      router.push('/verify-email?email=' + encodeURIComponent(email));
+      const data = await register(email, password, displayName || undefined);
+
+      if (data.email_verified) {
+        // Verification is already complete (no mail provider configured) —
+        // create the session and go straight to the dashboard.
+        await login(email, password).catch(() => undefined);
+        router.push('/');
+      } else {
+        router.push('/verify-email?email=' + encodeURIComponent(email));
+      }
     } catch {
       // Error handled by auth context
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const setError = (message: string) => {
-    // We can't directly set error from here since it's in context
-    // The context will handle it
   };
 
   const passwordRequirements = [
@@ -72,9 +88,9 @@ export default function RegisterPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {error && (
+          {(formError || error) && (
             <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
+              <AlertDescription>{formError || error}</AlertDescription>
             </Alert>
           )}
 
@@ -185,7 +201,7 @@ export default function RegisterPage() {
         <CardFooter className="flex justify-center">
           <p className="text-sm text-gray-600">
             Already have an account?{' '}
-            <Link href="/login" className="text-indigo-600 hover:text-indigo-500 font-medium">
+            <Link href="/" className="text-indigo-600 hover:text-indigo-500 font-medium">
               Sign in
             </Link>
           </p>

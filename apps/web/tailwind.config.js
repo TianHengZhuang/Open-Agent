@@ -56,6 +56,7 @@ module.exports = {
           foreground: 'hsl(var(--popover-foreground))',
         },
         sidebar: 'hsl(var(--sidebar))',
+        canvas: 'hsl(var(--canvas))',
       },
       borderRadius: {
         lg: 'var(--radius)',
@@ -65,6 +66,10 @@ module.exports = {
       fontFamily: {
         sans: ['var(--font-sans)', 'system-ui', 'sans-serif'],
         mono: ['var(--font-mono)', 'monospace'],
+      },
+      boxShadow: {
+        card: '0 1px 2px 0 rgb(15 23 42 / 0.04), 0 14px 32px -20px rgb(15 23 42 / 0.28)',
+        lift: '0 2px 4px 0 rgb(15 23 42 / 0.06), 0 24px 48px -24px rgb(15 23 42 / 0.35)',
       },
       zIndex: {
         dropdown: 'var(--z-dropdown)',

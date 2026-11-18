@@ -48,7 +48,32 @@ interface Box {
   y1: number;
 }
 
-export function WorkflowCanvas({ editor, readOnly = false }: { editor: WorkflowEditor; readOnly?: boolean }) {
+const RUN_DOT: Record<string, string> = {
+  succeeded: 'fill-emerald-500',
+  failed: 'fill-destructive',
+  skipped: 'fill-muted-foreground',
+  waiting: 'fill-amber-500',
+};
+
+function RunDot({ status, x, y }: { status?: string; x: number; y: number }) {
+  if (!status) return null;
+  return (
+    <circle cx={x} cy={y} r={5} className={cn(RUN_DOT[status] ?? 'fill-muted-foreground', 'stroke-background')} strokeWidth={2}>
+      <title>{`Last run: ${status}`}</title>
+    </circle>
+  );
+}
+
+export function WorkflowCanvas({
+  editor,
+  readOnly = false,
+  runStatus,
+}: {
+  editor: WorkflowEditor;
+  readOnly?: boolean;
+  /** Node/trigger id → status of the most recent test run. */
+  runStatus?: Record<string, string>;
+}) {
   const { definition, selection, selectedIds, select, validation } = editor;
   const svgRef = React.useRef<SVGSVGElement>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -60,15 +85,27 @@ export function WorkflowCanvas({ editor, readOnly = false }: { editor: WorkflowE
   const dragRef = React.useRef<{ ids: string[]; startX: number; startY: number; before: typeof definition } | null>(null);
   const panRef = React.useRef<{ sx: number; sy: number; vx: number; vy: number } | null>(null);
   const boxRef = React.useRef<{ sx: number; sy: number } | null>(null);
+  const didInteract = React.useRef(false);
 
   React.useEffect(() => {
+    const el = containerRef.current;
     const measure = () => {
-      const r = containerRef.current?.getBoundingClientRect();
-      if (r) setSize({ w: r.width, h: r.height });
+      const r = el?.getBoundingClientRect();
+      if (!r) return;
+      setSize((prev) =>
+        Math.abs(prev.w - r.width) > 0.5 || Math.abs(prev.h - r.height) > 0.5
+          ? { w: r.width, h: r.height }
+          : prev,
+      );
     };
     measure();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    if (el && observer) observer.observe(el);
     window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', measure);
+    };
   }, []);
 
   const errorIds = React.useMemo(
@@ -134,6 +171,7 @@ export function WorkflowCanvas({ editor, readOnly = false }: { editor: WorkflowE
       return;
     }
     panRef.current = { sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y };
+    didInteract.current = true;
     select(null);
     editor.setPendingEdge(null);
   };
@@ -183,6 +221,7 @@ export function WorkflowCanvas({ editor, readOnly = false }: { editor: WorkflowE
   };
 
   const onWheelNative = React.useCallback((e: WheelEvent) => {
+    didInteract.current = true;
     if (readOnlyRef.current) return;
     e.preventDefault();
     const rect = svgRef.current?.getBoundingClientRect();
@@ -408,9 +447,18 @@ export function WorkflowCanvas({ editor, readOnly = false }: { editor: WorkflowE
     const minY = Math.min(...items.map((i) => i.p.y)) - 60;
     const maxX = Math.max(...items.map((i) => i.p.x + NODE_W)) + 60;
     const maxY = Math.max(...items.map((i) => i.p.y + i.h)) + 60;
-    const k = Math.min(1.5, Math.max(0.25, Math.min(W / (maxX - minX), H / (maxY - minY))));
+    const k = Math.min(1.5, Math.max(0.3, Math.min(W / (maxX - minX), H / (maxY - minY))));
     setView({ k, x: (W - (maxX - minX) * k) / 2 - minX * k, y: (H - (maxY - minY) * k) / 2 - minY * k });
   };
+
+  // Fit the graph when it loads and whenever the canvas is resized, until the
+  // author pans or zooms — then their viewport is respected.
+  React.useEffect(() => {
+    if (didInteract.current || size.w < 100) return;
+    if (definition.triggers.length + definition.nodes.length === 0) return;
+    fitView();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [size.w, size.h, definition.triggers.length, definition.nodes.length]);
 
   const centerOn = (world: { x: number; y: number }) => {
     setView((v) => ({ ...v, x: size.w / 2 - world.x * v.k, y: size.h / 2 - world.y * v.k }));
@@ -422,7 +470,7 @@ export function WorkflowCanvas({ editor, readOnly = false }: { editor: WorkflowE
   const isSelected = (id: string) => selectedIds.includes(id);
 
   return (
-    <div ref={containerRef} className="relative h-[560px] overflow-hidden rounded-lg border bg-background" onKeyDown={onKeyDown}>
+    <div ref={containerRef} className="oa-canvas relative h-full min-h-[420px] overflow-hidden rounded-xl border border-border/70" onKeyDown={onKeyDown}>
       <svg
         ref={svgRef}
         role="application"
@@ -443,9 +491,20 @@ export function WorkflowCanvas({ editor, readOnly = false }: { editor: WorkflowE
         onDrop={onDrop}
       >
         <defs>
-          <pattern id="oa-grid" width="24" height="24" patternUnits="userSpaceOnUse">
-            <circle cx="1" cy="1" r="1" className="fill-muted-foreground/30" />
+          <pattern id="oa-grid" width="22" height="22" patternUnits="userSpaceOnUse">
+            <circle cx="1" cy="1" r="0.9" className="fill-muted-foreground/25" />
           </pattern>
+          <linearGradient id="oa-trigger-strip" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="hsl(var(--warning))" stopOpacity="0.28" />
+            <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity="0.12" />
+          </linearGradient>
+          <linearGradient id="oa-node-accent" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity="0.9" />
+            <stop offset="100%" stopColor="hsl(288 82% 62%)" stopOpacity="0.55" />
+          </linearGradient>
+          <filter id="oa-node-shadow" x="-25%" y="-25%" width="150%" height="170%">
+            <feDropShadow dx="0" dy="6" stdDeviation="9" floodColor="rgb(15 23 42)" floodOpacity="0.10" />
+          </filter>
           <marker id="oa-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M 0 1 L 9 5 L 0 9 z" className="fill-muted-foreground" />
           </marker>
@@ -485,7 +544,7 @@ export function WorkflowCanvas({ editor, readOnly = false }: { editor: WorkflowE
                   fill="none"
                   strokeWidth={selected ? 3 : 2}
                   markerEnd={selected ? 'url(#oa-arrow-sel)' : 'url(#oa-arrow)'}
-                  className={selected ? 'stroke-primary' : 'stroke-muted-foreground'}
+                  className={selected ? 'stroke-primary' : 'stroke-muted-foreground/70'}
                 />
                 <path
                   d={edgePath(a, b)}
@@ -565,18 +624,19 @@ export function WorkflowCanvas({ editor, readOnly = false }: { editor: WorkflowE
                 <rect
                   width={NODE_W}
                   height={TRIGGER_H}
-                  rx={10}
+                  rx={14}
+                  filter="url(#oa-node-shadow)"
                   className={cn(
                     'fill-card stroke-2',
-                    selected ? 'stroke-primary' : hasError ? 'stroke-destructive' : 'stroke-amber-500/60',
+                    selected ? 'stroke-primary' : hasError ? 'stroke-destructive' : 'stroke-amber-500/50',
                   )}
-                  strokeWidth={2}
+                  strokeWidth={selected || hasError ? 2.5 : 1.5}
                 />
-                <rect width={NODE_W} height={26} rx={10} className="fill-amber-500/15" />
-                <rect y={16} width={NODE_W} height={10} className="fill-amber-500/15" />
+                <rect width={NODE_W} height={26} rx={14} fill="url(#oa-trigger-strip)" />
+                <rect y={16} width={NODE_W} height={10} fill="url(#oa-trigger-strip)" />
                 <Icon x={10} y={5} width={16} height={16} className="text-amber-600 dark:text-amber-400" />
-                <text x={32} y={18} fontSize={11} fontWeight={700} className="fill-foreground">
-                  ⚡ {t.type.toUpperCase()}
+                <text x={32} y={18} fontSize={10} fontWeight={800} letterSpacing={0.6} className="fill-foreground">
+                  {t.type.toUpperCase()}
                 </text>
                 <text x={12} y={46} fontSize={13} fontWeight={600} className="fill-foreground">
                   {t.name.length > 26 ? `${t.name.slice(0, 25)}…` : t.name}
@@ -590,6 +650,7 @@ export function WorkflowCanvas({ editor, readOnly = false }: { editor: WorkflowE
                     <text textAnchor="middle" dy={4} fontSize={12} fontWeight={800} fill="white">!</text>
                   </g>
                 )}
+                <RunDot status={runStatus?.[t.id]} x={NODE_W - 12} y={44} />
                 {!readOnly && (
                   <g
                     transform={`translate(${out.x - p.x},${out.y - p.y})`}
@@ -636,28 +697,31 @@ export function WorkflowCanvas({ editor, readOnly = false }: { editor: WorkflowE
                 <rect
                   width={NODE_W}
                   height={NODE_H}
-                  rx={10}
+                  rx={14}
+                  filter="url(#oa-node-shadow)"
                   className={cn('fill-card', selected ? 'stroke-primary' : hasError ? 'stroke-destructive' : 'stroke-border')}
                   strokeWidth={selected || hasError ? 2.5 : 1.5}
                   strokeDasharray={n.disabled ? '5 3' : undefined}
                 />
-                <Icon x={12} y={10} width={18} height={18} className="text-primary" />
-                <text x={38} y={20} fontSize={10} fontWeight={700} className="fill-muted-foreground">
+                <rect x={10} y={8} width={28} height={28} rx={9} className="fill-primary/10" />
+                <rect x={10} y={8} width={3} height={28} rx={1.5} fill="url(#oa-node-accent)" />
+                <Icon x={16} y={14} width={16} height={16} className="text-primary" />
+                <text x={46} y={26} fontSize={9.5} fontWeight={800} letterSpacing={0.6} className="fill-muted-foreground">
                   {meta.label.toUpperCase()}
                 </text>
-                <text x={12} y={50} fontSize={13.5} fontWeight={600} className="fill-foreground">
+                <text x={12} y={56} fontSize={13.5} fontWeight={600} className="fill-foreground">
                   {n.name.length > 26 ? `${n.name.slice(0, 25)}…` : n.name}
                 </text>
-                <text x={12} y={68} fontSize={11} className="fill-muted-foreground">
+                <text x={12} y={74} fontSize={11} className="fill-muted-foreground">
                   {n.id}
                 </text>
                 {n.disabled && (
-                  <text x={12} y={86} fontSize={10.5} fontWeight={700} className="fill-muted-foreground">
+                  <text x={12} y={90} fontSize={10} fontWeight={700} letterSpacing={0.4} className="fill-muted-foreground">
                     DISABLED
                   </text>
                 )}
                 {!n.disabled && n.approval_required && (
-                  <text x={12} y={86} fontSize={10.5} className="fill-amber-600 dark:fill-amber-400">
+                  <text x={12} y={90} fontSize={10} fontWeight={700} letterSpacing={0.2} className="fill-amber-600 dark:fill-amber-400">
                     requires approval
                   </text>
                 )}
@@ -672,6 +736,7 @@ export function WorkflowCanvas({ editor, readOnly = false }: { editor: WorkflowE
                     <text textAnchor="middle" dy={4} fontSize={12} fontWeight={800} fill="white">!</text>
                   </g>
                 )}
+                {!hasError && <RunDot status={runStatus?.[n.id]} x={NODE_W - 12} y={24} />}
                 <g
                   transform={`translate(${inp.x - p.x},${inp.y - p.y})`}
                   onPointerUp={(e) => onInputUp(e, n.id)}
@@ -711,27 +776,34 @@ export function WorkflowCanvas({ editor, readOnly = false }: { editor: WorkflowE
       </svg>
 
       {/* controls */}
-      <div className="absolute bottom-3 left-3 flex items-center gap-1 rounded-md border bg-card/95 p-1 shadow-sm">
+      <div className="absolute bottom-3 left-3 flex items-center gap-0.5 rounded-full border border-border/60 bg-background/85 p-1 shadow-card backdrop-blur">
         <button
-          onClick={() => setView((v) => ({ ...v, k: Math.min(2, v.k * 1.2) }))}
+          onClick={() => {
+            didInteract.current = true;
+            setView((v) => ({ ...v, k: Math.min(2, v.k * 1.2) }));
+          }}
           aria-label="Zoom in"
-          className="rounded p-1.5 hover:bg-accent"
+          className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
           <Plus className="h-4 w-4" />
         </button>
+        <span className="min-w-[46px] px-1 text-center text-xs font-medium tabular-nums text-muted-foreground" aria-live="polite">
+          {Math.round(view.k * 100)}%
+        </span>
         <button
-          onClick={() => setView((v) => ({ ...v, k: Math.max(0.25, v.k / 1.2) }))}
+          onClick={() => {
+            didInteract.current = true;
+            setView((v) => ({ ...v, k: Math.max(0.25, v.k / 1.2) }));
+          }}
           aria-label="Zoom out"
-          className="rounded p-1.5 hover:bg-accent"
+          className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
           <Minus className="h-4 w-4" />
         </button>
-        <button onClick={fitView} aria-label="Fit to view (F)" className="rounded p-1.5 hover:bg-accent">
+        <span className="mx-0.5 h-4 w-px bg-border" aria-hidden />
+        <button onClick={() => { didInteract.current = true; fitView(); }} aria-label="Fit to view (F)" className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
           <Maximize className="h-4 w-4" />
         </button>
-        <span className="px-1.5 text-xs tabular-nums text-muted-foreground" aria-live="polite">
-          {Math.round(view.k * 100)}%
-        </span>
       </div>
 
       {/* minimap */}
@@ -740,17 +812,17 @@ export function WorkflowCanvas({ editor, readOnly = false }: { editor: WorkflowE
       </div>
 
       {!readOnly && (
-        <div className="absolute left-3 top-3 flex max-w-[calc(100%-24px)] items-center gap-2 rounded-md border bg-card/95 px-2.5 py-1.5 text-xs text-muted-foreground shadow-sm">
-          <MousePointer2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        <div className="absolute left-3 top-3 flex max-w-[calc(100%-24px)] items-center gap-2 rounded-full border border-border/60 bg-background/75 px-3 py-1.5 text-[11px] text-muted-foreground shadow-sm backdrop-blur">
+          <MousePointer2 className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
           <span className="truncate">
-            Drag to move · ports to connect · Shift+drag box-select · Ctrl+click multi · right-click menu · Del · Ctrl+C/V/D · F fit
+            Drag to move · drag a port to connect · Shift-drag to select · F fits
             {selectedIds.length > 1 && <strong className="ml-1 text-foreground">{selectedIds.length} selected</strong>}
           </span>
         </div>
       )}
 
       {editor.pendingEdge && (
-        <div className="absolute right-3 top-3 rounded-md border border-primary/40 bg-card/95 px-2.5 py-1.5 text-xs shadow-sm" role="status">
+        <div className="absolute right-3 top-3 rounded-full border border-primary/40 bg-background/90 px-3 py-1.5 text-xs shadow-card backdrop-blur" role="status">
           Connecting from <span className="oa-code">{editor.pendingEdge.fromId}</span> — drop on an input port, Esc to cancel
         </div>
       )}

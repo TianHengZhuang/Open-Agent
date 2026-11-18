@@ -36,7 +36,7 @@ class InMemoryRateLimiter:
         bucket.tokens = min(bucket.limit, bucket.tokens + elapsed * refill_rate)
         bucket.last_update = now
     
-    def check_rate_limit(
+    async def check_rate_limit(
         self,
         identifier: str,
         endpoint: str,
@@ -186,6 +186,7 @@ AUTH_RATE_LIMITS = {
     "forgot_password": {"limit": 3, "window": 3600},  # 3 per hour
     "reset_password": {"limit": 5, "window": 3600},  # 5 per hour
     "verify_email": {"limit": 5, "window": 3600},  # 5 per hour
+    "resend_verification": {"limit": 5, "window": 3600},  # 5 per hour
     "change_password": {"limit": 10, "window": 3600},  # 10 per hour
 }
 

@@ -16,9 +16,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && chown -R appuser:appuser /app
 
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir -e ".[dev]"
-
 COPY src ./src
+RUN touch README.md && pip install --no-cache-dir -e ".[dev]"
+
 COPY alembic.ini ./
 COPY alembic ./alembic
 RUN chown -R appuser:appuser /app

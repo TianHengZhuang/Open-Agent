@@ -29,8 +29,8 @@ export function ValidationPanel({ editor }: { editor: WorkflowEditor }) {
   const shown = serverResult ?? { valid: validation.valid, errors: validation.errors, warnings: validation.warnings };
 
   return (
-    <div className="flex h-full flex-col rounded-lg border bg-card" aria-live="polite">
-      <div className="flex items-center justify-between gap-2 border-b p-3">
+    <div className="oa-panel flex h-full min-h-0 flex-col overflow-hidden" aria-live="polite">
+      <div className="flex items-center justify-between gap-2 border-b border-border/70 px-3 py-2.5">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           {shown.valid ? (
             <CheckCircle2 className="h-4 w-4 text-emerald-500" aria-hidden />
@@ -44,7 +44,7 @@ export function ValidationPanel({ editor }: { editor: WorkflowEditor }) {
           Dry-run
         </Button>
       </div>
-      <div className="flex-1 space-y-1 overflow-y-auto p-2">
+      <div className="oa-scroll flex-1 space-y-1 overflow-y-auto p-2">
         {serverValidate.isError && (
           <p className="rounded-md bg-destructive/10 px-2.5 py-2 text-xs text-destructive" role="alert">
             Server validation unavailable — showing local results. The backend remains authoritative at publish time.

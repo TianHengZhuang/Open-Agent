@@ -21,9 +21,13 @@ const DEFAULT_FLAGS: FeatureFlags = {
 
 function readEnvFlags(): Partial<FeatureFlags> {
   const get = (k: string): boolean | undefined => {
-    const v = process.env[k];
-    if (v === '1' || v === 'true') return true;
-    if (v === '0' || v === 'false') return false;
+    // Safely access process.env only on the server; in the browser process is
+    // not defined, so we return undefined to avoid ReferenceError.
+    if (typeof process !== 'undefined' && process.env) {
+      const v = process.env[k];
+      if (v === '1' || v === 'true') return true;
+      if (v === '0' || v === 'false') return false;
+    }
     return undefined;
   };
   return {

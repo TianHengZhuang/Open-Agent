@@ -15,9 +15,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && chown -R appuser:appuser /app
 
 COPY pyproject.toml ./
+COPY src ./src
 RUN pip install --no-cache-dir -e .
 
-COPY src ./src
 RUN chown -R appuser:appuser /app
 
 USER appuser

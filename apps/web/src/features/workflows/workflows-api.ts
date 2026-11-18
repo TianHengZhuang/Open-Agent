@@ -109,6 +109,77 @@ export function useWorkflowExecutions(id: string, page = 1) {
   };
 }
 
+export interface NodeRunView {
+  node_id: string;
+  node_type: string;
+  node_name: string;
+  status: 'succeeded' | 'failed' | 'skipped' | 'waiting' | string;
+  inputs?: Record<string, unknown> | null;
+  outputs?: Record<string, unknown>;
+  error?: string | null;
+  error_code?: string | null;
+  reason?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  duration_ms?: number | null;
+  attempt?: number;
+  /** Failed, but the run continued because the node is set to continue on error. */
+  continued?: boolean;
+}
+
+export interface WorkflowRunSummary {
+  total: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  waiting: number;
+  /** Node failures that did not stop the run (on_error = continue). */
+  warnings?: number;
+  duration_ms: number;
+}
+
+export interface WorkflowRunResult {
+  execution_id: string;
+  workflow_id: string;
+  status: 'completed' | 'failed' | 'waiting' | string;
+  message: string;
+  node_runs: NodeRunView[];
+  output?: Record<string, unknown>;
+  summary?: WorkflowRunSummary;
+  error_message?: string | null;
+}
+
+export interface WorkflowRunInput {
+  id: string;
+  /** Test-run the current canvas instead of the latest saved version. */
+  definition?: WorkflowDefinition;
+  input?: Record<string, unknown>;
+  version?: string;
+}
+
+export interface WorkflowNodeRunResult {
+  node_id: string;
+  node_type: string;
+  node_name: string;
+  status: 'succeeded' | 'failed' | 'skipped' | 'waiting' | string;
+  inputs?: Record<string, unknown>;
+  outputs?: Record<string, unknown>;
+  error?: string | null;
+  error_code?: string | null;
+  reason?: string | null;
+  duration_ms?: number;
+  attempt?: number;
+  continued?: boolean;
+}
+
+export interface WorkflowNodeRunInput {
+  id: string;
+  node_id: string;
+  /** Test the current canvas instead of the latest saved version. */
+  definition?: WorkflowDefinition;
+  input?: Record<string, unknown>;
+}
+
 export interface ServerIssue {
   code: string;
   message: string;
@@ -186,9 +257,26 @@ export function useWorkflowMutations() {
     onSuccess: invalidate,
   });
 
-  const execute = useMutation({
-    mutationFn: (id: string) => api.post<unknown>(`${base(currentOrgId)}/${id}/execute`, {}),
+  const executeNode = useMutation({
+    mutationFn: ({ id, node_id, definition, input }: WorkflowNodeRunInput) =>
+      api.post<WorkflowNodeRunResult>(`${base(currentOrgId)}/${id}/execute-node`, {
+        node_id,
+        definition,
+        input,
+      }),
   });
 
-  return { create, update, publish, unpublish, duplicate, remove, restore, importWorkflow, execute };
+  const execute = useMutation({
+    mutationFn: (input: WorkflowRunInput | string) => {
+      const payload = typeof input === 'string' ? { id: input } : input;
+      return api.post<WorkflowRunResult>(`${base(currentOrgId)}/${payload.id}/execute`, {
+        definition: payload.definition,
+        input: payload.input,
+        version: payload.version,
+      });
+    },
+    onSuccess: invalidate,
+  });
+
+  return { create, update, publish, unpublish, duplicate, remove, restore, importWorkflow, execute, executeNode };
 }

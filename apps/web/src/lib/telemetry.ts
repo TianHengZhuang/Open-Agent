@@ -23,7 +23,9 @@ export function captureEvent(evt: TelemetryEvent): void {
   } catch {
     /* noop */
   }
-  if (process.env.NODE_ENV === 'development') {
+  // Safely check NODE_ENV without referencing the `process` global,
+  // which is not available in browser environments.
+  if (typeof process !== 'undefined' && process.env.NODE_ENV === 'development') {
     console.debug('[telemetry]', payload);
   }
 }

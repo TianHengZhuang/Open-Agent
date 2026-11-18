@@ -20,11 +20,16 @@ def verify_token(token: str, token_hash: str) -> bool:
     return secrets.compare_digest(expected_hash, token_hash)
 
 
-def create_token_pair() -> tuple[str, str]:
-    """Create a token and its hash. Returns (token, token_hash)."""
+def create_token_pair(expiry_minutes: int = 60) -> tuple[str, str, datetime]:
+    """Create a token, its hash and an expiration.
+
+    Returns (token, token_hash, expires_at). Callers across auth, invitations
+    and service accounts unpack three values.
+    """
     token = generate_token()
     token_hash = hash_token(token)
-    return token, token_hash
+    expires_at = create_expiration(expiry_minutes)
+    return token, token_hash, expires_at
 
 
 def create_expiration(minutes: int = 60) -> datetime:

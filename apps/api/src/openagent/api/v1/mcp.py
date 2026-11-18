@@ -520,7 +520,7 @@ async def install_mcp_server(
     db: AsyncSession = Depends(get_db),
 ):
     """Install a new MCP server."""
-    await require_permission("mcp:create")(request, db)
+    await require_permission("mcp_server:create")(request, db)
 
     # Check if server name already exists
     existing = await db.execute(
@@ -611,7 +611,7 @@ async def test_mcp_connection(
     db: AsyncSession = Depends(get_db),
 ):
     """Test connection to an MCP server without installing."""
-    await require_permission("mcp:read")(request, db)
+    await require_permission("mcp_server:read")(request, db)
 
     # This would use the MCP client to test connection
     # For now, return a placeholder response
@@ -643,7 +643,7 @@ async def list_mcp_servers(
     db: AsyncSession = Depends(get_db),
 ):
     """List MCP servers in the organization."""
-    await require_permission("mcp:read")(request, db)
+    await require_permission("mcp_server:read")(request, db)
 
     query = select(MCPServer).where(
         MCPServer.organization_id == organization_id,
@@ -694,7 +694,7 @@ async def get_mcp_server(
     db: AsyncSession = Depends(get_db),
 ):
     """Get MCP server details with related counts."""
-    await require_permission("mcp:read")(request, db)
+    await require_permission("mcp_server:read")(request, db)
     server = await _get_server_or_404(db, organization_id, server_id)
 
     # Get related counts
@@ -753,7 +753,7 @@ async def update_mcp_server(
     db: AsyncSession = Depends(get_db),
 ):
     """Update an MCP server."""
-    await require_permission("mcp:update")(request, db)
+    await require_permission("mcp_server:update")(request, db)
     server = await _get_server_or_404(db, organization_id, server_id)
 
     if data.display_name is not None:
@@ -799,7 +799,7 @@ async def activate_mcp_server(
     db: AsyncSession = Depends(get_db),
 ):
     """Activate (connect) an MCP server."""
-    await require_permission("mcp:update")(request, db)
+    await require_permission("mcp_server:update")(request, db)
     server = await _get_server_or_404(db, organization_id, server_id)
 
     if server.enabled:
@@ -833,7 +833,7 @@ async def deactivate_mcp_server(
     db: AsyncSession = Depends(get_db),
 ):
     """Deactivate (disconnect) an MCP server."""
-    await require_permission("mcp:update")(request, db)
+    await require_permission("mcp_server:update")(request, db)
     server = await _get_server_or_404(db, organization_id, server_id)
 
     if not server.enabled:
@@ -860,7 +860,7 @@ async def refresh_mcp_server(
     db: AsyncSession = Depends(get_db),
 ):
     """Refresh MCP server capabilities."""
-    await require_permission("mcp:update")(request, db)
+    await require_permission("mcp_server:update")(request, db)
     server = await _get_server_or_404(db, organization_id, server_id)
 
     if not server.enabled:
@@ -899,7 +899,7 @@ async def health_check_mcp_server(
     db: AsyncSession = Depends(get_db),
 ):
     """Perform health check on MCP server."""
-    await require_permission("mcp:read")(request, db)
+    await require_permission("mcp_server:read")(request, db)
     server = await _get_server_or_404(db, organization_id, server_id)
 
     health = MCPHealth(
@@ -927,7 +927,7 @@ async def delete_mcp_server(
     db: AsyncSession = Depends(get_db),
 ):
     """Delete (soft-delete) an MCP server."""
-    await require_permission("mcp:delete")(request, db)
+    await require_permission("mcp_server:delete")(request, db)
     server = await _get_server_or_404(db, organization_id, server_id)
 
     server.deleted_at = datetime.utcnow()
@@ -955,7 +955,7 @@ async def list_mcp_tools(
     db: AsyncSession = Depends(get_db),
 ):
     """List tools from an MCP server."""
-    await require_permission("mcp:read")(request, db)
+    await require_permission("mcp_server:read")(request, db)
     await _get_server_or_404(db, organization_id, server_id)
 
     total = (await db.execute(
@@ -990,7 +990,7 @@ async def list_mcp_resources(
     db: AsyncSession = Depends(get_db),
 ):
     """List resources from an MCP server."""
-    await require_permission("mcp:read")(request, db)
+    await require_permission("mcp_server:read")(request, db)
     await _get_server_or_404(db, organization_id, server_id)
 
     total = (await db.execute(
@@ -1025,7 +1025,7 @@ async def list_mcp_prompts(
     db: AsyncSession = Depends(get_db),
 ):
     """List prompts from an MCP server."""
-    await require_permission("mcp:read")(request, db)
+    await require_permission("mcp_server:read")(request, db)
     await _get_server_or_404(db, organization_id, server_id)
 
     total = (await db.execute(
@@ -1059,7 +1059,7 @@ async def list_mcp_policies(
     db: AsyncSession = Depends(get_db),
 ):
     """List MCP policies."""
-    await require_permission("mcp:read")(request, db)
+    await require_permission("mcp_server:read")(request, db)
 
     query = select(MCPPolicy).where(
         MCPPolicy.organization_id == organization_id,
@@ -1094,7 +1094,7 @@ async def create_mcp_policy(
     db: AsyncSession = Depends(get_db),
 ):
     """Create an MCP policy."""
-    await require_permission("mcp:manage")(request, db)
+    await require_permission("mcp_server:update")(request, db)
 
     policy = MCPPolicy(
         organization_id=organization_id,
@@ -1144,7 +1144,7 @@ async def list_mcp_executions(
     db: AsyncSession = Depends(get_db),
 ):
     """List MCP tool executions."""
-    await require_permission("mcp:read")(request, db)
+    await require_permission("mcp_server:read")(request, db)
 
     query = select(MCPToolExecution).where(
         MCPToolExecution.organization_id == organization_id

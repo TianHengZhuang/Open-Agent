@@ -4,13 +4,23 @@ import * as React from 'react';
 import { nodeMeta, triggerMeta, type ConfigField } from '@/features/workflows/node-catalog';
 import { getExpressionSuggestions } from '@/features/workflows/expressions';
 import type { WorkflowEditor } from '@/features/workflows/use-workflow-editor';
+import type { WorkflowNodeRunResult } from '@/features/workflows/workflows-api';
 import { Input } from '@/components/ui/input';
 import { Textarea, Select, Switch, Field } from '@/components/ui/form';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Trash2, Settings2, KeyRound } from 'lucide-react';
+import { Trash2, Settings2, KeyRound, Play } from 'lucide-react';
 
-export function Inspector({ editor, disabled = false }: { editor: WorkflowEditor; disabled?: boolean }) {
+export function Inspector({
+  editor,
+  disabled = false,
+  onTestStep,
+}: {
+  editor: WorkflowEditor;
+  disabled?: boolean;
+  /** Execute this single node with the supplied input (n8n "Test step"). */
+  onTestStep?: (nodeId: string, input: Record<string, unknown>) => Promise<WorkflowNodeRunResult>;
+}) {
   const { definition, selection, validation, dispatch } = editor;
 
   if (!selection) {
@@ -21,9 +31,9 @@ export function Inspector({ editor, disabled = false }: { editor: WorkflowEditor
     const edge = definition.edges.find((e) => e.id === selection.id);
     if (!edge) return <EmptyInspector />;
     return (
-      <div className="flex h-full flex-col rounded-lg border bg-card">
+      <div className="oa-panel flex h-full min-h-0 flex-col overflow-hidden">
         <InspectorHeader title="Edge" subtitle={`${edge.from} → ${edge.to}`} onDelete={disabled ? undefined : () => dispatch({ type: 'delete-selection' })} />
-        <div className="flex-1 space-y-4 overflow-y-auto p-4">
+        <div className="oa-scroll flex-1 space-y-4 overflow-y-auto p-4">
           <Field label="Branch label" htmlFor="edge-label" help="Shown on the canvas. For condition nodes, use the output port name.">
             <Input
               id="edge-label"
@@ -99,13 +109,13 @@ export function Inspector({ editor, disabled = false }: { editor: WorkflowEditor
   };
 
   return (
-    <div className="flex h-full flex-col rounded-lg border bg-card">
+    <div className="oa-panel flex h-full min-h-0 flex-col overflow-hidden">
       <InspectorHeader
         title={item.name}
         subtitle={isTrigger ? `Trigger · ${trigger!.type}` : `Node · ${node!.type}`}
         onDelete={disabled ? undefined : () => dispatch({ type: 'delete-selection' })}
       />
-      <div className="flex-1 space-y-4 overflow-y-auto p-4">
+      <div className="oa-scroll flex-1 space-y-4 overflow-y-auto p-4">
         {errors.length > 0 && (
           <Alert variant="destructive">
             <AlertDescription>
@@ -134,6 +144,7 @@ export function Inspector({ editor, disabled = false }: { editor: WorkflowEditor
             onChange={(v) => setConfig(f.key, v)}
           />
         ))}
+        {isTrigger && trigger!.type === 'webhook' && <WebhookUrl path={String(trigger!.config?.path ?? '')} />}
         {!isTrigger && (
           <>
             <Field label="Enabled" htmlFor="node-enabled" help="Disabled nodes are skipped by validation and future execution.">
@@ -175,6 +186,21 @@ export function Inspector({ editor, disabled = false }: { editor: WorkflowEditor
                 }
               />
             </Field>
+            <Field
+              label="On error"
+              htmlFor="node-on-error"
+              help="Continue passes the input to the next node; the node is still reported as failed."
+            >
+              <Select
+                id="node-on-error"
+                value={String(node!.config?.on_error ?? 'stop')}
+                disabled={disabled}
+                onChange={(e) => setConfig('on_error', e.target.value === 'stop' ? undefined : e.target.value)}
+              >
+                <option value="stop">Stop workflow</option>
+                <option value="continue">Continue (pass input through)</option>
+              </Select>
+            </Field>
             <Field label="Max retries" htmlFor="node-retry" help="0–10 additional attempts.">
               <Input
                 id="node-retry"
@@ -194,11 +220,122 @@ export function Inspector({ editor, disabled = false }: { editor: WorkflowEditor
             </Field>
           </>
         )}
+        {onTestStep && <TestStep nodeId={item.id} disabled={disabled} onTestStep={onTestStep} />}
         <p className="oa-caption">
           ID: <span className="oa-code">{item.id}</span>
         </p>
       </div>
     </div>
+  );
+}
+
+function TestStep({
+  nodeId,
+  disabled,
+  onTestStep,
+}: {
+  nodeId: string;
+  disabled?: boolean;
+  onTestStep: (nodeId: string, input: Record<string, unknown>) => Promise<WorkflowNodeRunResult>;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [text, setText] = React.useState('{}');
+  const [running, setRunning] = React.useState(false);
+  const [result, setResult] = React.useState<WorkflowNodeRunResult | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const run = async () => {
+    let parsed: unknown = {};
+    try {
+      parsed = text.trim() ? JSON.parse(text) : {};
+    } catch {
+      setError('Input is not valid JSON');
+      return;
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      setError('Input must be a JSON object');
+      return;
+    }
+    setError(null);
+    setRunning(true);
+    try {
+      setResult(await onTestStep(nodeId, parsed as Record<string, unknown>));
+    } catch (e) {
+      setResult(null);
+      setError(e instanceof Error ? e.message : 'Test step failed');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-primary/20 bg-primary/[0.04] p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <p className="flex items-center gap-1.5 text-sm font-medium">
+            <Play className="h-3.5 w-3.5 text-primary" aria-hidden /> Test step
+          </p>
+          <p className="oa-caption">Runs only this node. Upstream nodes are not executed.</p>
+        </div>
+        <Button type="button" size="sm" variant="outline" onClick={() => setOpen((v) => !v)}>
+          {open ? 'Hide' : 'Test step'}
+        </Button>
+      </div>
+      {open && (
+        <div className="mt-2 space-y-2">
+          <label htmlFor="test-step-input" className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Input (JSON)
+          </label>
+          <textarea
+            id="test-step-input"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={3}
+            spellCheck={false}
+            className="w-full resize-y rounded-lg border bg-background px-2.5 py-2 font-mono text-xs outline-none focus:border-primary"
+          />
+          {error && <p className="text-xs text-destructive">{error}</p>}
+          <div className="flex justify-end">
+            <Button type="button" size="sm" onClick={run} disabled={disabled || running}>
+              {running ? 'Running…' : 'Run step'}
+            </Button>
+          </div>
+          {result && (
+            <div className="space-y-1">
+              <p className="text-xs">
+                <span className="font-medium">{result.status}</span>
+                {result.error ? ` — ${result.error}` : ''}
+                {result.duration_ms !== undefined ? ` · ${result.duration_ms} ms` : ''}
+              </p>
+              <pre className="oa-scroll max-h-48 overflow-auto rounded-lg border bg-background p-2.5 text-[11px]">
+                {JSON.stringify(result.outputs ?? {}, null, 2)}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WebhookUrl({ path }: { path: string }) {
+  const raw = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api/v1').replace(/\/$/, '');
+  const base = /\/api\/v1$/.test(raw) ? raw : `${raw}/api/v1`;
+  const suffix = path.replace(/^\/+/, '');
+  return (
+    <Field
+      label="Production webhook URL"
+      htmlFor="webhook-url"
+      help="Active workflows accept POSTs here. Publish the workflow to turn it on."
+    >
+      <Input
+        id="webhook-url"
+        readOnly
+        value={suffix ? `${base}/hooks/${suffix}` : ''}
+        placeholder="Set a path to get a URL"
+        onFocus={(e) => e.currentTarget.select()}
+      />
+    </Field>
   );
 }
 
@@ -389,13 +526,22 @@ function ConfigInput({
 
 function InspectorHeader({ title, subtitle, onDelete }: { title: string; subtitle: string; onDelete?: () => void }) {
   return (
-    <div className="flex items-start justify-between gap-2 border-b p-4">
-      <div className="min-w-0">
-        <h2 className="truncate text-sm font-semibold">{title}</h2>
-        <p className="oa-caption truncate">{subtitle}</p>
+    <div className="flex items-center justify-between gap-2 border-b border-border/70 px-3 py-2.5">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <Settings2 className="h-4 w-4" aria-hidden />
+        </span>
+        <div className="min-w-0">
+          <h2 className="truncate text-sm font-semibold leading-tight">{title}</h2>
+          <p className="oa-caption truncate capitalize">{subtitle}</p>
+        </div>
       </div>
       {onDelete && (
-        <button onClick={onDelete} aria-label={`Delete ${title}`} className="rounded-md p-2 text-destructive hover:bg-destructive/10">
+        <button
+          onClick={onDelete}
+          aria-label={`Delete ${title}`}
+          className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+        >
           <Trash2 className="h-4 w-4" />
         </button>
       )}
@@ -405,7 +551,7 @@ function InspectorHeader({ title, subtitle, onDelete }: { title: string; subtitl
 
 function EmptyInspector() {
   return (
-    <div className="flex h-full flex-col items-center justify-center rounded-lg border bg-card p-6 text-center">
+    <div className="oa-panel flex h-full flex-col items-center justify-center p-6 text-center">
       <Settings2 className="mb-2 h-6 w-6 text-muted-foreground" aria-hidden />
       <p className="text-sm text-muted-foreground">Select a trigger, node, or edge to configure it.</p>
     </div>
@@ -422,16 +568,21 @@ function WorkflowSettingsPanel({ editor, disabled }: { editor: WorkflowEditor; d
   };
 
   return (
-    <div className="flex h-full flex-col rounded-lg border bg-card">
-      <div className="border-b p-4">
-        <h2 className="text-sm font-semibold">Workflow</h2>
+    <div className="oa-panel flex h-full min-h-0 flex-col overflow-hidden">
+      <div className="border-b border-border/70 px-4 py-3">
+        <h2 className="flex items-center gap-2 text-sm font-semibold">
+          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-primary">
+            <Settings2 className="h-3.5 w-3.5" aria-hidden />
+          </span>
+          Workflow settings
+        </h2>
         <p className="oa-caption">
           {definition.triggers.length} trigger{definition.triggers.length === 1 ? '' : 's'} ·{' '}
           {definition.nodes.length} node{definition.nodes.length === 1 ? '' : 's'} ·{' '}
           {definition.edges.length} edge{definition.edges.length === 1 ? '' : 's'}
         </p>
       </div>
-      <div className="flex-1 space-y-5 overflow-y-auto p-4">
+      <div className="oa-scroll flex-1 space-y-5 overflow-y-auto p-4">
         <section aria-label="Variables">
           <h3 className="mb-2 text-sm font-medium">Variables</h3>
           {definition.variables.length === 0 && (

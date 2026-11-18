@@ -1,7 +1,39 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import * as React from 'react';
 import { api, ApiError } from '@/lib/api';
+
+// Session state always comes from the API. In local mode the API can mint a
+// loopback-only session without a password, so the app opens straight into the
+// workspace; the login page stays available for real accounts.
+const authMode = typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_OPENAGENT_AUTH_MODE : undefined;
+const isLocalAuthMode = authMode === 'local';
+const LOCAL_SIGNOUT_KEY = 'oa:local-signed-out';
+// Set after a password login so local auto-sign-in does not override the
+// account the user explicitly chose.
+const ACCOUNT_SESSION_KEY = 'oa:account-session';
+
+function normalizeUser(raw: Partial<User>, fallbackEmail: string): User {
+  return {
+    id: String(raw.id ?? ''),
+    email: String(raw.email ?? fallbackEmail),
+    display_name: (raw.display_name as string | null) ?? null,
+    avatar_url: (raw.avatar_url as string | null) ?? null,
+    status: String(raw.status ?? 'active'),
+    email_verified: Boolean(raw.email_verified),
+    is_superadmin: Boolean(raw.is_superadmin),
+    is_platform_owner: Boolean(raw.is_platform_owner),
+    created_at: String(raw.created_at ?? new Date().toISOString()),
+  };
+}
+function getInitialAuthState(): { status: 'loading' | 'authenticated' | 'unauthenticated'; user: User | null; isLoading: boolean; error: string | null } {
+  return {
+    status: 'loading',
+    user: null,
+    isLoading: true,
+    error: null,
+  };
+}
 
 export interface User {
   id: string;
@@ -25,6 +57,13 @@ export interface Session {
   current: boolean;
 }
 
+export interface RegisterResult {
+  message: string;
+  user_id: string;
+  verification_sent: boolean;
+  email_verified: boolean;
+}
+
 interface AuthState {
   status: 'loading' | 'authenticated' | 'unauthenticated';
   user: User | null;
@@ -34,9 +73,10 @@ interface AuthState {
 
 interface AuthContextType extends AuthState {
   login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
-  register: (email: string, password: string, displayName?: string) => Promise<unknown>;
+  register: (email: string, password: string, displayName?: string) => Promise<RegisterResult>;
   logout: (logoutAll?: boolean) => Promise<void>;
   verifyEmail: (token: string) => Promise<void>;
+  resendVerification: (email: string) => Promise<string>;
   forgotPassword: (email: string) => Promise<void>;
   resetPassword: (token: string, password: string) => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
@@ -47,27 +87,21 @@ interface AuthContextType extends AuthState {
   sessions?: Session[];
 }
 
-const AuthContext = createContext<AuthContextType | null>(null);
+const AuthContext = React.createContext<AuthContextType | null>(null);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AuthState>({
-    status: 'loading',
-    user: null,
-    isLoading: true,
-    error: null,
-  });
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [state, setState] = React.useState<AuthState>(getInitialAuthState);
+  const [sessions, setSessions] = React.useState<Session[]>([]);
 
-  const [sessions, setSessions] = useState<Session[]>([]);
-
-  const clearError = useCallback(() => {
+  const clearError = React.useCallback(() => {
     setState(prev => ({ ...prev, error: null }));
   }, []);
 
-  const setError = useCallback((error: string | null) => {
+  const setError = React.useCallback((error: string | null) => {
     setState(prev => ({ ...prev, error }));
   }, []);
 
-  const setUser = useCallback((user: User | null) => {
+  const setUser = React.useCallback((user: User | null) => {
     setState(prev => ({
       ...prev,
       user,
@@ -76,8 +110,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
-  const fetchUser = useCallback(async () => {
+  const fetchUser = React.useCallback(async () => {
     try {
+      if (isLocalAuthMode) {
+        let signedOut = false;
+        let usingAccount = false;
+        try {
+          signedOut = window.localStorage.getItem(LOCAL_SIGNOUT_KEY) === '1';
+          usingAccount = window.localStorage.getItem(ACCOUNT_SESSION_KEY) === '1';
+        } catch {
+          /* storage unavailable */
+        }
+        if (!signedOut && !usingAccount) {
+          try {
+            const local = await api.post<{ user: Partial<User> }>('/auth/local-session');
+            if (local?.user?.id) {
+              setUser(normalizeUser(local.user, 'local@openagent'));
+              return;
+            }
+          } catch {
+            // Local mode disabled on the API — fall back to a real session.
+          }
+        }
+      }
+
       setState(prev => ({ ...prev, isLoading: true }));
       const data = await api.get<User | { user: User }>('/auth/me');
       const user = (data as { user?: User }).user ?? (data as User);
@@ -93,7 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [setUser]);
 
-  const login = useCallback(async (email: string, password: string, rememberMe = false) => {
+  const login = React.useCallback(async (email: string, password: string, rememberMe = false) => {
     try {
       setState(prev => ({ ...prev, isLoading: true, error: null }));
       const data = await api.post<{ user: User; session_token: string; expires_at: string }>('/auth/login', {
@@ -103,19 +159,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       // The session cookie is set by the server; normalize user shape.
-      const raw = data.user as Partial<User>;
-      const u: User = {
-        id: String(raw.id ?? ''),
-        email: String(raw.email ?? email),
-        display_name: (raw.display_name as string | null) ?? null,
-        avatar_url: (raw.avatar_url as string | null) ?? null,
-        status: String(raw.status ?? 'active'),
-        email_verified: Boolean(raw.email_verified),
-        is_superadmin: Boolean(raw.is_superadmin),
-        is_platform_owner: Boolean(raw.is_platform_owner),
-        created_at: String(raw.created_at ?? new Date().toISOString()),
-      };
-      setUser(u);
+      try {
+        window.localStorage.removeItem(LOCAL_SIGNOUT_KEY);
+        window.localStorage.setItem(ACCOUNT_SESSION_KEY, '1');
+      } catch {
+        /* storage unavailable */
+      }
+      setUser(normalizeUser(data.user as Partial<User>, email));
     } catch (error) {
       setState(prev => ({ ...prev, isLoading: false }));
       if (error instanceof ApiError) {
@@ -126,15 +176,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [setUser, setError]);
 
-  const register = useCallback(async (email: string, password: string, displayName?: string) => {
+  const register = React.useCallback(async (email: string, password: string, displayName?: string) => {
     try {
       setState(prev => ({ ...prev, isLoading: true, error: null }));
-      const data = await api.post<{ user_id: string; verification_sent: boolean }>('/auth/register', {
+      const data = await api.post<RegisterResult>('/auth/register', {
         email,
         password,
         display_name: displayName,
       });
-      
+
       setState(prev => ({ ...prev, isLoading: false }));
       return data;
     } catch (error) {
@@ -147,10 +197,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [setError]);
 
-  const logout = useCallback(async (logoutAll = false) => {
+  const resendVerification = React.useCallback(async (email: string) => {
+    try {
+      setState(prev => ({ ...prev, isLoading: true, error: null }));
+      const data = await api.post<{ message: string }>('/auth/resend-verification', { email });
+      setState(prev => ({ ...prev, isLoading: false }));
+      return data.message;
+    } catch (error) {
+      setState(prev => ({ ...prev, isLoading: false }));
+      if (error instanceof ApiError) {
+        setError(error.message);
+        throw error;
+      }
+      throw error;
+    }
+  }, [setError]);
+
+  const logout = React.useCallback(async (logoutAll = false) => {
     try {
       setState(prev => ({ ...prev, isLoading: true }));
       await api.post('/auth/logout', { logout_all: logoutAll });
+      try {
+        window.localStorage.removeItem(ACCOUNT_SESSION_KEY);
+        if (isLocalAuthMode) window.localStorage.setItem(LOCAL_SIGNOUT_KEY, '1');
+      } catch {
+        /* storage unavailable */
+      }
       setUser(null);
     } catch (error) {
       setUser(null);
@@ -158,7 +230,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [setUser]);
 
-  const verifyEmail = useCallback(async (token: string) => {
+  const verifyEmail = React.useCallback(async (token: string) => {
     try {
       setState(prev => ({ ...prev, isLoading: true, error: null }));
       await api.post('/auth/verify-email', { token });
@@ -173,7 +245,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [setError]);
 
-  const forgotPassword = useCallback(async (email: string) => {
+  const forgotPassword = React.useCallback(async (email: string) => {
     try {
       setState(prev => ({ ...prev, isLoading: true, error: null }));
       await api.post('/auth/forgot-password', { email });
@@ -188,7 +260,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [setError]);
 
-  const resetPassword = useCallback(async (token: string, password: string) => {
+  const resetPassword = React.useCallback(async (token: string, password: string) => {
     try {
       setState(prev => ({ ...prev, isLoading: true, error: null }));
       await api.post('/auth/reset-password', { token, password });
@@ -203,7 +275,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [setError]);
 
-  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+  const changePassword = React.useCallback(async (currentPassword: string, newPassword: string) => {
     try {
       setState(prev => ({ ...prev, isLoading: true, error: null }));
       await api.post('/auth/change-password', { current_password: currentPassword, new_password: newPassword });
@@ -218,7 +290,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [setError]);
 
-  const fetchSessions = useCallback(async () => {
+  const fetchSessions = React.useCallback(async () => {
     try {
       const data = await api.get<{ sessions: Session[] }>('/auth/sessions');
       setSessions(data.sessions);
@@ -229,7 +301,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const revokeSession = useCallback(async (sessionId: string) => {
+  const revokeSession = React.useCallback(async (sessionId: string) => {
     try {
       await api.delete(`/auth/sessions/${sessionId}`);
       setSessions(prev => prev.filter(s => s.id !== sessionId));
@@ -243,8 +315,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [setError]);
 
   // Initialize auth on mount
-  useEffect(() => {
+  React.useEffect(() => {
     fetchUser();
+    // The effect runs once on mount. In local mode, fetchUser is a no-op
+    // (sets placeholder user without API call), so there's no state change
+    // that would trigger a re-run. In production mode, the API call result
+    // may change state, but the deps [fetchUser] are stable (setUser has [] deps),
+    // so the effect won't re-run unnecessarily.
   }, [fetchUser]);
 
   return (
@@ -254,6 +331,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       register,
       logout,
       verifyEmail,
+      resendVerification,
       forgotPassword,
       resetPassword,
       changePassword,
@@ -269,7 +347,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 export function useAuth() {
-  const context = useContext(AuthContext);
+  const context = React.useContext(AuthContext);
   if (!context) {
     throw new Error('useAuth must be used within an AuthProvider');
   }

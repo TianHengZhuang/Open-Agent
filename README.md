@@ -138,16 +138,29 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical document.
 **Normal user (no tech setup):** download `OpenAgent-Setup.exe` from Releases,
 install, launch — first-run setup is automatic. Details: [INSTALLATION](docs/INSTALLATION.md).
 
-**Developer:**
+**Developer — web-first, no Docker required:**
 
-```cmd
+```bash
 git clone https://github.com/mdsabibahamedsad/Open-Agent.git
 cd Open-Agent
-setup.cmd
-openagent-dev.cmd doctor
+pnpm install
+pnpm dev
 ```
 
-Prerequisites (developer mode only): Git, Node.js 20+, pnpm 8.15+, Python 3.11+, Docker & Docker Compose.
+Then open **http://localhost:3000**. `pnpm dev` starts the Next.js web app
+(http://localhost:3000) and the FastAPI backend (http://localhost:8000) using
+an embedded SQLite database — no Docker, no PostgreSQL, no Redis and no
+electron/npm/Cli global install. With the default `OPENAGENT_AUTH_MODE=local`
+the app signs you in automatically as the loopback-only **Local User**, with a
+workspace and a starter workflow — no password needed. The sign-in page remains
+available at http://localhost:3000/login, and real accounts can be created at
+http://localhost:3000/register. Set `OPENAGENT_AUTH_MODE=standard` (and
+`NEXT_PUBLIC_OPENAGENT_AUTH_MODE=standard`) to require a password instead.
+
+Prerequisites (developer mode only): Git, Node.js 20+, pnpm 8.15+, and
+Python 3.11+ (the FastAPI backend runs from a local virtual environment).
+Docker is optional and only needed for the PostgreSQL/Redis profile
+(`pnpm dev --db=postgres`) or the full container stack (`pnpm dev:docker`).
 Run `pnpm doctor` at any time to verify your machine. Full guides: [quick-start](docs/getting-started/quick-start.md) · [Windows](docs/getting-started/windows.md) · [macOS](docs/getting-started/macos.md) · [Linux](docs/getting-started/linux.md) · [troubleshooting](docs/getting-started/troubleshooting.md).
 
 ```bash
@@ -167,14 +180,48 @@ docker compose up -d
 
 ### Run modes
 
-| Mode                 | Command                               | Details                                                |
-| -------------------- | ------------------------------------- | ------------------------------------------------------ |
-| Docker (recommended) | `docker compose up --build`           | [docker guide](docs/getting-started/docker.md)         |
-| Guided native        | `pnpm setup` then `pnpm dev:local`    | [non-docker guide](docs/getting-started/non-docker.md) |
-| Hybrid               | `pnpm infra:up` then `pnpm dev:local` | [hybrid guide](docs/getting-started/hybrid.md)         |
-| Local AI             | `ollama serve` + provider config      | [local-ai guide](docs/getting-started/local-ai.md)     |
+| Mode                    | Command                               | Details                                                |
+| ----------------------- | ------------------------------------- | ------------------------------------------------------ |
+| Local, no Docker (default) | `pnpm dev`                        | SQLite + web + API — [non-docker guide](docs/getting-started/non-docker.md) |
+| Local with PostgreSQL   | `pnpm dev --db=postgres`              | needs Postgres + Redis (see `pnpm infra:up`)           |
+| Docker (everything)     | `pnpm dev:docker` / `docker compose up --build` | [docker guide](docs/getting-started/docker.md) |
+| Guided native           | `pnpm setup` then `pnpm dev`          | [non-docker guide](docs/getting-started/non-docker.md) |
+| Local AI                | `ollama serve` + provider config      | [local-ai guide](docs/getting-started/local-ai.md)     |
 
 Supported: Windows (PowerShell/WSL2), macOS (Apple Silicon + Intel), Linux — each with Docker and non-Docker paths. pnpm 8.15 is canonical; npm can run root scripts after `pnpm install`.
+
+### Known limitations of the zero-dependency (SQLite) local mode
+
+`pnpm dev` boots the full web + API stack on an embedded SQLite database, but
+some features are PostgreSQL-only and are **not** available in this mode:
+
+- **Workflow execution** runs on the in-process local engine
+  (`apps/api/src/openagent/runtime/local_engine.py`). Triggers, set, transform,
+  filter, map, sort, limit, remove-duplicates, split-out, condition, switch,
+  merge, loop, variable, delay and HTTP request nodes execute for real; nodes
+  that need an external provider (AI prompt, agent, tool, connector, coding,
+  quality gates) are recorded as `skipped` with a reason instead of being
+  faked, and human approvals park the run as `waiting`. Every node run is
+  persisted with inputs, outputs, timing and errors, and the builder can
+  test-run the unsaved canvas (`Test workflow`).
+- **Node settings are enforced**: `retry_policy.max_attempts` retries a failed
+  node, `timeout_seconds` bounds it, and `On error → Continue` records the
+  failure as a warning while passing the input to the next node.
+- **Test step** runs a single node with JSON input from the inspector
+  (`POST /workflows/{id}/execute-node`), and the workflow list has n8n's
+  **Active** switch: publishing activates webhooks, unpublishing stops them.
+- **Production webhooks**: publishing a workflow activates its Webhook trigger
+  at `POST /api/v1/hooks/<path>` (any method body is parsed as JSON; an
+  optional plain shared secret is checked via `X-OpenAgent-Secret` or
+  `?token=`). Unpublished workflows never listen. The exact URL is shown in
+  the builder's inspector.
+- **Memory search** uses PostgreSQL-specific SQL (`ILIKE`). Memory create/list
+insist on the PostgreSQL/Redis profile (`pnpm dev --db=postgres`) for full
+fidelity; SQLite stores and returns rows but its raw-SQL search is limited.
+- **Organizations are not auto-provisioned** by registration; org-scoped pages
+need an organization row (PostgreSQL + `pnpm db:seed`).
+- Redis-backed workers/schedulers are optional and only run with
+`pnpm dev:worker` (requires Redis).
 
 ### Automate locally — no Docker required
 
@@ -340,17 +387,16 @@ cd Open-Agent
 pnpm setup         # deps + .env with fresh dev secrets (never overwrites .env)
 pnpm doctor        # verify environment (read-only)
 
-# Option A — Docker for everything
-pnpm dev           # or: docker compose up --build
+# Option A — local, no Docker (default): embedded SQLite + web + API
+pnpm dev
 
-# Option B — hybrid: infra in Docker, code native
+# Option B — PostgreSQL + Redis (needs Docker or local servers)
 pnpm infra:up
 pnpm db:setup      # migrate + seed
-pnpm dev:local     # web + api + worker, one banner, Ctrl+C stops all
+pnpm dev --db=postgres
 
-# Option C — fully native (needs local Postgres 15+ + Redis 7+)
-pnpm db:setup
-pnpm dev:local
+# Option C — Docker for everything
+pnpm dev:docker    # or: docker compose up --build
 ```
 
 Manual equivalents (what the scripts do under the hood):
@@ -521,6 +567,30 @@ openagent model install   # pulls the recommended model (asks first for large on
 openagent model use ollama:qwen2.5
 openagent model doctor
 ```
+
+### Koro — local automation copilot (~400 MB model)
+
+Koro lives in the workflow builder and drives workflows end to end: list,
+inspect the last run, run, publish/unpublish, and create new workflows. It
+talks to any OpenAI-compatible local server — by default Ollama with
+`qwen2.5:0.5b-instruct` (~400 MB quantised, CPU friendly):
+
+```cmd
+winget install Ollama.Ollama   # or https://ollama.com/download
+pnpm setup:koro                # pulls qwen2.5:0.5b-instruct and checks the endpoint
+```
+
+Open a workflow → **Koro** in the builder toolbar. Without a model, Koro keeps
+working in command mode: “run My First Workflow”, “publish it”, “summarize the
+last run”, “create a workflow called Daily digest”. The model path is used for
+free-form requests and always falls back to those deterministic commands.
+
+Configuration (`.env`): `OPENAGENT_KORO_BASE_URL` (default
+`http://127.0.0.1:11434/v1`), `OPENAGENT_KORO_MODEL`, and
+`OPENAGENT_KORO_TIMEOUT_SECONDS`. Actions run server-side, scoped to the
+organisation and re-checked against the caller's workflow permissions; the
+model only sees workflow names, ids and statuses — never definitions or
+credentials.
 
 ## Browser Setup
 

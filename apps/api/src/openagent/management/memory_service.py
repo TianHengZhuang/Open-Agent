@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select, func, delete, and_, or_, update, func as sql_func
+from sqlalchemy import select, func, delete, and_, or_, update, text, func as sql_func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
@@ -254,10 +254,12 @@ class MemoryService:
         expires_at: Optional[datetime] = None,
         summary: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        actor: Optional[UUID] = None,
+        idempotency_key: Optional[str] = None,
     ) -> Memory:
         """Create a new memory through the write pipeline."""
         # Sanitize content
-        content = self._sanitize_content(content)
+        content = await self._sanitize_content(content)
 
         # Build memory object
         memory = Memory(
@@ -300,7 +302,7 @@ class MemoryService:
         await self._queue_embedding_generation(memory)
 
         # Log access
-        await self._log_access(memory, "write")
+        await self._log_access(memory, "write", accessed_by=actor)
 
         return memory
 
@@ -338,7 +340,7 @@ class MemoryService:
             access_type=access_type,
             metadata={},
         )
-        self.db.add(access_log)
+        self.db.add(log)
         await self.db.flush()
 
     # ==================== Retrieval ====================
@@ -368,7 +370,7 @@ class MemoryService:
         # Build query conditions
         conditions = [
             "m.organization_id = :org_id",
-            "m.status = 'active'",
+            "m.status = 'ACTIVE'",
             "m.deleted_at IS NULL"
         ]
         params = {"org_id": str(organization_id), "limit": limit, "offset": offset}
@@ -381,12 +383,12 @@ class MemoryService:
         # Add scope filter
         if scope_filter:
             conditions.append("m.scope = :scope")
-            params["scope"] = scope_filter
+            params["scope"] = scope_filter.upper()
 
         # Add memory type filter
         if memory_type_filter:
             conditions.append("m.memory_type = :mem_type")
-            params["mem_type"] = memory_type_filter
+            params["mem_type"] = memory_type_filter.upper()
 
         # Add agent filter
         if agent_id:
@@ -414,7 +416,7 @@ class MemoryService:
             params["tags"] = tags
 
         # Add visibility filter
-        conditions.append("m.visibility IN ('private', 'authorized', 'team', 'organization', 'shared')")
+        conditions.append("m.visibility IN ('PRIVATE', 'AUTHORIZED', 'TEAM', 'ORGANIZATION', 'SHARED')")
 
         # Build the query
         select_cols = "m.*"

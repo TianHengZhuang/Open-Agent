@@ -22,7 +22,7 @@ export function TopNav({ onMenuClick, sidebarCollapsed, onOpenPalette }: TopNavP
     <header
       role="banner"
       className={cn(
-        'fixed right-0 top-0 z-30 h-16 border-b bg-background/95 backdrop-blur transition-all duration-200 supports-[backdrop-filter]:bg-background/60',
+        'fixed right-0 top-0 z-30 h-16 border-b border-border/70 bg-background/80 backdrop-blur-xl transition-all duration-200',
         'left-0 lg:left-64',
         sidebarCollapsed && 'lg:left-16',
       )}
@@ -41,11 +41,11 @@ export function TopNav({ onMenuClick, sidebarCollapsed, onOpenPalette }: TopNavP
         <button
           onClick={onOpenPalette}
           aria-label="Open command palette (Control K)"
-          className="ml-1 hidden min-w-0 flex-1 items-center gap-2 rounded-md border bg-muted/50 px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground md:flex md:max-w-sm"
+          className="ml-1 hidden min-w-0 flex-1 items-center gap-2 rounded-lg border border-transparent bg-muted/60 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-border hover:bg-background hover:text-foreground md:flex md:max-w-sm"
         >
           <Search className="h-4 w-4 shrink-0" aria-hidden />
-          <span className="truncate">Search or command…</span>
-          <kbd className="oa-code ml-auto shrink-0">⌘K</kbd>
+          <span className="truncate">Search or run a command…</span>
+          <kbd className="oa-kbd ml-auto shrink-0">⌘K</kbd>
         </button>
         <button
           onClick={onOpenPalette}
@@ -59,7 +59,7 @@ export function TopNav({ onMenuClick, sidebarCollapsed, onOpenPalette }: TopNavP
           <button
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             aria-label="Toggle color theme"
-            className="rounded-full p-2 hover:bg-accent"
+            className="relative rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             <Sun className="h-5 w-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" aria-hidden />
             <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" aria-hidden />

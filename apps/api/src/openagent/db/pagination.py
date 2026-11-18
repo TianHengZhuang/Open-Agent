@@ -2,6 +2,8 @@ from typing import TypeVar, Generic, List, Optional
 from pydantic import BaseModel, Field
 from math import ceil
 
+from openagent.schemas.base import PaginationMeta
+
 T = TypeVar("T")
 
 
@@ -13,15 +15,6 @@ class PaginationParams(BaseModel):
 class CursorPaginationParams(BaseModel):
     cursor: Optional[str] = Field(default=None, description="Cursor for next page")
     limit: int = Field(default=20, ge=1, le=100, description="Number of items per page")
-
-
-class PaginationMeta(BaseModel):
-    page: int
-    page_size: int
-    total_items: int
-    total_pages: int
-    has_next: bool
-    has_prev: bool
 
 
 class CursorPaginationMeta(BaseModel):

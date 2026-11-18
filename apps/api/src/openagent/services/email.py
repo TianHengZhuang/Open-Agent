@@ -36,8 +36,8 @@ class DevelopmentEmailProvider(EmailProvider):
         print(f"{'='*60}")
         print(f"To: {message.to}")
         print(f"Subject: {message.subject}")
-        print(f"From: {message.from_name or ''} <{message.from_email or 'noreply@openagent.local'}>")
-        print(f"Reply-To: {message.reply_to or 'noreply@openagent.local'}")
+        print(f"From: {message.from_name or ''} <{message.from_email or 'noreply@openagent.dev'}>")
+        print(f"Reply-To: {message.reply_to or 'noreply@openagent.dev'}")
         print(f"Text Content:")
         print(f"{message.text_content or message.html_content}")
         print(f"{'='*60}\n")
@@ -61,7 +61,7 @@ class SMTPEmailProvider(EmailProvider):
         username: str,
         password: str,
         use_tls: bool = True,
-        default_from_email: str = "noreply@openagent.local",
+        default_from_email: str = "noreply@openagent.dev",
         default_from_name: str = "OpenAgent",
     ):
         self.host = host
@@ -113,7 +113,7 @@ class SMTPEmailProvider(EmailProvider):
 class EmailService:
     """High-level email service that uses a provider."""
     
-    def __init__(self, provider: EmailProvider, default_from_email: str = "noreply@openagent.local", default_from_name: str = "OpenAgent"):
+    def __init__(self, provider: EmailProvider, default_from_email: str = "noreply@openagent.dev", default_from_name: str = "OpenAgent"):
         self.provider = provider
         self.default_from_email = default_from_email
         self.default_from_name = default_from_name

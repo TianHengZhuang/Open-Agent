@@ -15,7 +15,7 @@ import { Drawer } from '@/components/ui/drawer';
 import { PermissionGate } from '@/components/PermissionGate';
 import { usePermission } from '@/lib/permissions';
 import { useToast } from '@/components/ui/toast';
-import { toUserMessage, ApiError } from '@/lib/api';
+import { toUserMessage } from '@/lib/api';
 import { PageLoading } from '@/components/ui/loading';
 import { ErrorState } from '@/components/ui/states';
 import { useWorkflow, useWorkflowMutations } from '@/features/workflows/workflows-api';
@@ -64,16 +64,28 @@ export default function WorkflowDetailPage() {
     );
   }
 
-  const run = async (fn: Promise<unknown>, ok: string, opts?: { honest501?: boolean }) => {
+  const run = async (fn: Promise<unknown>, ok: string) => {
     try {
       await fn;
       toast({ kind: 'success', title: ok });
     } catch (e) {
-      if (opts?.honest501 && e instanceof ApiError && e.status === 501) {
-        toast({ kind: 'info', title: 'Execution engine not yet available', description: 'Authoring is complete; runs ship in a later phase. Nothing was faked.' });
-      } else {
-        toast({ kind: 'error', title: 'Action failed', description: toUserMessage(e) });
-      }
+      toast({ kind: 'error', title: 'Action failed', description: toUserMessage(e) });
+    }
+  };
+
+  const startRun = async () => {
+    try {
+      const result = await mutations.execute.mutateAsync({ id: workflow.id });
+      toast({
+        kind: result.status === 'failed' ? 'error' : result.status === 'waiting' ? 'info' : 'success',
+        title: result.message,
+        description:
+          result.error_message ??
+          `${result.summary?.succeeded ?? 0} succeeded · ${result.summary?.skipped ?? 0} skipped · ${result.summary?.duration_ms ?? 0} ms`,
+      });
+      refetch();
+    } catch (e) {
+      toast({ kind: 'error', title: 'Run failed', description: toUserMessage(e) });
     }
   };
 
@@ -95,9 +107,10 @@ export default function WorkflowDetailPage() {
                 </PermissionGate>
                 <PermissionGate permission="workflow:execute">
                   <Button
-                    onClick={() => run(mutations.execute.mutateAsync(workflow.id), 'Run started', { honest501: true })}
-                    disabled={workflow.status !== 'active'}
-                    title={workflow.status !== 'active' ? 'Publish the workflow before running' : 'Start a run'}
+                    onClick={startRun}
+                    loading={mutations.execute.isPending}
+                    disabled={workflow.status === 'archived'}
+                    title="Run the latest saved version"
                   >
                     <Play className="mr-2 h-4 w-4" />Run
                   </Button>

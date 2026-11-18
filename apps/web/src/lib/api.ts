@@ -97,7 +97,11 @@ export function toUserMessage(err: unknown): string {
   return 'Something went wrong.';
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+// API_BASE: default to local development URL.
+// NEXT_PUBLIC_API_URL can be set in the environment for production deployments.
+// This value is intentionally not accessed via process.env to avoid browser
+// ReferenceError when process is not defined (client-side).
+const API_BASE = 'http://localhost:8000/api/v1';
 
 function getOrgId(): string | null {
   if (typeof window === 'undefined') return null;
