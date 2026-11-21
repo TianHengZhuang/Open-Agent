@@ -1,37 +1,31 @@
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Optional, List
-from sqlalchemy import select, update, delete, func
-from sqlalchemy.ext.asyncio import AsyncSession
-import structlog
+from datetime import datetime, timezone
+from typing import List, Optional
 
+import structlog
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from openagent.core.config import get_settings
+from openagent.core.security import (
+    create_token_pair,
+    hash_password,
+    hash_token,
+    needs_rehash,
+    verify_password,
+)
 from openagent.db.models import (
-    User,
-    UserStatus,
-    Session,
     EmailVerificationToken,
     PasswordResetToken,
     PlatformOwner,
     PlatformOwnerStatus,
     SecurityEvent,
     SecurityEventType,
-    Organization,
-    Membership,
-    MembershipRole,
-    MembershipStatus,
+    Session,
+    User,
+    UserStatus,
 )
-from openagent.db.repositories import UserRepository, SessionRepository
-from openagent.core.security import (
-    hash_password,
-    verify_password,
-    needs_rehash,
-    create_token_pair,
-    hash_token,
-    verify_token,
-    generate_recovery_codes,
-    hash_recovery_codes,
-)
-from openagent.core.config import get_settings
+from openagent.db.repositories import SessionRepository, UserRepository
 from openagent.services.email import (
     DevelopmentEmailProvider,
     EmailService,

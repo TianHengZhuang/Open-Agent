@@ -5,21 +5,25 @@ deactivation that preserves audit history."""
 
 from __future__ import annotations
 
-import time
 from datetime import datetime, timezone
-from typing import Any, Optional
-from uuid import UUID
+from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openagent.core.security.tokens import hash_token, verify_token
-from openagent.db.models.identity import ScimCredentialRow, ScimSyncRun
+from openagent.core.security.tokens import verify_token
+from openagent.db.models.identity import ScimCredentialRow
 from openagent.db.session import get_db
 from openagent.identity.scim import (
-    ScimCredential, ScimRateLimiter, apply_filter, apply_patch,
-    paginate, parse_filter, scim_error_body, validate_scim_group,
+    ScimCredential,
+    ScimRateLimiter,
+    apply_filter,
+    apply_patch,
+    paginate,
+    parse_filter,
+    scim_error_body,
+    validate_scim_group,
     validate_scim_user,
 )
 
@@ -102,7 +106,6 @@ async def create_user(
     try:
         clean = validate_scim_user(body)
     except Exception as exc:
-        from openagent.identity.scim import ScimError
         status_code = getattr(exc, "status", 400)
         raise HTTPException(status_code=status_code,
                             detail=scim_error_body(str(exc), status_code))
@@ -131,7 +134,6 @@ async def list_users(
         try:
             users = apply_filter(users, parse_filter(filter))
         except Exception as exc:
-            from openagent.identity.scim import ScimError
             status_code = getattr(exc, "status", 400)
             raise HTTPException(
                 status_code=status_code,

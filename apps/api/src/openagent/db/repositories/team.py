@@ -1,11 +1,12 @@
-from typing import Optional, List
+from typing import List, Optional
 from uuid import UUID
-from sqlalchemy import select, func
+
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from openagent.db.models import Team, TeamMembership, TeamMembershipRole
 from openagent.db.repositories.base import BaseRepository
-from openagent.db.models import Team, TeamMembership, TeamMembershipRole, User
 
 
 class TeamRepository(BaseRepository[Team]):

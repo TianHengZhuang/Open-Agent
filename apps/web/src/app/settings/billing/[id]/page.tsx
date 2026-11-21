@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { use } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Layout } from '@/components/layout';
 import { Protected } from '@/components/protected';
@@ -10,10 +11,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/states';
 import { commerceApi, formatMinor } from '@/lib/commerce';
 
-export default function InvoiceDetailPage({ params }: { params: { id: string } }) {
+export default function InvoiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
   const query = useQuery({
-    queryKey: ['invoice', params.id],
-    queryFn: () => commerceApi.invoice(params.id),
+    queryKey: ['invoice', id],
+    queryFn: () => commerceApi.invoice(id),
   });
   const invoice = query.data;
 

@@ -568,25 +568,34 @@ openagent model use ollama:qwen2.5
 openagent model doctor
 ```
 
-### Koro — local automation copilot (~400 MB model)
+### Koro — automation copilot (local model or any endpoint)
 
 Koro lives in the workflow builder and drives workflows end to end: list,
-inspect the last run, run, publish/unpublish, and create new workflows. It
-talks to any OpenAI-compatible local server — by default Ollama with
-`qwen2.5:0.5b-instruct` (~400 MB quantised, CPU friendly):
+inspect the last run, run, publish/unpublish, and build or edit complete
+workflows (triggers, conditions, branches, data steps, HTTP calls) from a
+plain-language request. Generated definitions are validated before they are
+saved as a draft version. Koro talks to any OpenAI-compatible endpoint, so it
+can build automations with whatever AI you already run: Ollama or LM Studio
+locally, or a hosted API (OpenAI, OpenRouter, Groq, Mistral, DeepSeek,
+Together…). The default is Ollama with `qwen2.5:0.5b-instruct` (~400 MB
+quantised, CPU friendly):
 
 ```cmd
 winget install Ollama.Ollama   # or https://ollama.com/download
 pnpm setup:koro                # pulls qwen2.5:0.5b-instruct and checks the endpoint
 ```
 
-Open a workflow → **Koro** in the builder toolbar. Without a model, Koro keeps
-working in command mode: “run My First Workflow”, “publish it”, “summarize the
-last run”, “create a workflow called Daily digest”. The model path is used for
-free-form requests and always falls back to those deterministic commands.
+Open a workflow → **Koro** in the builder toolbar. Use the settings button in
+the panel header to set the base URL, model and (for hosted APIs) an API key;
+settings are stored per organisation and the key is encrypted at rest. Ask it
+to “build an automation for new leads” or “edit this to add a delay”. Without
+a reachable model, Koro keeps working in command mode: “run My First Workflow”,
+“publish it”, “summarize the last run”, “create a workflow called Daily
+digest”; building custom automations needs a model.
 
-Configuration (`.env`): `OPENAGENT_KORO_BASE_URL` (default
-`http://127.0.0.1:11434/v1`), `OPENAGENT_KORO_MODEL`, and
+Defaults come from `.env`: `OPENAGENT_KORO_BASE_URL` (default
+`http://127.0.0.1:11434/v1`), `OPENAGENT_KORO_MODEL`,
+`OPENAGENT_KORO_API_KEY` (fallback for self-hosted endpoints), and
 `OPENAGENT_KORO_TIMEOUT_SECONDS`. Actions run server-side, scoped to the
 organisation and re-checked against the caller's workflow permissions; the
 model only sees workflow names, ids and statuses — never definitions or

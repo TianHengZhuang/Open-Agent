@@ -229,8 +229,8 @@ class CodeToolExecutor:
 
 def ensure_code_tools_registered(db_session_factory=None) -> "CodeToolExecutor":
     """Register code tools + executor with Tool Runtime (idempotent)."""
-    from openagent.runtime.tools import tool_executor_registry, tool_registry
     from openagent.runtime.tools import ToolDefinition as RuntimeToolDefinition
+    from openagent.runtime.tools import tool_executor_registry, tool_registry
 
     executor = CodeToolExecutor(service_factory=_service_factory)
     if tool_executor_registry.get_executor("code") is None:

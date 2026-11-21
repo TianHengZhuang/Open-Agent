@@ -94,7 +94,7 @@ def resolve_host(host: str, *, timeout: float = 5.0) -> list[str]:
         infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM,
                                    timeout=timeout)
         out: list[str] = []
-        for family, _, _, _, sockaddr in infos:
+        for _family, _, _, _, sockaddr in infos:
             out.append(sockaddr[0])
         seen: list[str] = []
         for ip in out:

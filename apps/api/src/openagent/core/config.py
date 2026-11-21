@@ -1,6 +1,7 @@
 from functools import lru_cache
+
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
 
 
 class Settings(BaseSettings):
@@ -36,6 +37,9 @@ class Settings(BaseSettings):
     SESSION_COOKIE_NAME: str = Field(default="oa_session")
     SESSION_COOKIE_DOMAIN: str = Field(default="")
     SESSION_COOKIE_SECURE: bool = Field(default=False)
+    # Comma-separated CIDRs allowed to supply X-Forwarded-For / X-Real-IP.
+    # Empty means trust only the direct socket peer.
+    TRUSTED_PROXY_CIDRS: str = Field(default="")
     SESSION_COOKIE_HTTP_ONLY: bool = Field(default=True)
     SESSION_COOKIE_SAME_SITE: str = Field(default="lax")
     SESSION_EXPIRE_DAYS: int = Field(default=7)
@@ -78,12 +82,25 @@ class Settings(BaseSettings):
     # credentials are minted per task; the token itself is a bootstrap secret).
     WORKER_SERVICE_TOKEN: str = Field(default="")
 
-    # Koro: local-first automation copilot. Talks to any OpenAI-compatible local
-    # server (Ollama by default) running a small model (~400 MB quantised).
+    # Koro: automation copilot. Talks to any OpenAI-compatible endpoint — Ollama
+    # or LM Studio locally, or a hosted API. Organisations can override these in
+    # the copilot settings; the key there is stored encrypted, this one is a
+    # fallback for self-hosted installs.
     OPENAGENT_KORO_BASE_URL: str = Field(default="http://127.0.0.1:11434/v1")
     OPENAGENT_KORO_MODEL: str = Field(default="qwen2.5:0.5b-instruct")
+    OPENAGENT_KORO_API_KEY: str = Field(default="")
     OPENAGENT_KORO_TIMEOUT_SECONDS: float = Field(default=60.0)
     OPENAGENT_KORO_MODEL_SIZE: str = Field(default="~400 MB")
+
+    @model_validator(mode="after")
+    def _secure_cookies_in_production(self) -> "Settings":
+        if self.OPENAGENT_ENV == "production":
+            self.SESSION_COOKIE_SECURE = True
+        return self
+
+    @property
+    def trusted_proxy_cidrs_list(self) -> list[str]:
+        return [cidr.strip() for cidr in self.TRUSTED_PROXY_CIDRS.split(",") if cidr.strip()]
 
     @property
     def cors_origins_list(self) -> list[str]:

@@ -17,7 +17,7 @@ import secrets
 import shlex
 import stat
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 from uuid import UUID
@@ -29,10 +29,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from openagent.code import intelligence as intel
 from openagent.code.git import GitRunner, GitSecurityError
 from openagent.code.patches import (
-    ChangeRecord,
     PatchError,
     apply_patch,
-    generate_diff,
     parse_unified_diff,
     validate_patch,
 )
@@ -43,20 +41,16 @@ from openagent.code.providers import (
 )
 from openagent.code.review import ReviewResult, gate_summary, review_diff, review_text
 from openagent.code.security import (
-    EXECUTION_PROFILES,
     command_allowed_by_profile,
     detect_repo_injection,
     filter_repo_instructions,
     is_protected_branch,
-    is_retry_safe_tool,
-    is_sensitive_filename,
     label_untrusted_code,
     redact_dict,
     redact_text,
     resolve_profile,
     scan_text_for_secrets,
     task_branch_name,
-    tool_requires_approval,
     validate_workspace_path,
 )
 from openagent.db.models.audit_log import AuditLog
@@ -64,7 +58,6 @@ from openagent.db.models.code import (
     CodeChunk,
     CodeCommit,
     CodeDependency,
-    CodeEmbedding,
     CodeEvent,
     CodeExecutionRun,
     CodeFileIndex,
@@ -81,12 +74,7 @@ from openagent.db.models.code import (
     CodingTask,
     CodingTaskStatus,
     ExecutionStatus,
-    PatchStatus,
-    PRStatus,
     Repository,
-    ReviewSeverity,
-    ReviewStatus,
-    TaskRiskLevel,
     WorkspaceStatus,
 )
 
@@ -203,7 +191,6 @@ class LocalConfinedExecutionProvider(CodeExecutionProvider):
 
     async def execute(self, *, command: str, cwd: str, profile: str,
                       timeout_seconds: Optional[int] = None) -> ExecutionOutcome:
-        from openagent.code.security import EXECUTION_PROFILES  # noqa: F401 (re-export anchor)
         prof = resolve_profile(profile)
         if not command_allowed_by_profile(command, prof):
             raise CodePolicyDenied(
@@ -327,10 +314,8 @@ def parse_dependencies(repo_root: Path, rel: str, content: str) -> list[dict[str
                                  "version_spec": (m.group(2) or "").strip(),
                                  "scope": "dev" if "dev" in base else "runtime"})
         elif base == "pyproject.toml":
-            in_deps = False
             for line in content.splitlines():
                 if re.match(r"^\s*dependencies\s*=", line):
-                    in_deps = True
                     m = re.search(r"\[(.*)\]", line)
                     items = m.group(1) if m else ""
                     for item in re.findall(r"['\"]([^'\"]+)['\"]", items):
@@ -338,7 +323,6 @@ def parse_dependencies(repo_root: Path, rel: str, content: str) -> list[dict[str
                         if mm:
                             deps.append({"file": rel, "manager": "pip", "name": mm.group(1),
                                          "version_spec": mm.group(2).strip(), "scope": "runtime"})
-                    in_deps = False
         elif base == "go.mod":
             in_req = False
             for line in content.splitlines():
@@ -1554,7 +1538,6 @@ class CodeService:
     async def run_command(self, task_id: Optional[UUID], organization_id: UUID,
                           workspace_id: Optional[UUID], profile: str, command: str,
                           timeout_seconds: Optional[int] = None) -> dict[str, Any]:
-        from openagent.code.security import EXECUTION_PROFILES  # noqa: F401 (anchor)
         prof = resolve_profile(profile)
         task = await self._get_task(task_id, organization_id) if task_id else None
         if task:
@@ -1840,6 +1823,8 @@ class CodeService:
         if True:  # push always requires a persisted human approval (MP19)
             from openagent.approvals.integrations import (
                 consume_approval as _consume_push,
+            )
+            from openagent.approvals.integrations import (
                 park_for_approval as _park_push,
             )
             push_params = {"branch": branch, "force": force, "remote": remote}
@@ -2154,8 +2139,7 @@ class CodeService:
             raise CodePolicyDenied("Empty knowledge content")
         if scan_text_for_secrets(clean, "memory"):
             raise CodePolicyDenied("Knowledge content looks like secret material")
-        from openagent.db.models.memory import (MemoryScope, MemoryType,
-                                                MemoryVisibility)
+        from openagent.db.models.memory import MemoryScope, MemoryType, MemoryVisibility
         from openagent.management.memory_service import MemoryService
         mem = await MemoryService(self.db).create_memory(
             organization_id=organization_id, content=f"[{kind}] {clean}",

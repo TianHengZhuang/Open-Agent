@@ -9,13 +9,31 @@ import {
 } from '@/features/workflows/node-catalog';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/form';
-import { Search, Plus, Star, History } from 'lucide-react';
+import { Search, Plus, Star, History, ChevronRight, GripVertical } from 'lucide-react';
 import type { WorkflowEditor } from '@/features/workflows/use-workflow-editor';
 import { cn } from '@/lib/utils';
 
 const RECENT_KEY = 'oa:wf-recent-nodes';
 const FAV_KEY = 'oa:wf-fav-nodes';
 const MAX_RECENT = 6;
+
+const CATEGORY_VAR: Record<string, string> = {
+  Triggers: 'trigger',
+  Logic: 'logic',
+  Data: 'data',
+  AI: 'ai',
+  Agents: 'agents',
+  Tools: 'tools',
+  HTTP: 'http',
+  Integrations: 'tools',
+  Human: 'human',
+  Utilities: 'utility',
+  Advanced: 'advanced',
+};
+
+function tint(category: string): string {
+  return `hsl(var(--node-${CATEGORY_VAR[category] ?? 'utility'}))`;
+}
 
 function readList(key: string): string[] {
   try {
@@ -96,32 +114,39 @@ export function NodePalette({ editor, disabled = false }: { editor: WorkflowEdit
   const allNodes = definitionsByCategory().flatMap((g) => g.items);
   const byKey = new Map<string, NodeMeta>(allNodes.map((n) => [`node:${n.type}`, n]));
   const recentItems = recent
-    .map((k) => (k.startsWith('trigger:')
-      ? TRIGGER_CATALOG.find((t) => `trigger:${t.type}` === k)
-      : byKey.get(k)))
+    .map((k) =>
+      k.startsWith('trigger:')
+        ? TRIGGER_CATALOG.find((t) => `trigger:${t.type}` === k)
+        : byKey.get(k),
+    )
     .filter(Boolean) as (TriggerMeta | NodeMeta)[];
   const showRecent = query === '' && category === 'all' && recentItems.length > 0;
   const showFavs = query === '' && category === 'all' && favs.length > 0;
   const favItems = favs
-    .map((k) => (k.startsWith('trigger:')
-      ? TRIGGER_CATALOG.find((t) => `trigger:${t.type}` === k)
-      : byKey.get(k)))
+    .map((k) =>
+      k.startsWith('trigger:')
+        ? TRIGGER_CATALOG.find((t) => `trigger:${t.type}` === k)
+        : byKey.get(k),
+    )
     .filter(Boolean) as (TriggerMeta | NodeMeta)[];
 
   const isTrigger = (x: TriggerMeta | NodeMeta): x is TriggerMeta =>
     (x as TriggerMeta).type !== undefined && TRIGGER_CATALOG.includes(x as TriggerMeta);
 
+  const forceOpen = query !== '' || category !== 'all';
+  const total = triggers.length + groups.reduce((sum, g) => sum + g.items.length, 0);
+
   return (
-    <div className="oa-panel flex h-full flex-col overflow-hidden">
-      <div className="space-y-2.5 border-b border-border/70 p-3">
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <Plus className="h-4 w-4" aria-hidden />
-          </span>
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-card">
+      <div className="space-y-2 border-b border-border px-3 py-3">
+        <div className="flex items-center justify-between gap-2">
           <div>
-            <h2 className="text-sm font-semibold leading-tight">Palette</h2>
-            <p className="oa-caption">Drag a node onto the canvas</p>
+            <h2 className="text-[13px] font-semibold leading-tight">Palette</h2>
+            <p className="text-[11px] text-muted-foreground">Drag a node onto the canvas</p>
           </div>
+          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
+            {total}
+          </span>
         </div>
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
@@ -133,20 +158,28 @@ export function NodePalette({ editor, disabled = false }: { editor: WorkflowEdit
             className="h-8 rounded-lg border-transparent bg-muted/60 pl-8 text-sm focus:border-primary"
           />
         </div>
-        <Select value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Filter by category" className="h-8 rounded-lg border-transparent bg-muted/60 text-sm">
+        <Select
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          aria-label="Filter by category"
+          className="h-8 rounded-lg border-transparent bg-muted/60 text-sm"
+        >
           <option value="all">All categories</option>
           {definitionsByCategory().map((g) => (
-            <option key={g.category} value={g.category}>{g.category}</option>
+            <option key={g.category} value={g.category}>
+              {g.category}
+            </option>
           ))}
         </Select>
       </div>
-      <div className="oa-scroll flex-1 space-y-4 overflow-y-auto p-3">
+
+      <div className="oa-scroll flex-1 space-y-3 overflow-y-auto p-2">
         {showFavs && (
           <section aria-label="Favorites">
-            <h3 className="oa-caption mb-1.5 flex items-center gap-1 font-medium uppercase tracking-wide">
+            <h3 className="mb-1 flex items-center gap-1 px-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
               <Star className="h-3 w-3" aria-hidden /> Favorites
             </h3>
-            <ul className="space-y-1.5">
+            <ul className="space-y-0.5">
               {favItems.map((item) => (
                 <PaletteRow
                   key={favKey(item)}
@@ -162,12 +195,13 @@ export function NodePalette({ editor, disabled = false }: { editor: WorkflowEdit
             </ul>
           </section>
         )}
+
         {showRecent && (
           <section aria-label="Recent">
-            <h3 className="oa-caption mb-1.5 flex items-center gap-1 font-medium uppercase tracking-wide">
+            <h3 className="mb-1 flex items-center gap-1 px-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
               <History className="h-3 w-3" aria-hidden /> Recent
             </h3>
-            <ul className="space-y-1.5">
+            <ul className="space-y-0.5">
               {recentItems.map((item) => (
                 <PaletteRow
                   key={favKey(item)}
@@ -183,10 +217,15 @@ export function NodePalette({ editor, disabled = false }: { editor: WorkflowEdit
             </ul>
           </section>
         )}
-        {query === '' && category === 'all' && (
-          <section aria-label="Triggers">
-            <h3 className="oa-caption mb-1.5 font-medium uppercase tracking-wide">Triggers</h3>
-            <ul className="space-y-1.5">
+
+        {triggers.length > 0 && (category === 'all' || category === 'Triggers') && (
+          <details open={forceOpen || undefined} className="group/details">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-md px-2 py-1.5 hover:bg-accent/50 [&::-webkit-details-marker]:hidden">
+              <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground transition-transform group-open/details:rotate-90" aria-hidden />
+              <h3 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Triggers</h3>
+              <span className="ml-auto text-[10px] tabular-nums text-muted-foreground" aria-hidden>{triggers.length}</span>
+            </summary>
+            <ul className="mt-0.5 space-y-0.5">
               {triggers.map((t) => (
                 <PaletteRow
                   key={t.type}
@@ -200,12 +239,18 @@ export function NodePalette({ editor, disabled = false }: { editor: WorkflowEdit
                 />
               ))}
             </ul>
-          </section>
+          </details>
         )}
+
         {groups.map((g) => (
-          <section key={g.category} aria-label={g.category}>
-            <h3 className="oa-caption mb-1.5 font-medium uppercase tracking-wide">{g.category}</h3>
-            <ul className="space-y-1.5">
+          <details key={g.category} open={forceOpen || undefined} className="group/details">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-md px-2 py-1.5 hover:bg-accent/50 [&::-webkit-details-marker]:hidden">
+              <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground transition-transform group-open/details:rotate-90" aria-hidden />
+              <span className="oa-category-dot" style={{ background: tint(g.category) }} aria-hidden />
+              <h3 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{g.category}</h3>
+              <span className="ml-auto text-[10px] tabular-nums text-muted-foreground" aria-hidden>{g.items.length}</span>
+            </summary>
+            <ul className="mt-0.5 space-y-0.5">
               {g.items.map((n) => (
                 <PaletteRow
                   key={String(n.type)}
@@ -219,13 +264,15 @@ export function NodePalette({ editor, disabled = false }: { editor: WorkflowEdit
                 />
               ))}
             </ul>
-          </section>
+          </details>
         ))}
+
         {triggers.length === 0 && groups.length === 0 && (
           <p className="py-6 text-center text-sm text-muted-foreground">No palette items match.</p>
         )}
       </div>
-      <p className="border-t border-border/70 p-3 text-[11px] text-muted-foreground">
+
+      <p className="border-t border-border px-3 py-2 text-[11px] text-muted-foreground">
         <span className="oa-kbd mr-1">+</span> adds at center · drag to place freely
       </p>
     </div>
@@ -255,24 +302,28 @@ function PaletteRow({
   onFav: () => void;
   onDragStart: (e: React.DragEvent) => void;
 }) {
+  const category = isTrigger ? 'Triggers' : (item as NodeMeta).category;
+  const color = tint(category);
   return (
     <li
       draggable={!disabled}
       onDragStart={onDragStart}
-      className="group flex cursor-grab items-start gap-2.5 rounded-xl border border-transparent p-2 transition-colors hover:border-border/70 hover:bg-accent/60 active:cursor-grabbing"
+      className={cn(
+        'group flex cursor-grab items-center gap-2 rounded-lg border border-transparent px-1.5 py-1.5 transition-colors hover:border-border/70 hover:bg-accent/50 active:cursor-grabbing',
+        disabled && 'opacity-60',
+      )}
       title={`Drag to canvas, or use the + button (${item.description})`}
     >
+      <GripVertical className="h-3 w-3 shrink-0 text-transparent transition-colors group-hover:text-muted-foreground/50" aria-hidden />
       <span
-        className={cn(
-          'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg',
-          isTrigger ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' : 'bg-primary/10 text-primary',
-        )}
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border/50"
+        style={{ background: color, backgroundColor: `color-mix(in srgb, ${color} 14%, transparent)`, color }}
       >
-        <item.icon className="h-4 w-4" aria-hidden />
+        <item.icon className="h-3.5 w-3.5" aria-hidden />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium leading-tight">{item.label}</span>
-        <span className="block truncate text-xs text-muted-foreground">{item.description}</span>
+        <span className="block truncate text-[12.5px] font-medium leading-tight">{item.label}</span>
+        <span className="block truncate text-[11px] text-muted-foreground">{item.description}</span>
       </span>
       <button
         onClick={onFav}
@@ -280,21 +331,20 @@ function PaletteRow({
         aria-label={fav ? `Remove ${item.label} from favorites` : `Add ${item.label} to favorites`}
         aria-pressed={fav}
         className={cn(
-          'shrink-0 rounded-md p-1.5 transition-opacity hover:bg-background disabled:opacity-40',
-          fav ? 'opacity-100' : 'opacity-60 group-hover:opacity-100 focus:opacity-100',
+          'shrink-0 rounded-md p-1 transition-opacity hover:bg-background disabled:opacity-40',
+          fav ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus:opacity-100',
         )}
       >
-        <Star className={cn('h-3.5 w-3.5', fav ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground')} aria-hidden />
+        <Star className={cn('h-3 w-3', fav ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground')} aria-hidden />
       </button>
       <button
         onClick={onAdd}
         disabled={disabled}
         aria-label={`Add ${item.label} to canvas`}
-        className="shrink-0 rounded-md border border-border/70 bg-background p-1.5 text-muted-foreground opacity-60 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100 focus:opacity-100 disabled:opacity-40"
+        className="shrink-0 rounded-md border border-border/70 bg-background p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100 focus:opacity-100 disabled:opacity-40"
       >
-        <Plus className="h-3.5 w-3.5" aria-hidden />
+        <Plus className="h-3 w-3" aria-hidden />
       </button>
     </li>
   );
 }
-

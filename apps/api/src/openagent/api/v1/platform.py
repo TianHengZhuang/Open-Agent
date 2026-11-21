@@ -20,26 +20,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from openagent.api.dependencies import require_platform_owner
 from openagent.control.configuration import (
-    ConfigEntry, preview_change, resolve_config,
+    preview_change,
 )
-from openagent.control.enterprise import PrivateEnrollment, apply_preset
-from openagent.control.feature_flags import FeatureFlag
+from openagent.control.enterprise import PrivateEnrollment
 from openagent.control.observability import redact
 from openagent.control.privileged import (
-    AuditChain, PrivilegedAuditRecord, StepUpRequirement,
-    classify_operation, step_up_satisfied,
+    PrivilegedAuditRecord,
+    StepUpRequirement,
+    step_up_satisfied,
 )
 from openagent.control.reliability import (
-    Deployment, MaintenanceWindow, rollback_plan,
+    Deployment,
+    MaintenanceWindow,
+    rollback_plan,
 )
 from openagent.control.service import get_control_service
-from openagent.control.types import ActionRisk
-from openagent.db.models.audit_log import AuditLog
 from openagent.db.models.control import (
-    AlertRow, BackupReportRow, ConfigVersionRow, DeploymentRow,
-    FeatureFlagRow, IncidentRow, MaintenanceRow, OperationLockRow,
-    PlatformConfig, PlatformEventRow, PrivateEnrollmentRow,
-    RotationJobRow,
+    AlertRow,
+    BackupReportRow,
+    ConfigVersionRow,
+    DeploymentRow,
+    FeatureFlagRow,
+    IncidentRow,
+    MaintenanceRow,
+    PlatformConfig,
+    PlatformEventRow,
+    PrivateEnrollmentRow,
 )
 from openagent.db.session import get_db
 

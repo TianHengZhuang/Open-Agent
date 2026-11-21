@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const configuredApiBase = (
+  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
+).replace(/\/+$/, '');
+const API_BASE = configuredApiBase.endsWith('/api/v1')
+  ? configuredApiBase
+  : `${configuredApiBase}/api/v1`;
 
 export async function GET(request: NextRequest) {
   return proxyRequest(request, 'GET');

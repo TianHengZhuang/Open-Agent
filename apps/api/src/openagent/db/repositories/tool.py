@@ -2,27 +2,27 @@
 
 from __future__ import annotations
 
-from typing import Optional, List, Dict, Any
-from uuid import UUID
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+from uuid import UUID
 
-from sqlalchemy import select, func, and_, or_, desc
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openagent.db.repositories.base import BaseRepository
 from openagent.db.models import (
     Tool,
-    ToolVersion,
-    ToolProvider,
-    ToolPolicy,
+    ToolCategory,
     ToolExecution,
     ToolExecutionEvent,
     ToolHealth,
-    ToolUsage,
     ToolLifecycleStatus,
-    ToolCategory,
+    ToolPolicy,
+    ToolProvider,
     ToolRiskLevel,
+    ToolUsage,
+    ToolVersion,
 )
+from openagent.db.repositories.base import BaseRepository
 
 
 class ToolRepository(BaseRepository[Tool]):

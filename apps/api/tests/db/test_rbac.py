@@ -58,7 +58,7 @@ async def membership(db_session: AsyncSession, user: User, org: Organization) ->
     membership = await repo.create(
         user_id=user.id,
         organization_id=org.id,
-        role=MembershipRole.MEMBER,
+        legacy_role=MembershipRole.MEMBER,
         status=MembershipStatus.ACTIVE,
     )
     await db_session.commit()
@@ -233,7 +233,7 @@ class TestAuthorizationService:
             authz.require_permission(context, "member:invite")
         assert exc.value.code == "FORBIDDEN"
 
-    async def test_platform_owner_has_all_permissions(self, db_session: AsyncSession, user: User, org: Organization):
+    async def test_platform_owner_has_all_permissions(self, db_session: AsyncSession, user: User, org: Organization, membership: Membership):
         # Make user a platform owner
         from openagent.db.models import PlatformOwner, PlatformOwnerStatus
         platform_owner = PlatformOwner(
@@ -382,6 +382,7 @@ class TestServiceAccount:
         account, _ = await repo.create_service_account(
             organization_id=org.id,
             name="Test SA",
+            description="Test service account",
             created_by=user.id,
             permissions=[permissions["workflow:read"].id, permissions["agent:run"].id],
         )
@@ -470,6 +471,7 @@ class TestRepositoryQueries:
         account, raw_key = await repo.create_service_account(
             organization_id=org.id,
             name="Test SA",
+            description="Test service account",
             created_by=user.id,
             permissions=[permissions["workflow:read"].id],
         )

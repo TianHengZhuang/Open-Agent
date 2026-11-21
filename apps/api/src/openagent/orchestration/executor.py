@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 from uuid import UUID
@@ -160,7 +160,7 @@ class OrchestrationExecutor:
                 try:
                     child = state.child_budget(fraction=1.0)
                     result = await self.runner(spec, spec.assigned_agent_id, child)
-                except BudgetExceeded as exc:
+                except BudgetExceeded:
                     statuses[ext_id] = OrchTaskStatus.FAILED
                     nodes[ext_id].status = OrchTaskStatus.FAILED
                     return False
@@ -259,7 +259,7 @@ class OrchestrationExecutor:
             # Priority: critical first, then fewest dependencies.
             runnable.sort(key=lambda e: (_priority_rank(by_ext[e].priority), len(by_ext[e].dependencies), e))
             results = await asyncio.gather(*(execute_one(e) for e in runnable))
-            for ext_id, ok in zip(runnable, results):
+            for ext_id, ok in zip(runnable, results, strict=False):
                 pending.discard(ext_id)
                 # Retry within budget before giving up.
                 spec = by_ext[ext_id]
@@ -363,7 +363,7 @@ async def default_runtime_runner(
         AgentLoopContext,
         model_provider_registry,
     )
-    from openagent.runtime.engine import ExpressionEngine, ConditionEngine
+    from openagent.runtime.engine import ConditionEngine, ExpressionEngine
 
     _ = ExpressionEngine, ConditionEngine
     # Resolve model: caller may override via task input; default to registry default.
@@ -407,7 +407,7 @@ async def default_runtime_runner(
         result = await asyncio.wait_for(loop.run(), timeout=spec.timeout_seconds)
     except asyncio.TimeoutError:
         return {"status": "failed", "error": "agent execution timed out", "error_code": "TIMEOUT"}
-    duration = (datetime.now(timezone.utc) - started).total_seconds()
+    (datetime.now(timezone.utc) - started).total_seconds()
     status = getattr(result, "status", None)
     status_value = getattr(status, "value", str(status))
     if status_value in ("succeeded", "completed"):

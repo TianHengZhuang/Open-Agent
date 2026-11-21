@@ -1,18 +1,18 @@
-from typing import Optional, List
+from typing import List, Optional
 from uuid import UUID
-from fastapi import Depends, HTTPException, Request, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
+from fastapi import Depends, HTTPException, Request, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from openagent.core.config import get_settings
+from openagent.db.models import Membership, MembershipStatus, Organization, User
 from openagent.db.session import get_db
-from openagent.db.models import User, Organization, Membership, MembershipStatus, Session
 from openagent.services.auth import AuthenticationService
 from openagent.services.authorization import (
-    AuthorizationService,
     AuthorizationContext,
-    AuthorizationError,
+    AuthorizationService,
 )
-from openagent.core.config import get_settings
 
 
 async def get_current_organization(
@@ -39,6 +39,35 @@ async def get_current_organization(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"error": "Organization not found", "code": "ORG_NOT_FOUND"},
+            )
+
+        # A header alone is never authority: the authenticated user must hold
+        # an active membership in the requested organization.
+        settings = get_settings()
+        token = request.cookies.get(settings.SESSION_COOKIE_NAME)
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"error": "Authentication required", "code": "UNAUTHORIZED"},
+            )
+        auth_service = AuthenticationService(db)
+        session = await auth_service.get_session(token)
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"error": "Authentication required", "code": "UNAUTHORIZED"},
+            )
+        membership = await db.execute(
+            select(Membership.id).where(
+                Membership.user_id == session.user_id,
+                Membership.organization_id == org.id,
+                Membership.status == MembershipStatus.ACTIVE,
+            )
+        )
+        if membership.scalar_one_or_none() is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"error": "Access denied", "code": "FORBIDDEN"},
             )
         return org
     
@@ -85,6 +114,18 @@ async def get_auth_context(
                     organization = org_result.scalar_one_or_none()
                     
                     if organization and user:
+                        membership = await db.execute(
+                            select(Membership.id).where(
+                                Membership.user_id == user.id,
+                                Membership.organization_id == organization.id,
+                                Membership.status == MembershipStatus.ACTIVE,
+                            )
+                        )
+                        if membership.scalar_one_or_none() is None:
+                            raise HTTPException(
+                                status_code=status.HTTP_403_FORBIDDEN,
+                                detail={"error": "Access denied", "code": "FORBIDDEN"},
+                            )
                         authz_service = AuthorizationService(db)
                         auth_context = await authz_service.get_user_context(user.id, organization.id)
                 except ValueError:

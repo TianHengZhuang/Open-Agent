@@ -1,18 +1,19 @@
-import uuid
-from datetime import datetime
-from typing import Optional, List, TYPE_CHECKING
-from sqlalchemy import String, Text, JSON, ForeignKey, Index, UniqueConstraint, Enum as SQLEnum
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
 import enum
+import uuid
+from typing import TYPE_CHECKING, List, Optional
 
-from openagent.db.models.base import Base, TimestampMixin, SoftDeleteMixin, UUIDMixin
+from sqlalchemy import JSON, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from openagent.db.models.base import Base, SoftDeleteMixin, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
-    from openagent.db.models.organization import Organization
-    from openagent.db.models.user import User
-    from openagent.db.models.role import Role
     from openagent.db.models.memory import Memory
+    from openagent.db.models.organization import Organization
+    from openagent.db.models.role import Role
+    from openagent.db.models.user import User
 
 
 class Team(TimestampMixin, SoftDeleteMixin, UUIDMixin, Base):

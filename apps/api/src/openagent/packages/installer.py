@@ -28,10 +28,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openagent.db.models.package import PackageInstallStatus
-from openagent.packages import config_schema, dependencies as dep_module
+from openagent.packages import config_schema, telemetry
+from openagent.packages import dependencies as dep_module
 from openagent.packages import graph as graph_module
 from openagent.packages import security as security_module
-from openagent.packages import telemetry
 from openagent.packages import validation as validation_module
 from openagent.packages.manifest import parse_manifest
 from openagent.packages.types import PackageStatus
@@ -473,7 +473,7 @@ async def _materialize(
     installed_by,
 ) -> list[dict[str, str]]:
     """Create real tenant rows for resources; return ref records."""
-    from openagent.db.models.agent import Agent, AgentType, AgentVersion, AgentStatus
+    from openagent.db.models.agent import Agent, AgentStatus, AgentType, AgentVersion
     from openagent.db.models.package import (
         InstallationResource,
         Preset,

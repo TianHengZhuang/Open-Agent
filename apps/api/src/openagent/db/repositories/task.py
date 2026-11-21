@@ -1,11 +1,12 @@
-from typing import Optional, List
-from uuid import UUID
 from datetime import datetime, timezone
-from sqlalchemy import select, func, update
+from typing import List, Optional
+from uuid import UUID
+
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from openagent.db.models.task import Task, TaskStatus
 from openagent.db.repositories.base import BaseRepository
-from openagent.db.models.task import Task, TaskStatus, TaskPriority
 
 
 class TaskRepository(BaseRepository[Task]):

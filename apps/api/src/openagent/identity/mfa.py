@@ -116,7 +116,8 @@ def webauthn_verify_registration(response: dict[str, Any]) -> WebAuthnCredential
 def mint_recovery_codes(count: int = 10) -> tuple[list[str], str]:
     """Returns (plaintext_codes, argon2_hash). Plaintext is shown ONCE."""
     from openagent.core.security.password import (
-        generate_recovery_codes, hash_recovery_codes,
+        generate_recovery_codes,
+        hash_recovery_codes,
     )
     codes = generate_recovery_codes(count=count)
     return codes, hash_recovery_codes(codes)

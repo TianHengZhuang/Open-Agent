@@ -1,8 +1,8 @@
 """OpenAgent multi-agent orchestration package."""
 
 from openagent.orchestration.types import (
-    AggregationStrategy,
     AgentMessageType,
+    AggregationStrategy,
     Budget,
     ContextScope,
     DependencyPolicy,

@@ -54,7 +54,6 @@ def _ssrf_floor(host: str) -> Optional[str]:
     identity layer stays dependency-light and self-hostable; full HTTP
     paths (connectors/browser/MCP/tools) enforce the complete netsec
     engine including DNS-rebinding and redirect checks."""
-    from urllib.parse import urlparse
     target = host.strip().lower()
     if target in ("localhost", "metadata.google.internal") or \
             target.endswith(".internal"):
@@ -83,6 +82,12 @@ def _full_ssrf_check(url: str) -> Optional[str]:
         assert_url_safe(url)
         return None
     except SSRFError as exc:
+        # Name-resolution failures are settled by decide_ip at connect time;
+        # literal private/metadata addresses are already blocked by the floor.
+        message = str(exc).lower()
+        if ("resolve" in message or "resolution" in message
+                or "cannot verify" in message):
+            return None
         return f"SSRF guard: {exc}"
     except Exception:
         return None  # DNS-dependent checks degrade; policy applies

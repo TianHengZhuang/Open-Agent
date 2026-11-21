@@ -1,9 +1,9 @@
-from typing import Optional, Callable, Awaitable
+from typing import Awaitable, Callable, Optional
+
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.types import ASGIApp
 from starlette.requests import Request
-from starlette.responses import Response, JSONResponse
-from starlette.datastructures import Headers
+from starlette.responses import JSONResponse, Response
+from starlette.types import ASGIApp
 
 from openagent.core.config import get_settings
 
@@ -230,8 +230,6 @@ def create_security_middleware(app: ASGIApp) -> ASGIApp:
         csp_policy = get_development_csp_policy()
     
     # Add middleware in reverse order (last added = first executed)
-    from starlette.middleware import Middleware
-    from starlette.middleware.trustedhost import TrustedHostMiddleware as StarletteTrustedHostMiddleware
     
     middlewares = [
         Middleware(
@@ -247,6 +245,5 @@ def create_security_middleware(app: ASGIApp) -> ASGIApp:
 
 
 # Import needed for ASGIApp
-from starlette.types import ASGIApp
 from starlette.middleware import Middleware
-from starlette.middleware.trustedhost import TrustedHostMiddleware as StarletteTrustedHostMiddleware
+from starlette.types import ASGIApp

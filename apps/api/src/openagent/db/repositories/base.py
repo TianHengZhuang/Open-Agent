@@ -1,11 +1,10 @@
-from typing import TypeVar, Generic, Optional, List, Type, Any
+from typing import Generic, List, Optional, Type, TypeVar
 from uuid import UUID
-from sqlalchemy import select, func, delete, update
+
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import DeclarativeBase
 
-from openagent.db.models.base import Base, UUIDMixin, TimestampMixin
-
+from openagent.db.models.base import Base
 
 ModelType = TypeVar("ModelType", bound=Base)
 

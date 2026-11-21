@@ -42,6 +42,7 @@ from openagent.db.models import (
 MAX_SYNC_DELAY_SECONDS = 10.0
 HTTP_NODE_TIMEOUT_SECONDS = 20.0
 MAX_LOOP_ITEMS = 1000
+MAX_SUBWORKFLOW_DEPTH = 5
 
 _EXPR_RE = re.compile(r"\{\{\s*(.+?)\s*\}\}", re.S)
 _PATH_RE = re.compile(r"([^.\[\]]+)|\[(\d+)\]")
@@ -68,6 +69,13 @@ class RunContext:
     outputs: Dict[str, Any] = field(default_factory=dict)
     item: Any = None
     index: int = 0
+    # Sub-workflow plumbing (n8n "Execute Workflow"): the DB session used to
+    # resolve the child definition, the tenant it must belong to, the current
+    # nesting depth and the call stack used to reject cycles.
+    db: Any = None
+    organization_id: Optional[UUID] = None
+    depth: int = 0
+    stack: Tuple[str, ...] = ()
 
     def child(self, item: Any, index: int) -> "RunContext":
         return RunContext(
@@ -76,6 +84,10 @@ class RunContext:
             outputs=self.outputs,
             item=item,
             index=index,
+            db=self.db,
+            organization_id=self.organization_id,
+            depth=self.depth,
+            stack=self.stack,
         )
 
 
@@ -547,6 +559,123 @@ async def _exec_trigger(trigger: Dict[str, Any], trigger_input: Dict[str, Any], 
     return NodeOutcome(status="succeeded", outputs=payload)
 
 
+async def _exec_subworkflow(node: Dict[str, Any], inputs: Dict[str, Any], ctx: RunContext) -> NodeOutcome:
+    """Run another workflow in-process (n8n "Execute Workflow").
+
+    Only workflows in the same organization are reachable. Nesting is bounded
+    by ``MAX_SUBWORKFLOW_DEPTH`` and the call stack rejects cycles, so a
+    workflow cannot recurse into itself.
+    """
+    if ctx.db is None:
+        return NodeOutcome(
+            status="failed",
+            error="Subworkflow node requires a database session",
+            error_code="NO_CONTEXT",
+        )
+
+    raw_target = str(resolve(_cfg(node, "workflow_id") or "", ctx) or "").strip()
+    if not raw_target:
+        return NodeOutcome(
+            status="failed",
+            error="Subworkflow node needs config.workflow_id",
+            error_code="INVALID_CONFIG",
+        )
+    try:
+        target_id = UUID(raw_target)
+    except (TypeError, ValueError):
+        return NodeOutcome(
+            status="failed",
+            error=f"Subworkflow id {raw_target!r} is not a valid workflow id",
+            error_code="INVALID_CONFIG",
+        )
+
+    if ctx.depth >= MAX_SUBWORKFLOW_DEPTH:
+        return NodeOutcome(
+            status="failed",
+            error=f"Subworkflow nesting exceeded {MAX_SUBWORKFLOW_DEPTH} levels",
+            error_code="SUBWORKFLOW_DEPTH_EXCEEDED",
+        )
+    if str(target_id) in ctx.stack:
+        return NodeOutcome(
+            status="failed",
+            error=f"Subworkflow cycle detected at {target_id}",
+            error_code="SUBWORKFLOW_CYCLE",
+        )
+
+    query = select(Workflow).where(
+        Workflow.id == target_id,
+        Workflow.deleted_at.is_(None),
+    )
+    if ctx.organization_id is not None:
+        query = query.where(Workflow.organization_id == ctx.organization_id)
+    target = (await ctx.db.execute(query)).scalar_one_or_none()
+    if target is None:
+        return NodeOutcome(
+            status="failed",
+            error=f"Workflow {raw_target} was not found in this organization",
+            error_code="SUBWORKFLOW_NOT_FOUND",
+        )
+
+    version = (
+        await ctx.db.execute(
+            select(WorkflowVersion)
+            .where(WorkflowVersion.workflow_id == target.id)
+            .order_by(WorkflowVersion.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if version is None:
+        return NodeOutcome(
+            status="failed",
+            error=f"Workflow '{target.name}' has no saved version to run",
+            error_code="SUBWORKFLOW_NO_VERSION",
+        )
+
+    payload = resolve(_cfg(node, "input"), ctx)
+    if payload is None:
+        payload = _merged_input(inputs)
+    if not isinstance(payload, dict):
+        payload = {"input": payload}
+
+    parent = RunContext(
+        db=ctx.db,
+        organization_id=ctx.organization_id,
+        depth=ctx.depth + 1,
+        stack=ctx.stack + (str(target_id),),
+    )
+    runs, output, status = await execute_definition(
+        version.definition or {}, payload, parent=parent
+    )
+
+    failed = [run for run in runs if run["status"] == "failed" and not run.get("continued")]
+    outputs = {
+        "workflow_id": str(target.id),
+        "workflow_name": target.name,
+        "version": version.version,
+        "status": status,
+        "output": output.get("terminal") or output,
+        "steps": len(runs),
+        "node_runs": [
+            {
+                "node_id": run["node_id"],
+                "node_name": run["node_name"],
+                "status": run["status"],
+                "error": run["error"],
+            }
+            for run in runs
+        ],
+    }
+    if failed:
+        return NodeOutcome(
+            status="failed",
+            outputs=outputs,
+            error="; ".join(f"{r['node_name']}: {r['error']}" for r in failed if r.get("error"))[:1000]
+            or f"Subworkflow '{target.name}' failed",
+            error_code="SUBWORKFLOW_FAILED",
+        )
+    return NodeOutcome(status="succeeded", outputs=outputs)
+
+
 async def _exec_node(node: Dict[str, Any], inputs: Dict[str, Any], ctx: RunContext) -> NodeOutcome:
     node_type = str(node.get("type") or "")
     merged = _merged_input(inputs)
@@ -757,6 +886,9 @@ async def _exec_node(node: Dict[str, Any], inputs: Dict[str, Any], ctx: RunConte
             ports=[],
         )
 
+    if node_type == "subworkflow":
+        return await _exec_subworkflow(node, inputs, ctx)
+
     provider_nodes = {
         "agent": "an agent",
         "prompt": "a model provider",
@@ -780,7 +912,6 @@ async def _exec_node(node: Dict[str, Any], inputs: Dict[str, Any], ctx: RunConte
         "quality_gate": "evaluation inputs",
         "retry": "evaluation inputs",
         "correct": "evaluation inputs",
-        "subworkflow": "a published subworkflow",
     }
     needs = provider_nodes.get(node_type)
     if needs is not None:
@@ -819,8 +950,13 @@ def _edge_active(edge: Dict[str, Any], source_status: str, source_ports: List[st
 async def execute_definition(
     definition: Dict[str, Any],
     trigger_input: Optional[Dict[str, Any]] = None,
+    parent: Optional[RunContext] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any], str]:
-    """Run a definition. Returns (node_runs, output, overall_status)."""
+    """Run a definition. Returns (node_runs, output, overall_status).
+
+    ``parent`` carries the sub-workflow plumbing (session, tenant, depth,
+    call stack) when this definition is executed as a sub-workflow.
+    """
     trigger_input = trigger_input or {}
     triggers: List[Dict[str, Any]] = list(definition.get("triggers") or [])
     nodes: List[Dict[str, Any]] = list(definition.get("nodes") or [])
@@ -831,7 +967,14 @@ async def execute_definition(
         if isinstance(variable, dict) and variable.get("name"):
             variables[str(variable["name"])] = variable.get("default")
 
-    ctx = RunContext(trigger={}, variables=variables)
+    ctx = RunContext(
+        trigger={},
+        variables=variables,
+        db=parent.db if parent else None,
+        organization_id=parent.organization_id if parent else None,
+        depth=parent.depth if parent else 0,
+        stack=parent.stack if parent else (),
+    )
     runs: List[Dict[str, Any]] = []
     results: Dict[str, Dict[str, Any]] = {}
 
@@ -1035,7 +1178,11 @@ async def run_workflow(
     execution_id = execution.id
 
     try:
-        node_runs, output, overall = await execute_definition(definition, trigger_input or {})
+        node_runs, output, overall = await execute_definition(
+            definition,
+            trigger_input or {},
+            parent=RunContext(db=db, organization_id=organization_id),
+        )
     except Exception as exc:  # engine failure is reported, never swallowed
         node_runs, output, overall = [], {"status": "failed", "error": str(exc)}, "failed"
         execution.error_message = str(exc)
@@ -1128,6 +1275,8 @@ async def run_single_node(
     definition: Dict[str, Any],
     node_id: str,
     trigger_input: Optional[Dict[str, Any]] = None,
+    db: Optional[AsyncSession] = None,
+    organization_id: Optional[UUID] = None,
 ) -> Dict[str, Any]:
     """Execute one node (or trigger) of a definition — n8n's "Execute step".
 
@@ -1144,7 +1293,7 @@ async def run_single_node(
         if isinstance(variable, dict) and variable.get("name"):
             variables[str(variable["name"])] = variable.get("default")
 
-    ctx = RunContext(trigger={}, variables=variables)
+    ctx = RunContext(trigger={}, variables=variables, db=db, organization_id=organization_id)
     if triggers:
         await _exec_trigger(triggers[0], trigger_input, ctx)
     else:

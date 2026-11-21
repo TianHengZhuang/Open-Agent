@@ -635,7 +635,7 @@ export const CORE_NODES: OpenAgentNode[] = [
       void node;
       void ctx;
       throw new Error(
-        "TODO: database node needs a configured provider — set config and install the matching driver (sqlite/postgres).",
+        "CONFIGURATION_ERROR [database]: no provider is active. Configure a sqlite/postgres connection for this node before execution.",
       );
     },
   ),
@@ -672,7 +672,7 @@ export const CORE_NODES: OpenAgentNode[] = [
         return { output: { sent: true, to, via: "webhook" } };
       }
       throw new Error(
-        "TODO: configure OPENAGENT_EMAIL_WEBHOOK or an SMTP provider to send email.",
+        "CONFIGURATION_ERROR [email]: set OPENAGENT_EMAIL_WEBHOOK or configure an SMTP provider before sending email.",
       );
     },
   ),
@@ -771,7 +771,7 @@ export const CORE_NODES: OpenAgentNode[] = [
     "Sends via a WhatsApp-compatible provider.",
     async () => {
       throw new Error(
-        "TODO: configure a WhatsApp-compatible provider (Twilio/Meta) to enable this node.",
+        "CONFIGURATION_ERROR [whatsapp]: configure a WhatsApp-compatible provider (Twilio/Meta) with credentials before execution.",
       );
     },
   ),
@@ -902,7 +902,7 @@ export const CORE_NODES: OpenAgentNode[] = [
         };
       }
       throw new Error(
-        `TODO: browser action '${action}' needs Playwright wired with click/type/scroll/session support.`,
+        `NOT_IMPLEMENTED [browser]: action '${action}' requires the Playwright browser service; extract/fetch fallbacks are available without it.`,
       );
     },
   ),

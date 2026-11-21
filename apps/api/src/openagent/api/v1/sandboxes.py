@@ -426,6 +426,7 @@ async def _profile_key(db: AsyncSession, organization_id: UUID, name: str) -> st
     except ValueError:
         return name
     from sqlalchemy import select as _select
+
     from openagent.db.models.sandbox import SandboxProfileRow as _Row
     row = await db.scalar(_select(_Row).where(
         _Row.id == row_id, _Row.organization_id == organization_id))

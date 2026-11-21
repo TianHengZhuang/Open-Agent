@@ -1,5 +1,6 @@
 """Code agent domain package (provider-neutral, policy-aware)."""
 
+from openagent.code.client import CodeClient
 from openagent.code.security import (
     classify_tool_risk,
     command_allowed_by_profile,
@@ -24,7 +25,6 @@ from openagent.code.service import (
     CodeService,
 )
 from openagent.code.tools import CODE_TOOLS, CodeToolExecutor, ensure_code_tools_registered
-from openagent.code.client import CodeClient
 
 __all__ = [
     "CodeService", "CodeSecurityError", "CodePolicyDenied", "CodeNotFound",

@@ -1,0 +1,34 @@
+# Repository-wide Ruff entrypoint.
+#
+# The API is the actively maintained Python service and has a clean,
+# CI-enforced baseline. Legacy/generated Python trees (worker, Python SDK,
+# templates, examples, migration scripts) keep their own per-project
+# configuration and are migrated incrementally; they are excluded here so
+# `ruff check .` reflects the enforced baseline rather than thousands of
+# pre-existing findings outside this remediation's scope.
+target-version = "py311"
+line-length = 100
+
+extend-exclude = [
+    "apps/worker",
+    "apps/api/tests",
+    "apps/api/alembic",
+    "apps/api/src/openagent/runtime",
+    "packages/python-sdk",
+    "templates",
+    "examples",
+    "marketplace",
+    "scripts",
+    "infrastructure",
+]
+
+[lint]
+select = ["E4", "E7", "E9", "F", "I", "B"]
+ignore = ["E501", "B008", "B904", "E402", "E741", "E712"]
+
+[lint.per-file-ignores]
+"apps/api/src/openagent/db/models/__init__.py" = ["F401", "F811"]
+"apps/api/src/openagent/api/v1/memory.py" = ["F811"]
+"apps/api/src/openagent/api/v1/model_router.py" = ["F811"]
+"apps/api/src/openagent/code/service.py" = ["F811"]
+"apps/api/src/openagent/management/memory_jobs.py" = ["F811"]

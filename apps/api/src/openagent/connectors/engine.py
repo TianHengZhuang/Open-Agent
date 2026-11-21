@@ -144,7 +144,8 @@ class ConnectorEngine:
         a refresh_token is available. Returns the new secrets dict, or None
         when no refresh applies. Never logs token material."""
         try:
-            from datetime import datetime, timezone as _tz
+            from datetime import datetime
+            from datetime import timezone as _tz
 
             expires_at = getattr(credential, "expires_at", None)
             if expires_at is None:
@@ -206,9 +207,10 @@ class ConnectorEngine:
             if tokens.expires_in:
                 from datetime import timedelta
                 credential.expires_at = now + timedelta(seconds=tokens.expires_in)
+            import json as _json
+
             from openagent.connectors.crypto import encrypt_secret
             from openagent.core.config import get_settings
-            import json as _json
             settings = get_settings()
             credential.encrypted_data = encrypt_secret(
                 settings.ENCRYPTION_KEY, _json.dumps(new_data),
@@ -506,7 +508,6 @@ class ConnectorEngine:
         import time as _time
 
         from openagent.connectors import ratelimit as _ratelimits
-        from openagent.connectors.config import get_connector_settings
         now = _time.time()
         per_minute = int(getattr(action, "rate_limit_per_minute", 60) or 60)
         key = (str(connection.id), str(getattr(action, "id", "")))

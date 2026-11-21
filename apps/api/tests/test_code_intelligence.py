@@ -19,6 +19,7 @@ def _tree(root: Path):
         'import { x } from "./lib";\n\nexport class App {\n  start(): void {}\n}\n'
         'export function boot(): void {}\n',
         encoding="utf-8")
+    (root / "tests").mkdir(parents=True, exist_ok=True)
     (root / "tests" / "test_auth.py").write_text(
         "def test_login():\n    assert True\n", encoding="utf-8")
     (root / "node_modules" / "dep").mkdir(parents=True)

@@ -9,7 +9,7 @@ errors. Never silently defaults into broader permissions.
 from __future__ import annotations
 
 import re
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator

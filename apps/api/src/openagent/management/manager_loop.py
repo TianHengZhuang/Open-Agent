@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from openagent.management.types import ManagerLoopBudget, ManagerLoopState, MANAGER_LOOP_ORDER
+from openagent.management.types import MANAGER_LOOP_ORDER, ManagerLoopBudget, ManagerLoopState
 
 
 @dataclass
@@ -54,7 +54,7 @@ class ManagerDecisionLoop:
     def step(self, loop: ManagerLoopState_, observation: LoopObservation) -> LoopStep:
         """Advance one controlled step based on structured observation."""
         self._check_budget(loop, observation)
-        idx = MANAGER_LOOP_ORDER.index(loop.state)
+        MANAGER_LOOP_ORDER.index(loop.state)
         current = loop.state
 
         if current == ManagerLoopState.OBSERVE:

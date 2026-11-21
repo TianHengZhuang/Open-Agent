@@ -17,8 +17,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openagent.db.session import get_db
 from openagent.db.models import Workflow, WorkflowStatus, WorkflowVersion
+from openagent.db.session import get_db
 from openagent.runtime.local_engine import run_workflow
 
 router = APIRouter(prefix="/hooks", tags=["workflow-hooks"])

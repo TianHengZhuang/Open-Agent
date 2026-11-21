@@ -26,7 +26,7 @@ def compress_observation(
     budget = max_chars or BUDGETS.get(strategy, 6000)
     lines: list[str] = [f"Current URL: {url}", f"Page title: {title}", "", "Visible interactive elements:"]
     seen: set[str] = set()
-    for i, el in enumerate(elements):
+    for _i, el in enumerate(elements):
         if not isinstance(el, dict):
             continue
         if el.get("visible") is False:

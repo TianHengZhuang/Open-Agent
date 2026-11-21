@@ -2,29 +2,39 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Optional, List, Dict, Any
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func, or_
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openagent.db.session import get_db
-from openagent.db.models import (
-    Agent,
-    AgentVersion,
-    AgentRun,
-    AgentRunStatus,
-)
-from openagent.db.repositories import AgentRepository, AgentVersionRepository
-from openagent.schemas.base import ApiErrorResponse, PaginatedResponse
 from openagent.api.dependencies import (
     get_current_org_context,
     require_permission,
 )
-from openagent.services.workflow_definition import validate_definition
+from openagent.db.models import (
+    Agent,
+    AgentRun,
+    AgentRunStatus,
+    AgentVersion,
+)
+from openagent.db.pagination import create_pagination_meta
+from openagent.db.repositories import (
+    AgentRepository,
+    AgentRunRepository,
+    AgentVersionRepository,
+)
+from openagent.db.session import get_db
+from openagent.schemas.base import ApiErrorResponse, PaginatedResponse
+from openagent.services.workflow_definition import (
+    build_envelope,
+    empty_definition,
+    parse_envelope,
+    validate_definition,
+)
 
 router = APIRouter(prefix="/organizations/{organization_id}/agents", tags=["agents"])
 
@@ -300,7 +310,6 @@ async def list_agents(
         base_dict["latest_version"] = latest_versions.get(agent.id)
         items.append(AgentDetailResponse(**base_dict))
 
-    from openagent.db.pagination import create_pagination_meta
     return AgentListResponse(data=items, meta=create_pagination_meta(page, page_size, total))
 
 
@@ -354,8 +363,7 @@ async def create_agent(
     
     # Create initial version if definition provided
     if data.configuration:
-        from openagent.services.workflow_definition import empty_definition
-        version = await AgentVersionRepository(db).create(
+        await AgentVersionRepository(db).create(
             agent_id=agent.id,
             version="v1",
             name=data.name,
@@ -508,7 +516,6 @@ async def list_versions(
     
     items = [AgentVersionResponse.model_validate(v) for v in versions]
     
-    from openagent.db.pagination import create_pagination_meta
     return VersionListResponse(data=items, meta=create_pagination_meta(page, page_size, total))
 
 
@@ -534,7 +541,7 @@ async def create_version(
 ):
     """Create a new version of an agent."""
     await require_permission("agent:update")(request, db)
-    agent = await _get_agent_or_404(db, organization_id, agent_id)
+    await _get_agent_or_404(db, organization_id, agent_id)
     
     version = data.get("version")
     if not version:
@@ -587,7 +594,7 @@ async def publish_version(
 ):
     """Publish a version (validate and activate)."""
     await require_permission("agent:update")(request, db)
-    agent = await _get_agent_or_404(db, organization_id, agent_id)
+    await _get_agent_or_404(db, organization_id, agent_id)
     
     repo = AgentVersionRepository(db)
     row = await repo.get_by_version(agent_id, version)
@@ -631,7 +638,7 @@ async def unpublish_version(
 ):
     """Unpublish a version (return to draft)."""
     await require_permission("agent:update")(request, db)
-    agent = await _get_agent_or_404(db, organization_id, agent_id)
+    await _get_agent_or_404(db, organization_id, agent_id)
     
     repo = AgentVersionRepository(db)
     row = await repo.get_by_version(agent_id, version)
@@ -664,7 +671,7 @@ async def restore_version(
 ):
     """Restore a version as a new draft."""
     await require_permission("agent:update")(request, db)
-    agent = await _get_agent_or_404(db, organization_id, agent_id)
+    await _get_agent_or_404(db, organization_id, agent_id)
     
     repo = AgentVersionRepository(db)
     snapshot = await repo.get_by_version(agent_id, version)
@@ -748,9 +755,9 @@ async def run_agent(
     await db.commit()
     
     # Enqueue execution job
-    from openagent.worker.queue import JobQueue, Job, RetryPolicy
-    from openagent.worker.config import WorkerSettings
     import redis.asyncio as redis
+    from openagent.worker.config import WorkerSettings
+    from openagent.worker.queue import Job, JobQueue, RetryPolicy
     
     settings = WorkerSettings()
     redis_client = redis.from_url(settings.REDIS_URL, encoding="utf-8", decode_responses=True)
@@ -816,7 +823,6 @@ async def list_runs(
     
     items = [AgentRunResponse.model_validate(r) for r in runs]
     
-    from openagent.db.pagination import create_pagination_meta
     return AgentRunListResponse(data=items, meta=create_pagination_meta(page, page_size, total))
 
 
@@ -1050,7 +1056,6 @@ async def import_agent(
     """Import a workflow from an export envelope or raw definition."""
     await require_permission("workflow:import")(request, db)
     
-    from openagent.services.workflow_definition import parse_envelope
     
     parsed, parse_error = parse_envelope(data.payload)
     if parse_error or not parsed:
@@ -1098,7 +1103,6 @@ async def import_agent(
     await db.refresh(workflow)
     
     # Create version
-    from openagent.services.workflow_definition import empty_definition
     from openagent.db.repositories import AgentVersionRepository
     version_repo = AgentVersionRepository(db)
     await version_repo.create(
@@ -1128,10 +1132,9 @@ async def export_agent(
     db: AsyncSession = Depends(get_db),
 ):
     """Export a workflow as a portable envelope."""
-    from openagent.services.workflow_definition import build_envelope
     
     await require_permission("workflow:read")(request, db)
-    workflow = await _get_workflow_or_404(db, organization_id, workflow_id)
+    workflow = await _get_agent_or_404(db, organization_id, agent_id)
     
     if version:
         repo = AgentVersionRepository(db)
@@ -1201,28 +1204,3 @@ async def _get_agent_or_404(db: AsyncSession, organization_id: UUID, agent_id: U
     return agent
 
 
-# Need to add imports
-from fastapi import APIRouter, Depends, Request, HTTPException, status, Query
-from pydantic import BaseModel, Field
-from sqlalchemy import select, func, or_
-from sqlalchemy.ext.asyncio import AsyncSession
-from uuid import UUID
-from datetime import datetime, timezone
-import re
-
-from openagent.db.session import get_db
-from openagent.db.models import Agent, AgentVersion, AgentRun, AgentRunStatus
-from openagent.db.repositories import AgentRepository, AgentVersionRepository
-from openagent.schemas.base import ApiErrorResponse, PaginatedResponse, PaginationParams, PaginationMeta
-from openagent.api.dependencies import get_current_org_context, require_permission
-from openagent.services.workflow_definition import validate_definition, empty_definition, slugify
-from openagent.services.workflow_definition import parse_envelope, build_envelope, migrate_definition
-from openagent.api.dependencies import get_current_org_context, require_permission
-from openagent.schemas.base import ApiErrorResponse, PaginatedResponse
-from openagent.api.dependencies import get_current_org_context, require_permission
-from openagent.db.pagination import create_pagination_meta
-
-router = APIRouter(prefix="/organizations/{organization_id}/agents", tags=["agents"])
-
-# Need to add AgentRunRepository
-from openagent.db.repositories import AgentRunRepository

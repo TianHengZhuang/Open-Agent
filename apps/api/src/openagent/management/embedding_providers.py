@@ -6,11 +6,9 @@ import asyncio
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Optional, Dict, Any
-from uuid import UUID
+from typing import Any, Dict, List, Optional
 
 import structlog
-from openagent.core.config import get_settings
 
 logger = structlog.get_logger("memory.embedding")
 
@@ -132,7 +130,7 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
         self._base_url = base_url.rstrip('/')
         self._dimensions = dimensions
         self._timeout = timeout
-        self._session: Optional[aiohttp.ClientSession] = None
+        self._session: Optional["aiohttp.ClientSession"] = None
 
     @property
     def model_name(self) -> str:
@@ -142,7 +140,7 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
     def dimensions(self) -> int:
         return self._dimensions
 
-    async def _get_session(self) -> aiohttp.ClientSession:
+    async def _get_session(self) -> Any:
         if self._session is None or self._session.closed:
             import aiohttp
             self._session = aiohttp.ClientSession(
@@ -154,7 +152,7 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
         if not texts:
             return []
         
-        session = await self._get_session()
+        await self._get_session()
         results = []
         
         for text in texts:

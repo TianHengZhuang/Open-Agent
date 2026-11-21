@@ -59,17 +59,22 @@ test packages may be removed without notice.
 
 ### Authentication & Authorization
 
-- JWT-based authentication with short-lived access tokens
-- Refresh token rotation
+- Opaque, high-entropy session tokens (SHA-256 hashes stored server-side —
+  raw tokens are never persisted)
+- HttpOnly, `SameSite=Lax` session cookies, forced `Secure` in production
+- Double-submit CSRF protection for cookie-authenticated mutations
 - API key management with scoping
-- Role-based access control (RBAC) for organizations
-- Password hashing with bcrypt (cost factor 12)
+- Application-layer, organization-scoped RBAC (235 routes / 535 permission
+  checks); every org-scoped query filters by `organization_id`
+- Argon2 password hashing
 
 ### Data Protection
 
-- Encryption at rest for sensitive data (API keys, secrets)
-- TLS 1.3 for all network communication
-- PostgreSQL with row-level security policies
+- Fernet envelope encryption with HKDF-derived keys for stored provider
+  credentials (API keys, OAuth tokens, secrets)
+- TLS for all network communication (terminate HTTPS in production)
+- PostgreSQL/SQLite persistence; tenant isolation is enforced in the
+  repository/application layer (no database RLS dependency)
 - Automatic secret redaction in logs
 - Secure password reset flows
 
@@ -78,7 +83,14 @@ test packages may be removed without notice.
 - Input validation with Pydantic/Zod at API boundaries
 - CORS configured per environment
 - Security headers (CSP, HSTS, X-Frame-Options, etc.)
-- Rate limiting on authentication endpoints
+- Process-wide rate limiting on authentication endpoints, keyed on the
+  socket peer; forwarded headers are trusted only from configured
+  `TRUSTED_PROXY_CIDRS`
+- CSRF double-submit tokens and origin checks for cookie-authenticated
+  mutations
+- SSRF validation for outbound HTTP tools/connectors: http(s) only, DNS
+  resolution checks, blocking of loopback/RFC1918/link-local/metadata
+  addresses, and re-validation of every redirect (max 5)
 - SQL injection prevention via parameterized queries
 - XSS prevention via React's built-in escaping
 
@@ -185,7 +197,8 @@ openssl rand -hex 32  # For ENCRYPTION_KEY
 ### Production Checklist
 
 - [ ] Use strong, unique `SECRET_KEY` and `ENCRYPTION_KEY`
-- [ ] Enable HTTPS/TLS termination (reverse proxy)
+- [ ] Enable HTTPS/TLS termination (reverse proxy); `OPENAGENT_ENV=production` forces `Secure` cookies
+- [ ] Set `TRUSTED_PROXY_CIDRS` only for your reverse proxy network
 - [ ] Configure restrictive CORS origins
 - [ ] Set `OPENAGENT_ENV=production`
 - [ ] Use managed PostgreSQL with encryption

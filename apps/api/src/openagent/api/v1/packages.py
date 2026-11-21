@@ -47,8 +47,9 @@ from openagent.db.models.package import (
 from openagent.db.pagination import PaginatedResponse, create_pagination_meta
 from openagent.db.session import get_db
 from openagent.packages import catalog as catalog_module
-from openagent.packages import config_schema, installer, packaging, security as security_module
-from openagent.packages import signing, telemetry, validation as validation_module
+from openagent.packages import config_schema, installer, packaging, signing, telemetry
+from openagent.packages import security as security_module
+from openagent.packages import validation as validation_module
 from openagent.packages.config import get_package_settings, validate_asset
 from openagent.packages.graph import build_graph, to_mermaid
 from openagent.packages.manifest import ManifestError, parse_manifest
@@ -1525,7 +1526,8 @@ async def create_preset(
     db: AsyncSession = Depends(get_db),
 ):
     await _need(request, db, "preset:create")
-    from openagent.db.models.package import PresetKind, PackageVersionStatus as Status
+    from openagent.db.models.package import PackageVersionStatus as Status
+    from openagent.db.models.package import PresetKind
 
     problems = _validate_preset_payload(data.kind, data.payload)
     if problems:

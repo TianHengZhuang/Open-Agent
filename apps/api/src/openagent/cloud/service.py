@@ -9,8 +9,6 @@ are scoped down to per-task worker credentials (§50).
 
 from __future__ import annotations
 
-import uuid
-from datetime import datetime, timezone
 from typing import Any, Optional
 
 from openagent.cloud.config import CloudSettings, get_cloud_settings
@@ -23,7 +21,8 @@ from openagent.cloud.placement import Region, RegionRegistry
 from openagent.cloud.queues import InMemoryQueueProvider, QueueProvider
 from openagent.cloud.runtime import ExecutionHandle, ExecutionRequest
 from openagent.cloud.storage_cloud import (
-    S3CompatibleConfig, get_object_storage_provider,
+    S3CompatibleConfig,
+    get_object_storage_provider,
 )
 from openagent.cloud.types import CloudFeature, IncidentMode
 from openagent.cloud.workers import WorkerRecord, WorkerRegistry

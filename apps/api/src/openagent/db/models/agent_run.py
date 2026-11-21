@@ -1,20 +1,23 @@
+import enum
 import uuid
 from datetime import datetime
-from typing import Optional, List, Dict, Any, TYPE_CHECKING
-from sqlalchemy import String, Text, JSON, ForeignKey, Index, Enum as SQLEnum
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+from sqlalchemy import JSON, ForeignKey, Index, Text
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
-import enum
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from openagent.db.models.base import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
-    from openagent.db.models.organization import Organization
-    from openagent.db.models.agent import Agent
     from openagent.db.models.agent_version import AgentVersion
-    from openagent.db.models.workflow_execution import WorkflowExecution
+
+    from openagent.db.models.agent import Agent
     from openagent.db.models.execution_event import ExecutionEvent
     from openagent.db.models.memory import Memory
+    from openagent.db.models.organization import Organization
+    from openagent.db.models.workflow_execution import WorkflowExecution
 
 
 class AgentRunStatus(str, enum.Enum):

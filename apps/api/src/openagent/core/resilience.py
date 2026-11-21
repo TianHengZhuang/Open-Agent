@@ -1,12 +1,10 @@
 import asyncio
 import time
+from collections import deque
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Callable, Awaitable, Optional, TypeVar
-from dataclasses import dataclass, field
-from collections import deque
-
-from openagent.core.config import get_settings
+from typing import Awaitable, Callable, Optional, TypeVar
 
 T = TypeVar("T")
 
@@ -86,10 +84,10 @@ class CircuitBreaker:
             return result
         except self.config.excluded_exceptions:
             raise
-        except self.config.expected_exceptions as e:
+        except self.config.expected_exceptions:
             await self._on_failure()
             raise
-        except Exception as e:
+        except Exception:
             await self._on_failure()
             raise
 
@@ -169,7 +167,8 @@ class CircuitBreaker:
                     datetime.fromtimestamp(self.stats.last_success_time, tz=timezone.utc).isoformat()
                     if self.stats.last_success_time else None
                 ),
-            }
+            },
+        }
 
     def reset(self) -> None:
         self.state = CircuitState.CLOSED

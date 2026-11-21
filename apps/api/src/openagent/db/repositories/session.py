@@ -1,11 +1,12 @@
-from typing import Optional, List
-from uuid import UUID
 from datetime import datetime, timezone
-from sqlalchemy import select, func, update, delete
+from typing import List, Optional
+from uuid import UUID
+
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openagent.db.repositories.base import BaseRepository
 from openagent.db.models import Session
+from openagent.db.repositories.base import BaseRepository
 
 
 class SessionRepository(BaseRepository[Session]):

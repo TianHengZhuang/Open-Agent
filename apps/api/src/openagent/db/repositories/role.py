@@ -1,11 +1,12 @@
-from typing import Optional, List
+from typing import List, Optional
 from uuid import UUID
-from sqlalchemy import select, func
+
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from openagent.db.models import Permission, Role, RolePermission
 from openagent.db.repositories.base import BaseRepository
-from openagent.db.models import Role, RoleType, RolePermission, Permission
 
 
 class RoleRepository(BaseRepository[Role]):
@@ -62,8 +63,9 @@ class RoleRepository(BaseRepository[Role]):
         return rp
 
     async def remove_permission(self, role_id: UUID, permission_id: UUID) -> bool:
-        from openagent.db.models import RolePermission
         from sqlalchemy import delete
+
+        from openagent.db.models import RolePermission
         result = await self.session.execute(
             delete(RolePermission).where(
                 RolePermission.role_id == role_id,
@@ -73,8 +75,9 @@ class RoleRepository(BaseRepository[Role]):
         return result.rowcount > 0
 
     async def set_permissions(self, role_id: UUID, permission_ids: List[UUID]) -> None:
-        from openagent.db.models import RolePermission
         from sqlalchemy import delete
+
+        from openagent.db.models import RolePermission
         # Remove existing permissions
         await self.session.execute(
             delete(RolePermission).where(RolePermission.role_id == role_id)
@@ -87,7 +90,6 @@ class RoleRepository(BaseRepository[Role]):
 
     async def count_members(self, role_id: UUID) -> int:
         from openagent.db.models import Membership
-        from sqlalchemy import func
         result = await self.session.execute(
             select(func.count(Membership.id)).where(Membership.role_id == role_id)
         )

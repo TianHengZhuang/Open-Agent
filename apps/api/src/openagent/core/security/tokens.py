@@ -1,7 +1,6 @@
-import secrets
 import hashlib
+import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 
 def generate_token() -> str:

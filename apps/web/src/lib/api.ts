@@ -97,11 +97,15 @@ export function toUserMessage(err: unknown): string {
   return 'Something went wrong.';
 }
 
-// API_BASE: default to local development URL.
-// NEXT_PUBLIC_API_URL can be set in the environment for production deployments.
-// This value is intentionally not accessed via process.env to avoid browser
-// ReferenceError when process is not defined (client-side).
-const API_BASE = 'http://localhost:8000/api/v1';
+// API_BASE: NEXT_PUBLIC_API_URL is inlined by Next.js at build time. Accept
+// either an origin (https://api.example.com) or an /api/v1 URL, and normalize
+// trailing slashes so request paths never double up.
+const configuredApiBase = (
+  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
+).replace(/\/+$/, '');
+const API_BASE = configuredApiBase.endsWith('/api/v1')
+  ? configuredApiBase
+  : `${configuredApiBase}/api/v1`;
 
 function getOrgId(): string | null {
   if (typeof window === 'undefined') return null;
@@ -128,6 +132,12 @@ function buildUrl(endpoint: string, params?: RequestOptions['params']): string {
     }
   }
   return url.toString();
+}
+
+function getCsrfToken(): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
 }
 
 function newRequestId(): string {
@@ -160,6 +170,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   }
 
   const attempts = retry ?? (rest.method === undefined || rest.method === 'GET' ? 1 : 0);
+  const csrfToken = getCsrfToken();
 
   let lastError: unknown = null;
   for (let attempt = 0; attempt <= attempts; attempt++) {
@@ -173,6 +184,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
           'X-Request-ID': requestId,
           ...(orgId ? { 'X-Organization-ID': orgId } : {}),
           ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+          ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
           ...headers,
         },
         body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),

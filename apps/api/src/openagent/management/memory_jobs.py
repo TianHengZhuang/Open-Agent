@@ -2,22 +2,22 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from uuid import UUID
 
 import structlog
-from sqlalchemy import select, update, delete, func
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openagent.core.config import get_settings
-from openagent.db.session import get_db
+from openagent.core.config import get_settings as get_core_settings
 from openagent.db.models.memory import (
-    Memory, MemoryStatus, MemoryEmbeddingStatus, MemoryConsolidationJob,
+    Memory,
+    MemoryConsolidationJob,
+    MemoryEmbeddingStatus,
+    MemoryStatus,
 )
 from openagent.management.embedding_providers import create_embedding_provider
-from openagent.core.config import get_settings as get_core_settings
 
 logger = structlog.get_logger("memory.jobs")
 
@@ -188,7 +188,7 @@ class MemoryLifecycleJobRunner:
             query = query.where(Memory.organization_id == organization_id)
         
         result = await self.db.execute(query.limit(1000))
-        memories = list(result.scalars().all())
+        list(result.scalars().all())
 
         decayed = 0
         for memory in result.scalars().all():
@@ -243,8 +243,6 @@ class ConsolidationJobRunner:
         similarity_threshold: float = 0.8,
     ) -> dict:
         """Run a consolidation job."""
-        from openagent.db.models.memory import MemoryConsolidationJob
-        from sqlalchemy import select
         
         # Create job record
         job = MemoryConsolidationJob(
@@ -290,8 +288,9 @@ class EmbeddingRetryRunner:
 
     async def retry_failed(self, max_retries: int = 3) -> int:
         """Retry failed embedding generations."""
+        from sqlalchemy import select
+
         from openagent.db.models.memory import Memory
-        from sqlalchemy import select, update
         
         result = await self.db.execute(
             select(Memory).where(

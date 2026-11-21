@@ -59,23 +59,40 @@ class ToolResult:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
+def _matches_json_type(value: Any, expected: str) -> bool:
+    if expected == "string":
+        return isinstance(value, str)
+    if expected == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if expected == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if expected == "boolean":
+        return isinstance(value, bool)
+    if expected == "array":
+        return isinstance(value, list)
+    if expected == "object":
+        return isinstance(value, dict)
+    return True
+
+
 class ToolRegistry:
     """Registry for tool definitions."""
     
     def __init__(self):
         self._tools: Dict[str, ToolDefinition] = {}
         self._categories: Dict[str, List[str]] = {}
+        self._capabilities: Dict[str, List[str]] = {}
     
     def register(self, tool: ToolDefinition) -> None:
         """Register a tool definition."""
         key = f"{tool.name}@{tool.version}"
         self._tools[key] = tool
         
-        # Index by category
+        category = (tool.metadata or {}).get("category")
+        if isinstance(category, str) and category:
+            self._categories.setdefault(category, []).append(key)
         for cap in tool.capabilities:
-            if cap not in self._categories:
-                self._categories[cap] = []
-            self._categories[cap].append(key)
+            self._capabilities.setdefault(cap, []).append(key)
     
     def unregister(self, name: str, version: str = "1.0") -> bool:
         key = f"{name}@{version}"
@@ -100,8 +117,17 @@ class ToolRegistry:
             return [self._tools[k] for k in keys if k in self._tools]
         return list(self._tools.values())
     
+    def getCategories(self) -> List[str]:  # noqa: N802 - legacy SDK name
+        return self.get_categories()
+
+    def getCapabilities(self) -> List[str]:  # noqa: N802 - legacy SDK name
+        return self.get_capabilities()
+
     def get_categories(self) -> List[str]:
         return list(self._categories.keys())
+
+    def get_capabilities(self) -> List[str]:
+        return list(self._capabilities.keys())
     
     def search(self, query: str) -> List[ToolDefinition]:
         query = query.lower()
@@ -184,13 +210,11 @@ class ToolExecutorRegistry:
         tools = []
         for executor in self._executors.values():
             for tool_name in executor.supported_tools:
-                schema = executor.get_tool_schema(tool_name)
-                if schema:
-                    tools.append({
-                        "name": tool_name,
-                        "executor": executor.executor_id,
-                        "schema": schema,
-                    })
+                tools.append({
+                    "name": tool_name,
+                    "executor": executor.executor_id,
+                    "schema": executor.get_tool_schema(tool_name),
+                })
         return tools
 
 
@@ -287,12 +311,20 @@ class ToolExecutionManager:
         self.default_timeout = default_timeout
         self.max_retries = max_retries
     
+    async def cancel(self, execution_id: str) -> None:
+        """Best-effort cancellation forwarded to every registered executor."""
+        for executor in self.executor_registry.get_all().values():
+            cancel = getattr(executor, "cancel", None)
+            if cancel is not None:
+                await cancel(execution_id)
+
     async def execute_tool(
         self,
         tool_name: str,
         arguments: Dict[str, Any],
         context: Optional[Dict[str, Any]] = None,
         tool_call_id: Optional[str] = None,
+        timeout: Optional[float] = None,
     ) -> ToolResult:
         """Execute a tool with full lifecycle management."""
         tool_call_id = tool_call_id or f"tc_{uuid.uuid4().hex[:12]}"
@@ -314,6 +346,28 @@ class ToolExecutionManager:
         # Get tool definition
         tool_def = self.tool_registry.get_latest(tool_name)
         
+        # Validate required JSON-schema fields/types before invoking executors.
+        if tool_def is not None:
+            schema = tool_def.input_schema or {}
+            required = schema.get("required", [])
+            properties = schema.get("properties", {})
+            wrong_type = any(
+                name in arguments
+                and isinstance(properties.get(name, {}).get("type"), str)
+                and not _matches_json_type(arguments[name], properties[name]["type"])
+                for name in properties
+            )
+            if wrong_type or any(field not in arguments for field in required):
+                return ToolResult(
+                    tool_call_id=tool_call_id,
+                    name=tool_name,
+                    status="error",
+                    error="Invalid arguments",
+                    error_code="INVALID_ARGUMENTS",
+                    started_at=datetime.now(timezone.utc),
+                    completed_at=datetime.now(timezone.utc),
+                )
+
         # Validate arguments
         if not await executor.validate_arguments(tool_name, arguments):
             return ToolResult(
@@ -345,9 +399,9 @@ class ToolExecutionManager:
                 start_time = time.time()
                 result = await asyncio.wait_for(
                     executor.execute(tool_name, arguments, context),
-                    timeout=self.default_timeout,
+                    timeout=timeout or self.default_timeout,
                 )
-                duration_ms = int((time.time() - start_time) * 1000)
+                duration_ms = max(1, int((time.time() - start_time) * 1000))
                 
                 return ToolResult(
                     tool_call_id=tool_call_id,

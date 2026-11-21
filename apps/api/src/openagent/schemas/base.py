@@ -1,7 +1,8 @@
 from datetime import datetime
-from typing import Generic, Optional, List, Dict, Any, TypeVar
+from typing import Any, Dict, Generic, List, Optional, TypeVar
 from uuid import UUID
-from pydantic import BaseModel, Field, ConfigDict, EmailStr
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 T = TypeVar("T")
 

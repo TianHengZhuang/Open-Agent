@@ -16,8 +16,14 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from openagent.approvals.types import (ActionContext, ApprovalKind, PolicyDecision,
-                                        PolicyEvaluation, RiskAssessment, RiskLevel)
+from openagent.approvals.types import (
+    ActionContext,
+    ApprovalKind,
+    PolicyDecision,
+    PolicyEvaluation,
+    RiskAssessment,
+    RiskLevel,
+)
 
 _LEVELS = ("platform", "organization", "team", "agent", "workflow", "tool", "request")
 

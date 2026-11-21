@@ -1,13 +1,15 @@
-from typing import Optional, List, TYPE_CHECKING
-from sqlalchemy import String, Text, Index, Enum as SQLEnum, JSON
-from sqlalchemy.orm import Mapped, mapped_column, relationship
 import enum
+from typing import TYPE_CHECKING, List, Optional
+
+from sqlalchemy import JSON, Index, String, Text
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from openagent.db.models.base import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
     from openagent.db.models.role import RolePermission
-    from openagent.db.models.service_account import ServiceAccount
+    from openagent.db.models.service_account import ServiceAccount, ServiceAccountPermission
 
 
 class PermissionAction(str, enum.Enum):

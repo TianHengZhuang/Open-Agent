@@ -5,7 +5,7 @@ logs, telemetry, artifacts, and model context."""
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 # High-confidence secret shapes.

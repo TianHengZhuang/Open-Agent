@@ -2,44 +2,49 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
-import json
 import re
+import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select, func, delete, and_, or_, update, text, func as sql_func
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
-from openagent.db.models import Agent, AuditLog
 from openagent.db.models.memory import (
-    Memory, MemoryType, MemoryScope, MemoryVisibility, MemoryStatus,
-    MemoryEmbeddingStatus, MemorySourceType, MemoryVersion,
-    MemoryAccessLog, MemoryEmbedding, MemoryLink, MemoryLink,
-    MemoryConflict, MemoryConsolidationJob, MemoryPolicy, MemoryLink,
-    MemoryConflict, MemoryConsolidationJob, MemoryPolicy, MemoryLink,
+    Memory,
+    MemoryAccessLog,
+    MemoryConflict,
+    MemoryConsolidationJob,
+    MemoryEmbeddingStatus,
+    MemoryImportanceFactor,
+    MemoryScope,
+    MemorySourceType,
+    MemoryStatus,
+    MemoryType,
+    MemoryVisibility,
 )
-from openagent.db.models.conversation import Conversation, Message, ConversationStatus, MessageRole
-from openagent.db.repositories.memory import (
-    MemoryRepository, MemoryVersionRepository, MemoryAccessLogRepository,
-    MemoryEmbeddingRepository, MemoryLinkRepository, MemoryConflictRepository,
-    MemoryConsolidationJobRepository, MemoryPolicyRepository,
-)
-from openagent.db.repositories.memory import ConversationRepository, MessageRepository
-from openagent.db.repositories.agent_run import AgentRunRepository
 from openagent.db.repositories.agent import AgentRepository
+from openagent.db.repositories.agent_run import AgentRunRepository
+from openagent.db.repositories.memory import (
+    ConversationRepository,
+    MemoryAccessLogRepository,
+    MemoryConflictRepository,
+    MemoryConsolidationJobRepository,
+    MemoryEmbeddingRepository,
+    MemoryLinkRepository,
+    MemoryPolicyRepository,
+    MemoryRepository,
+    MemoryVersionRepository,
+    MessageRepository,
+)
+from openagent.db.repositories.orchestration import OrchestrationRunRepository
 from openagent.db.repositories.task import TaskRepository
 from openagent.db.repositories.team import TeamRepository
-from openagent.db.repositories.orchestration import OrchestrationRunRepository
-from openagent.management.providers import MemoryProvider, EmbeddingProvider
-from openagent.orchestration.events import record_metric
-from openagent.orchestration.security import sanitize_dict, contains_secret_key
+from openagent.management.providers import EmbeddingProvider
 from openagent.orchestration.events import publish_event
-from openagent.core.config import get_settings
 
 logger = structlog.get_logger("memory.service")
 
@@ -180,7 +185,7 @@ class MemoryWritePipeline:
         candidate: Dict[str, Any],
     ) -> List[Memory]:
         """Check for duplicate memories."""
-        content_hash = hashlib.sha256(candidate["content"].encode()).hexdigest()[:32]
+        hashlib.sha256(candidate["content"].encode()).hexdigest()[:32]
 
         # Check for exact content match
         result = await session.execute(
@@ -766,7 +771,6 @@ class MemoryService:
                 return None
     
             # Check for contradictions (simplified)
-            conflicts = []
             for other in similar_memories:
                 # Simple check: different content but similar topic
                 if other.content != memory.content:
@@ -859,7 +863,7 @@ class MemoryService:
                 output_count = 0
                 for group in groups:
                     if len(group) > 1:
-                        consolidated = await self._consolidate_group(group)
+                        await self._consolidate_group(group)
                         output_count += 1
     
                 job.status = "completed"
@@ -995,7 +999,7 @@ class MemoryService:
     
         async def expire_memories(self) -> int:
             """Expire memories past their expiration date."""
-            now = datetime.now(timezone.utc)
+            datetime.now(timezone.utc)
             result = await self.db.execute(
                 update(Memory)
                 .where(

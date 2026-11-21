@@ -8,7 +8,6 @@ import { Protected } from "@/components/protected";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { PermissionGate } from "@/components/PermissionGate";
 import { useToast } from "@/components/ui/toast";
 import { toUserMessage, ApiError } from "@/lib/api";
@@ -20,11 +19,13 @@ import {
   type WorkflowRunResult,
 } from "@/features/workflows/workflows-api";
 import { useWorkflowEditor } from "@/features/workflows/use-workflow-editor";
-import { WorkflowCanvas } from "@/components/workflows/WorkflowCanvas";
+import { WorkflowCanvas, type AddNodeRequest } from "@/components/workflows/WorkflowCanvas";
 import { NodePalette } from "@/components/workflows/NodePalette";
+import { NodeCreator } from "@/components/workflows/NodeCreator";
 import { Inspector } from "@/components/workflows/Inspector";
 import { ValidationPanel } from "@/components/workflows/ValidationPanel";
 import { RunPanel } from "@/components/workflows/RunPanel";
+import { ExecutionLog } from "@/components/workflows/ExecutionLog";
 import { KoroPanel } from "@/components/workflows/KoroPanel";
 import {
   downloadEnvelope,
@@ -35,7 +36,6 @@ import { Dialog } from "@/components/ui/dialog";
 import {
   ArrowLeft,
   Save,
-  Rocket,
   Play,
   Sparkles,
   Undo2,
@@ -44,8 +44,18 @@ import {
   Upload,
   CheckCircle2,
   XCircle,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  ListChecks,
+  Workflow as WorkflowIcon,
+  Settings,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+type StudioView = "editor" | "executions";
 
 export default function WorkflowBuilderPage() {
   const params = useParams<{ id: string }>();
@@ -68,11 +78,27 @@ export default function WorkflowBuilderPage() {
   const [runOpen, setRunOpen] = React.useState(false);
   const [runError, setRunError] = React.useState<string | null>(null);
   const [koroOpen, setKoroOpen] = React.useState(false);
+
+  // Studio chrome state.
+  const [view, setView] = React.useState<StudioView>("editor");
+  const [paletteOpen, setPaletteOpen] = React.useState(true);
+  const [panelOpen, setPanelOpen] = React.useState(true);
+  const [rightTab, setRightTab] = React.useState<"node" | "issues">("node");
+  const [creator, setCreator] = React.useState<AddNodeRequest | null>(null);
+
   const runStatus = React.useMemo(() => {
     const map: Record<string, string> = {};
     for (const run of runResult?.node_runs ?? []) map[run.node_id] = run.status;
     return map;
   }, [runResult]);
+
+  // Selecting something opens the node detail panel, like n8n's NDV.
+  const selectionId = editor.selection?.id ?? null;
+  React.useEffect(() => {
+    if (!selectionId) return;
+    setPanelOpen(true);
+    setRightTab("node");
+  }, [selectionId]);
 
   // Load saved definition when it arrives (once per version).
   const loadedVersion = React.useRef<string | null>(null);
@@ -247,11 +273,24 @@ export default function WorkflowBuilderPage() {
     }
     try {
       await mutations.publish.mutateAsync(workflow.id);
-      toast({ kind: "success", title: "Published" });
+      toast({ kind: "success", title: "Workflow activated" });
     } catch (e) {
       toast({
         kind: "error",
         title: "Publish failed",
+        description: toUserMessage(e),
+      });
+    }
+  };
+
+  const doUnpublish = async () => {
+    try {
+      await mutations.unpublish.mutateAsync(workflow.id);
+      toast({ kind: "success", title: "Workflow deactivated" });
+    } catch (e) {
+      toast({
+        kind: "error",
+        title: "Could not deactivate",
         description: toUserMessage(e),
       });
     }
@@ -311,28 +350,37 @@ export default function WorkflowBuilderPage() {
     });
   };
 
+  const isActive = workflow.status === "active";
+  const issueCount =
+    editor.validation.errors.length + editor.validation.warnings.length;
+  const canPublish = canEdit && editor.validation.valid;
+
   return (
     <Protected>
       <Layout>
-        <div className="oa-page max-w-none">
-          {/* toolbar */}
-          <div className="oa-panel sticky top-[68px] z-20 flex flex-wrap items-center gap-2 bg-card/90 px-3 py-2.5 backdrop-blur-xl">
+        <div className="flex h-full min-h-0 flex-col overflow-hidden bg-canvas">
+          {/* ---------------------------------------------------------------- */}
+          {/* Studio top bar                                                    */}
+          {/* ---------------------------------------------------------------- */}
+          <header className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border bg-card px-2 py-1.5 sm:gap-2 sm:px-3">
             <Link
-              href={`/workflows/${workflow.id}`}
-              aria-label="Back to workflow detail"
-              className="rounded-md p-2 hover:bg-accent"
+              href="/workflows"
+              aria-label="Back to workflows"
+              className="oa-icon-button"
             >
               <ArrowLeft className="h-4 w-4" />
             </Link>
-            <div className="w-56 shrink-0">
-              <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                disabled={!canEdit}
-                aria-label="Workflow name"
-                className="h-9 border-transparent bg-transparent px-2 text-base font-semibold hover:border-border focus:border-primary"
-              />
-            </div>
+            <span className="oa-brand hidden h-7 w-7 items-center justify-center rounded-lg text-white shadow-sm sm:flex">
+              <WorkflowIcon className="h-4 w-4" aria-hidden />
+            </span>
+
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={!canEdit}
+              aria-label="Workflow name"
+              className="h-8 w-[140px] min-w-0 border-transparent bg-transparent px-1.5 text-sm font-semibold hover:border-border focus:border-primary sm:w-[220px] sm:text-[15px]"
+            />
             <StatusBadge status={workflow.status} />
             <SaveStatus
               online={online}
@@ -341,39 +389,74 @@ export default function WorkflowBuilderPage() {
               dirty={editor.dirty}
               onRetry={() => doSave()}
             />
-            <TagEditor tags={tags} onChange={setTags} disabled={!canEdit} />
-            <span
-              className="flex items-center gap-1 text-xs"
-              aria-live="polite"
-            >
-              {editor.validation.valid ? (
-                <>
-                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />{" "}
-                  Valid
-                </>
-              ) : (
-                <>
-                  <XCircle className="h-3.5 w-3.5 text-destructive" />{" "}
-                  {editor.validation.errors.length} error
-                  {editor.validation.errors.length === 1 ? "" : "s"}
-                </>
-              )}
+            <span className="hidden lg:inline-flex">
+              <TagEditor tags={tags} onChange={setTags} disabled={!canEdit} />
             </span>
-            <span className="ml-auto flex flex-wrap items-center gap-1.5">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setKoroOpen(true)}
-                title="Koro — local automation copilot"
+
+            <div className="mx-1 hidden h-5 w-px bg-border md:block" aria-hidden />
+
+            <div
+              role="tablist"
+              aria-label="Studio view"
+              className="flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5"
+            >
+              <button
+                role="tab"
+                aria-selected={view === "editor"}
+                data-active={view === "editor"}
+                onClick={() => setView("editor")}
+                className="oa-studio-tab h-7"
               >
-                <Sparkles className="mr-1.5 h-3.5 w-3.5 text-primary" />
-                Koro
-              </Button>
+                Editor
+              </button>
+              <button
+                role="tab"
+                aria-selected={view === "executions"}
+                data-active={view === "executions"}
+                onClick={() => setView("executions")}
+                className="oa-studio-tab h-7"
+              >
+                Executions
+              </button>
+            </div>
+
+            <div className="ml-auto flex items-center gap-1">
+              <button
+                onClick={() => setPaletteOpen((v) => !v)}
+                aria-label={paletteOpen ? "Hide node panel" : "Show node panel"}
+                aria-pressed={paletteOpen}
+                className="oa-icon-button hidden md:inline-flex"
+              >
+                {paletteOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+              </button>
+              <button
+                onClick={() => setPanelOpen((v) => !v)}
+                aria-label={panelOpen ? "Hide node detail" : "Show node detail"}
+                aria-pressed={panelOpen}
+                className="oa-icon-button hidden xl:inline-flex"
+              >
+                {panelOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
+              </button>
+              <button
+                onClick={() => {
+                  editor.select(null);
+                  setPanelOpen(true);
+                  setRightTab("node");
+                }}
+                aria-label="Workflow settings"
+                title="Workflow settings and variables"
+                className="oa-icon-button hidden xl:inline-flex"
+              >
+                <Settings className="h-4 w-4" />
+              </button>
+
+              <span className="mx-0.5 hidden h-5 w-px bg-border sm:block" aria-hidden />
+
               <button
                 onClick={editor.undo}
                 disabled={!editor.canUndo || !canEdit}
                 aria-label="Undo (Ctrl+Z)"
-                className="rounded-md p-2 hover:bg-accent disabled:opacity-40"
+                className="oa-icon-button"
               >
                 <Undo2 className="h-4 w-4" />
               </button>
@@ -381,10 +464,22 @@ export default function WorkflowBuilderPage() {
                 onClick={editor.redo}
                 disabled={!editor.canRedo || !canEdit}
                 aria-label="Redo (Ctrl+Y)"
-                className="rounded-md p-2 hover:bg-accent disabled:opacity-40"
+                className="oa-icon-button"
               >
                 <Redo2 className="h-4 w-4" />
               </button>
+
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setKoroOpen(true)}
+                title="Koro — local automation copilot"
+                className="hidden sm:inline-flex"
+              >
+                <Sparkles className="mr-1.5 h-3.5 w-3.5 text-primary" />
+                Koro
+              </Button>
+
               <button
                 onClick={() =>
                   downloadEnvelope(
@@ -398,7 +493,7 @@ export default function WorkflowBuilderPage() {
                   )
                 }
                 aria-label="Export workflow as portable envelope JSON"
-                className="rounded-md p-2 hover:bg-accent"
+                className="oa-icon-button hidden sm:inline-flex"
               >
                 <Download className="h-4 w-4" />
               </button>
@@ -406,7 +501,7 @@ export default function WorkflowBuilderPage() {
                 <button
                   onClick={() => fileRef.current?.click()}
                   aria-label="Import definition from JSON"
-                  className="rounded-md p-2 hover:bg-accent"
+                  className="oa-icon-button hidden sm:inline-flex"
                 >
                   <Upload className="h-4 w-4" />
                 </button>
@@ -423,6 +518,7 @@ export default function WorkflowBuilderPage() {
                   }}
                 />
               </PermissionGate>
+
               <PermissionGate permission="workflow:update">
                 <Button
                   size="sm"
@@ -434,17 +530,14 @@ export default function WorkflowBuilderPage() {
                   <Save className="mr-1.5 h-3.5 w-3.5" />
                   Save
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={doPublish}
-                  loading={mutations.publish.isPending}
+                <ActiveToggle
+                  active={isActive}
+                  busy={mutations.publish.isPending || mutations.unpublish.isPending}
                   disabled={!canEdit}
-                >
-                  <Rocket className="mr-1.5 h-3.5 w-3.5" />
-                  Publish
-                </Button>
+                  onToggle={() => (isActive ? doUnpublish() : doPublish())}
+                />
               </PermissionGate>
+
               <PermissionGate permission="workflow:execute">
                 <Button
                   size="sm"
@@ -457,21 +550,22 @@ export default function WorkflowBuilderPage() {
                   Test workflow
                 </Button>
               </PermissionGate>
-            </span>
-          </div>
+            </div>
+          </header>
 
+          {/* Banners */}
           {draftNotice && (
             <div
-              className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm"
+              className="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs"
               role="alert"
             >
               <p className="flex-1">
-                An autosaved draft from your last session differs from the saved
-                version.
+                An autosaved draft from your last session differs from the saved version.
               </p>
               <Button
                 size="sm"
                 variant="outline"
+                className="h-7"
                 onClick={() => {
                   editor.clearDraft();
                   if (baseline) editor.load(baseline);
@@ -480,7 +574,7 @@ export default function WorkflowBuilderPage() {
               >
                 Discard draft
               </Button>
-              <Button size="sm" onClick={() => setDraftNotice(false)}>
+              <Button size="sm" className="h-7" onClick={() => setDraftNotice(false)}>
                 Keep editing draft
               </Button>
             </div>
@@ -488,87 +582,184 @@ export default function WorkflowBuilderPage() {
 
           {!canEdit && (
             <p
-              className="rounded-lg border p-3 text-sm text-muted-foreground"
+              className="shrink-0 border-b border-border bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground"
               role="note"
             >
-              This workflow is archived — read-only. Duplicate it to keep
-              iterating.
+              This workflow is archived — read-only. Duplicate it to keep iterating.
             </p>
           )}
 
-          {/* editor grid — full-height studio on wide screens */}
-          <div className="grid gap-3 lg:grid-cols-[230px_minmax(0,1fr)] xl:h-[calc(100dvh-19.5rem)] xl:min-h-[560px] xl:grid-cols-[248px_minmax(0,1fr)_336px] xl:grid-rows-[minmax(0,1fr)]">
-            <div className="hidden h-[540px] min-h-0 lg:block xl:h-auto">
-              <NodePalette editor={editor} disabled={!canEdit} />
+          {/* ---------------------------------------------------------------- */}
+          {/* Workspace                                                         */}
+          {/* ---------------------------------------------------------------- */}
+          {view === "executions" ? (
+            <div className="min-h-0 flex-1">
+              <ExecutionLog workflowId={workflow.id} />
             </div>
-            <div className="h-[540px] min-h-0 xl:h-auto">
-              <WorkflowCanvas
-                editor={editor}
-                readOnly={!canEdit}
-                runStatus={runStatus}
-              />
-            </div>
-            <div className="grid min-h-0 gap-3 lg:col-span-2 lg:grid-cols-2 xl:col-span-1 xl:h-full xl:grid-cols-1 xl:grid-rows-[minmax(0,1fr)_240px]">
-              <div className="h-[320px] min-h-0 xl:h-auto">
-                <Inspector
+          ) : (
+            <div className="flex min-h-0 flex-1">
+              {paletteOpen && (
+                <aside
+                  aria-label="Node library"
+                  className="hidden w-[258px] shrink-0 border-r border-border md:block"
+                >
+                  <NodePalette editor={editor} disabled={!canEdit} />
+                </aside>
+              )}
+
+              <div className="relative min-h-0 min-w-0 flex-1">
+                <WorkflowCanvas
                   editor={editor}
-                  disabled={!canEdit}
-                  onTestStep={(nodeId, input) =>
-                    mutations.executeNode.mutateAsync({
-                      id: workflow.id,
-                      node_id: nodeId,
-                      definition: editor.definition,
-                      input,
-                    })
-                  }
+                  readOnly={!canEdit}
+                  runStatus={runStatus}
+                  onAddNode={(request) => setCreator(request)}
                 />
+
+                {runOpen && (
+                  <div className="absolute inset-x-0 bottom-0 z-30 h-[min(46%,340px)] shadow-[0_-12px_40px_-16px_rgb(15_23_42/0.35)]">
+                    <RunPanel
+                      result={runResult}
+                      running={mutations.execute.isPending}
+                      error={runError}
+                      onClose={() => setRunOpen(false)}
+                      onRerun={(input) => doRun(input)}
+                      onSelectNode={(nodeId) =>
+                        editor.select({ kind: "node", id: nodeId })
+                      }
+                    />
+                  </div>
+                )}
               </div>
-              <div className="h-[320px] min-h-0 xl:h-[240px]">
-                <ValidationPanel editor={editor} />
-              </div>
+
+              {panelOpen && (
+                <aside
+                  aria-label="Node detail"
+                  className="hidden w-[340px] shrink-0 flex-col border-l border-border bg-card xl:flex"
+                >
+                  <div
+                    role="tablist"
+                    aria-label="Detail panel"
+                    className="flex shrink-0 items-center gap-0.5 border-b border-border px-2 py-1.5"
+                  >
+                    <button
+                      role="tab"
+                      aria-selected={rightTab === "node"}
+                      data-active={rightTab === "node"}
+                      onClick={() => setRightTab("node")}
+                      className="oa-studio-tab h-7"
+                    >
+                      Node
+                    </button>
+                    <button
+                      role="tab"
+                      aria-selected={rightTab === "issues"}
+                      data-active={rightTab === "issues"}
+                      onClick={() => setRightTab("issues")}
+                      className="oa-studio-tab h-7"
+                    >
+                      <ListChecks className="h-3.5 w-3.5" aria-hidden />
+                      Checks
+                      <span
+                        className={cn(
+                          "ml-0.5 rounded-full px-1.5 text-[10px] font-semibold tabular-nums",
+                          issueCount === 0
+                            ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                            : "bg-destructive/15 text-destructive",
+                        )}
+                      >
+                        {issueCount}
+                      </span>
+                    </button>
+                    <button
+                      onClick={() => setPanelOpen(false)}
+                      aria-label="Close node detail"
+                      className="oa-icon-button ml-auto"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="min-h-0 flex-1">
+                    {rightTab === "node" ? (
+                      <Inspector
+                        editor={editor}
+                        workflowId={workflow.id}
+                        disabled={!canEdit}
+                        onTestStep={(nodeId, input) =>
+                          mutations.executeNode.mutateAsync({
+                            id: workflow.id,
+                            node_id: nodeId,
+                            definition: editor.definition,
+                            input,
+                          })
+                        }
+                      />
+                    ) : (
+                      <ValidationPanel editor={editor} />
+                    )}
+                  </div>
+                </aside>
+              )}
             </div>
-          </div>
-
-          <KoroPanel
-            open={koroOpen}
-            onClose={() => setKoroOpen(false)}
-            workflowId={workflow.id}
-            workflowName={workflow.name}
-            onResult={(result) => {
-              const action = result.actions[0];
-              if (action?.status === "ok" && action.type !== "none") {
-                toast({ kind: "success", title: "Koro", description: action.detail });
-              }
-              if (result.workflow_id && result.workflow_id !== workflow.id) {
-                router.push(`/workflows/${result.workflow_id}/edit`);
-                return;
-              }
-              if (["run", "publish", "unpublish"].includes(action?.type ?? "")) refetch();
-            }}
-          />
-
-          {runOpen && (
-            <RunPanel
-              result={runResult}
-              running={mutations.execute.isPending}
-              error={runError}
-              onClose={() => setRunOpen(false)}
-              onRerun={(input) => doRun(input)}
-              onSelectNode={(nodeId) =>
-                editor.select({ kind: "node", id: nodeId })
-              }
-            />
           )}
 
-          <p className="oa-caption">
-            Shortcuts: Del removes · Ctrl+Z / Ctrl+Y undo/redo · Ctrl+C/V/D
-            copy/paste/duplicate · Ctrl+S save · arrows nudge · Shift+drag
-            box-select · F fit · Esc cancels. Version{" "}
-            {workflow.latest_version?.version ?? "—"} · every save snapshots a
-            new immutable version.
-          </p>
+          {/* Studio status bar */}
+          <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-border bg-card px-3 text-[11px] text-muted-foreground">
+            <span className="inline-flex items-center gap-1">
+              {editor.validation.valid ? (
+                <>
+                  <CheckCircle2 className="h-3 w-3 text-emerald-500" aria-hidden /> Valid
+                </>
+              ) : (
+                <>
+                  <XCircle className="h-3 w-3 text-destructive" aria-hidden />
+                  {editor.validation.errors.length} error
+                  {editor.validation.errors.length === 1 ? "" : "s"}
+                </>
+              )}
+            </span>
+            <span className="hidden sm:inline">
+              Ctrl+S save · Ctrl+Z undo · F fit · Shift+drag box select
+            </span>
+            <span className="ml-auto hidden items-center gap-3 sm:flex">
+              <span>
+                {editor.definition.triggers.length} trigger
+                {editor.definition.triggers.length === 1 ? "" : "s"}
+              </span>
+              <span>
+                {editor.definition.nodes.length} node
+                {editor.definition.nodes.length === 1 ? "" : "s"}
+              </span>
+              <span>v{workflow.latest_version?.version ?? "—"}</span>
+            </span>
+          </footer>
         </div>
       </Layout>
+
+      <NodeCreator
+        open={creator !== null}
+        request={creator}
+        editor={editor}
+        disabled={!canEdit}
+        onClose={() => setCreator(null)}
+      />
+
+      <KoroPanel
+        open={koroOpen}
+        onClose={() => setKoroOpen(false)}
+        workflowId={workflow.id}
+        workflowName={workflow.name}
+        onResult={(result) => {
+          const action = result.actions[0];
+          if (action?.status === "ok" && action.type !== "none") {
+            toast({ kind: "success", title: "Koro", description: action.detail });
+          }
+          if (result.workflow_id && result.workflow_id !== workflow.id) {
+            router.push(`/workflows/${result.workflow_id}/edit`);
+            return;
+          }
+          if (["run", "publish", "unpublish", "edit"].includes(action?.type ?? "")) refetch();
+        }}
+      />
 
       <Dialog
         open={conflict}
@@ -600,6 +791,56 @@ export default function WorkflowBuilderPage() {
   );
 }
 
+function ActiveToggle({
+  active,
+  busy,
+  disabled,
+  onToggle,
+}: {
+  active: boolean;
+  busy: boolean;
+  disabled?: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={active}
+      aria-label={active ? "Deactivate workflow" : "Activate workflow"}
+      onClick={onToggle}
+      disabled={disabled || busy}
+      title={
+        active
+          ? "Active — triggers are live. Click to deactivate."
+          : "Inactive — click to activate and enable triggers."
+      }
+      className={cn(
+        "inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-50",
+        active
+          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+          : "border-border bg-muted/40 text-muted-foreground hover:text-foreground",
+      )}
+    >
+      <span
+        className={cn(
+          "flex h-3.5 w-6 items-center rounded-full p-0.5 transition-colors",
+          active ? "bg-emerald-500" : "bg-muted-foreground/30",
+        )}
+        aria-hidden
+      >
+        <span
+          className={cn(
+            "block h-2.5 w-2.5 rounded-full bg-white shadow-sm transition-transform",
+            active && "translate-x-2.5",
+          )}
+        />
+      </span>
+      {busy ? "…" : active ? "Active" : "Inactive"}
+    </button>
+  );
+}
+
 function SaveStatus({
   online,
   saving,
@@ -616,7 +857,7 @@ function SaveStatus({
   if (!online) {
     return (
       <span
-        className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground"
+        className="hidden rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground sm:inline"
         role="status"
       >
         Offline — kept locally
@@ -626,7 +867,7 @@ function SaveStatus({
   if (saving) {
     return (
       <span
-        className="text-xs text-muted-foreground"
+        className="hidden text-[11px] text-muted-foreground sm:inline"
         role="status"
         aria-live="polite"
       >
@@ -637,7 +878,7 @@ function SaveStatus({
   if (failed) {
     return (
       <span
-        className="flex items-center gap-1.5 text-xs text-destructive"
+        className="hidden items-center gap-1 text-[11px] text-destructive sm:flex"
         role="alert"
       >
         Save failed
@@ -653,13 +894,13 @@ function SaveStatus({
   return (
     <span
       className={cn(
-        "text-xs",
+        "hidden text-[11px] sm:inline",
         dirty ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground",
       )}
       aria-live="polite"
       role="status"
     >
-      {dirty ? "● Unsaved changes" : "Saved ✓"}
+      {dirty ? "● Unsaved" : "Saved"}
     </span>
   );
 }
@@ -687,7 +928,7 @@ function TagEditor({
       {tags.map((t) => (
         <span
           key={t}
-          className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs"
+          className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px]"
         >
           {t}
           {!disabled && (
@@ -714,7 +955,7 @@ function TagEditor({
           onBlur={add}
           placeholder={tags.length === 0 ? "Add tags…" : "+"}
           aria-label="Add a tag"
-          className="h-6 w-24 rounded-full border border-dashed bg-transparent px-2 text-xs outline-none placeholder:text-muted-foreground focus:border-primary"
+          className="h-6 w-20 rounded-full border border-dashed bg-transparent px-2 text-[11px] outline-none placeholder:text-muted-foreground focus:border-primary"
         />
       )}
     </span>

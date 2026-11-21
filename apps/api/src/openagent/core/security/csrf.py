@@ -1,8 +1,9 @@
 import secrets
-import hashlib
 from typing import Optional
-from fastapi import Request, Response, HTTPException
+
+from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 from starlette.types import ASGIApp
 
 from openagent.core.config import get_settings
@@ -84,6 +85,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         self.exempt_paths = exempt_paths or [
             "/api/v1/health",
             "/api/v1/health/ready",
+            "/api/v1/auth/local-session",
             "/api/v1/auth/login",
             "/api/v1/auth/register",
             "/api/v1/auth/verify-email",
@@ -109,28 +111,43 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         # Skip CSRF for exempt paths
         if self._is_exempt(request.url.path):
             return await call_next(request)
-        
-        # Skip CSRF for safe methods
+
+        settings = get_settings()
+        uses_session_cookie = bool(request.cookies.get(settings.SESSION_COOKIE_NAME))
+
+        # Safe methods cannot change state. Ensure a double-submit cookie exists
+        # so the browser client can echo it on the next mutation.
         if self._is_safe_method(request.method):
-            return await call_next(request)
-        
-        # Skip CSRF for API key authenticated requests
+            response = await call_next(request)
+            if not request.cookies.get(self.csrf.cookie_name):
+                self.csrf.set_csrf_cookie(response, self.csrf.generate_token())
+            return response
+
+        # Non-cookie auth (Bearer/API key) is not vulnerable to CSRF, and
+        # unauthenticated mutations carry no ambient authority to abuse.
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer ") and len(auth_header) > 20:
-            # Likely an API key, not a browser session
             return await call_next(request)
-        
-        # Validate CSRF token
+        if not uses_session_cookie:
+            return await call_next(request)
+        # Browsers send Origin/Referer on cross-site mutations. Non-browser API
+        # clients with a cookie but no Origin are not a CSRF vector.
+        if not (request.headers.get("origin") or request.headers.get("referer")):
+            return await call_next(request)
+
+        # Validate the double-submit token for cookie-authenticated mutations.
         if not self.csrf.validate_token(request):
-            raise HTTPException(
+            return JSONResponse(
                 status_code=403,
-                detail={
+                content={
                     "error": "CSRF token validation failed",
                     "code": "CSRF_VALIDATION_FAILED",
                 },
             )
-        
+
         response = await call_next(request)
+        if not request.cookies.get(self.csrf.cookie_name):
+            self.csrf.set_csrf_cookie(response, self.csrf.generate_token())
         return response
 
 

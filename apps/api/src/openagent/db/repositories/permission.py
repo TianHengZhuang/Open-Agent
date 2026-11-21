@@ -1,10 +1,10 @@
-from typing import Optional, List
-from uuid import UUID
-from sqlalchemy import select, func
+from typing import List, Optional
+
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from openagent.db.models import Permission, PermissionAction, PermissionResource
 from openagent.db.repositories.base import BaseRepository
-from openagent.db.models import Permission, PermissionResource, PermissionAction
 
 
 class PermissionRepository(BaseRepository[Permission]):

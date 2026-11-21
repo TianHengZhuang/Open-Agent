@@ -8,8 +8,7 @@ enforce checksum/size/MIME/extension validation with quarantine hooks.
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
@@ -18,10 +17,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from openagent.api.dependencies import get_current_org_context
 from openagent.cloud.artifacts import (
-    ARTIFACT_CATEGORIES, artifact_result_ref, default_expiry,
-    new_artifact_id, sign_download_token, storage_key_for,
-    validate_artifact, verify_download_token,
+    ARTIFACT_CATEGORIES,
     ArtifactDraft,
+    artifact_result_ref,
+    default_expiry,
+    new_artifact_id,
+    sign_download_token,
+    storage_key_for,
+    validate_artifact,
+    verify_download_token,
 )
 from openagent.cloud.service import get_cloud_service
 from openagent.core.config import get_settings

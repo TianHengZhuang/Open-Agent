@@ -10,16 +10,14 @@
 #   (variable expansion with :? error messages).
 # - PostgreSQL and Redis are NOT published to the host (internal network
 #   only). Only api (internal) and web (via your reverse proxy) are exposed.
-# - All services: healthchecks, restart policies, non-root where the image
-#   supports it (api/worker/scheduler run as appuser; web image hardening
-#   to non-root is documented future work — see docs/release/release-notes.md).
+# - All services: healthchecks, restart policies, and non-root users (api and
+#   worker run as appuser; the multi-stage web image runs as node).
 # - No privileged containers, no host networking, no Docker socket mounts,
 #   no host filesystem mounts (code is baked into images, not bind-mounted).
-# - Web runs `pnpm start` (production Next.js server). The image MUST contain
-#   a production build (.next); build it with: docker compose -f
-#   docker-compose.production.yml build web   (runs `pnpm build` first via
-#   the web Dockerfile only if adapted — otherwise build .next in CI and
-#   COPY it in. See docs/deployment/self-hosted.md).
+# - Web is built by apps/web/Dockerfile (deps -> builder -> runner) with the
+#   repository root as build context. NEXT_PUBLIC_API_URL is passed as a
+#   build arg because Next.js inlines it into the client bundle.
+# - The API entrypoint runs `alembic upgrade head` before uvicorn starts.
 #
 # LIMITATION (honest): api/worker/scheduler images reuse the development
 # Dockerfiles' runtime layout (uvicorn without --reload for api, worker
@@ -81,6 +79,8 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required}
       API_URL: ${API_URL:?API_URL is required}
       WEB_URL: ${WEB_URL:?WEB_URL is required}
+      SESSION_COOKIE_SECURE: "true"
+      RUN_MIGRATIONS: "true"
     ports:
       - "127.0.0.1:8000:8000" # loopback only — expose via reverse proxy, never 0.0.0.0 directly
     networks:
@@ -161,8 +161,10 @@ services:
 
   web:
     build:
-      context: ./apps/web
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${API_URL:?API_URL is required}/api/v1
     environment:
       NEXT_PUBLIC_API_URL: ${API_URL:?API_URL is required}/api/v1
     ports:
@@ -172,7 +174,7 @@ services:
     restart: unless-stopped
     depends_on:
       - api
-    command: ["pnpm", "start"] # production server; image must contain a `pnpm build` output
+    # The image already builds .next; no command override is needed.
 
 networks:
   internal:

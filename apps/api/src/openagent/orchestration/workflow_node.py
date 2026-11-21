@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 from uuid import UUID
 
+from openagent.orchestration.types import Budget
 from openagent.runtime.executors.base import (
     NodeExecutionContext,
     NodeExecutionResult,
@@ -52,7 +53,6 @@ class OrchestrationNodeExecutor(NodeExecutor):
         from openagent.orchestration.planner import RuleBasedPlanner
         from openagent.orchestration.service import OrchestrationService
         from openagent.orchestration.templates import TEMPLATES
-        from openagent.orchestration.types import Budget
 
         errors = self.validate_config(node_config)
         if errors:

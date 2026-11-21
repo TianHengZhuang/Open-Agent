@@ -21,13 +21,17 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openagent.approvals.hashing import (action_hash, approval_token, envelope_payload,
-                                          redact_params)
+from openagent.approvals.hashing import action_hash, approval_token, envelope_payload, redact_params
 from openagent.approvals.policy import evaluate_policies
 from openagent.approvals.risk import evaluate_risk
-from openagent.approvals.types import (ActionContext, ApprovalKind, ApprovalState,
-                                        PolicyEvaluation, RiskAssessment,
-                                        can_transition)
+from openagent.approvals.types import (
+    ActionContext,
+    ApprovalKind,
+    ApprovalState,
+    PolicyEvaluation,
+    RiskAssessment,
+    can_transition,
+)
 
 logger = structlog.get_logger("openagent.approvals")
 
@@ -157,7 +161,7 @@ class ApprovalEngine:
         await self.db.flush()
         # Satellite rows: snapshot + event (best-effort, same transaction).
         try:
-            from openagent.db.models.approval import ApprovalSnapshot, ApprovalEvent
+            from openagent.db.models.approval import ApprovalEvent, ApprovalSnapshot
             self.db.add(ApprovalSnapshot(
                 approval_id=approval.id, organization_id=req.organization_id,
                 action_hash=digest, snapshot={"envelope": payload,

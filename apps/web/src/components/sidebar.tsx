@@ -26,43 +26,68 @@ import {
   Sparkles,
   SlidersHorizontal,
   Building2,
+  Plus,
+  Network,
+  Users,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useFeature } from '@/lib/feature-flags';
 
-const primaryNav = [
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard, exact: true },
-  { name: 'Agents', href: '/agents', icon: Bot },
-  { name: 'Orchestrations', href: '/orchestrations', icon: Play },
-  { name: 'Management', href: '/management', icon: ShieldCheck },
-  { name: 'Workflows', href: '/workflows', icon: GitBranch },
-  { name: 'Runs', href: '/runs', icon: Play },
-  { name: 'Tools', href: '/tools', icon: Wrench },
-  { name: 'MCP Servers', href: '/mcp', icon: Server },
-  { name: 'Integrations', href: '/integrations', icon: Plug },
-  { name: 'Memory', href: '/memory', icon: Brain },
-  { name: 'Code', href: '/code', icon: Code2 },
-  { name: 'Sandbox', href: '/sandbox', icon: Container },
-  { name: 'Marketplace', href: '/marketplace', icon: Store },
+interface NavItem {
+  name: string;
+  href: string;
+  icon: React.ElementType;
+  exact?: boolean;
+}
+
+const navSections: { label: string; items: NavItem[] }[] = [
+  {
+    label: 'Workspace',
+    items: [
+      { name: 'Overview', href: '/', icon: LayoutDashboard, exact: true },
+      { name: 'Workflows', href: '/workflows', icon: GitBranch },
+      { name: 'Executions', href: '/runs', icon: Play },
+      { name: 'Agents', href: '/agents', icon: Bot },
+      { name: 'Orchestrations', href: '/orchestrations', icon: Network },
+      { name: 'Management', href: '/management', icon: Users },
+    ],
+  },
+  {
+    label: 'Build',
+    items: [
+      { name: 'Tools', href: '/tools', icon: Wrench },
+      { name: 'MCP Servers', href: '/mcp', icon: Server },
+      { name: 'Integrations', href: '/integrations', icon: Plug },
+      { name: 'Memory', href: '/memory', icon: Brain },
+      { name: 'Code', href: '/code', icon: Code2 },
+      { name: 'Sandbox', href: '/sandbox', icon: Container },
+    ],
+  },
+  {
+    label: 'Library',
+    items: [
+      { name: 'Templates', href: '/templates', icon: FileStack },
+      { name: 'Skills', href: '/skills', icon: Sparkles },
+      { name: 'Presets', href: '/presets', icon: SlidersHorizontal },
+      { name: 'Marketplace', href: '/marketplace', icon: Store },
+    ],
+  },
 ];
 
-const developerNav = [
-  { name: 'Overview', href: '/developer', icon: Code2, exact: true },
+const developerNav: NavItem[] = [
+  { name: 'Developer overview', href: '/developer', icon: Code2, exact: true },
   { name: 'Projects', href: '/developer/projects', icon: Building2 },
   { name: 'Extensions', href: '/developer/extensions', icon: Plug },
-  { name: 'New Extension', href: '/developer/extensions/new', icon: Sparkles },
+  { name: 'New extension', href: '/developer/extensions/new', icon: Sparkles },
   { name: 'SDK', href: '/developer/sdk', icon: Code2 },
   { name: 'CLI', href: '/developer/cli', icon: SlidersHorizontal },
   { name: 'API Explorer', href: '/developer/api', icon: FileStack },
   { name: 'Docs', href: '/developer/docs', icon: BookOpen },
   { name: 'Registry', href: '/developer/registry', icon: Container },
-  { name: 'Webhooks & Usage', href: '/developer/settings', icon: Settings },
+  { name: 'Webhooks & usage', href: '/developer/settings', icon: Settings },
 ];
 
-const secondaryNav = [
-  { name: 'Templates', href: '/templates', icon: FileStack },
-  { name: 'Skills', href: '/skills', icon: Sparkles },
-  { name: 'Presets', href: '/presets', icon: SlidersHorizontal },
+const footerNav: NavItem[] = [
   { name: 'Publisher Studio', href: '/publisher/packages', icon: Building2 },
   { name: 'Documentation', href: '/docs', icon: BookOpen },
   { name: 'Settings', href: '/settings', icon: Settings },
@@ -83,7 +108,7 @@ export function Sidebar({ collapsed = false, onToggle, mobile = false }: Sidebar
   const isActive = (href: string, exact?: boolean) =>
     exact ? pathname === href : pathname === href || pathname.startsWith(href + '/');
 
-  const renderLink = (item: { name: string; href: string; icon: React.ElementType; exact?: boolean }) => {
+  const renderLink = (item: NavItem) => {
     if (item.name === 'Marketplace' && !marketplaceOn) return null;
     const active = isActive(item.href, item.exact);
     return (
@@ -93,7 +118,7 @@ export function Sidebar({ collapsed = false, onToggle, mobile = false }: Sidebar
         aria-current={active ? 'page' : undefined}
         title={collapsed && !mobile ? item.name : undefined}
         className={cn(
-          'group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           active
             ? 'bg-primary/10 text-primary'
             : 'text-muted-foreground hover:bg-accent/70 hover:text-foreground',
@@ -102,12 +127,18 @@ export function Sidebar({ collapsed = false, onToggle, mobile = false }: Sidebar
       >
         {active && !collapsed && (
           <span
-            className="absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary"
+            className="absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-r-full bg-primary"
             aria-hidden
           />
         )}
-        <item.icon className={cn('h-5 w-5 shrink-0', active ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground')} aria-hidden />
-        {(!collapsed || mobile) && <span>{item.name}</span>}
+        <item.icon
+          className={cn(
+            'h-[18px] w-[18px] shrink-0',
+            active ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground',
+          )}
+          aria-hidden
+        />
+        {(!collapsed || mobile) && <span className="truncate">{item.name}</span>}
       </Link>
     );
   };
@@ -116,7 +147,7 @@ export function Sidebar({ collapsed = false, onToggle, mobile = false }: Sidebar
     <aside
       aria-label="Main navigation"
       className={cn(
-        'flex h-screen flex-col border-r bg-sidebar transition-all duration-200',
+        'flex h-screen flex-col border-r border-sidebar-border bg-sidebar transition-all duration-200',
         mobile ? 'w-64' : collapsed ? 'w-16' : 'w-64',
         !mobile && 'fixed left-0 top-0 z-40 hidden lg:flex',
         mobile && 'fixed left-0 top-0 z-50 lg:hidden',
@@ -130,7 +161,7 @@ export function Sidebar({ collapsed = false, onToggle, mobile = false }: Sidebar
             : 'justify-between gap-1 px-4',
         )}
       >
-        {(!collapsed || mobile) ? (
+        {!collapsed || mobile ? (
           <Link href="/" className="min-w-0" aria-label="OpenAgent home">
             <Logo />
           </Link>
@@ -151,53 +182,86 @@ export function Sidebar({ collapsed = false, onToggle, mobile = false }: Sidebar
         )}
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto p-3" aria-label="Primary">
-        {primaryNav.map(renderLink)}
-        {(!collapsed || mobile) && (
-          <p className="px-3 pb-1 pt-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
-            Developer
-          </p>
-        )}
-        <div role="group" aria-label="Developer">
-          {developerNav.map(renderLink)}
+      {(!collapsed || mobile) && (
+        <div className="px-3 pt-3">
+          <Link
+            href="/workflows/new"
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-[13px] font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+          >
+            <Plus className="h-4 w-4" aria-hidden />
+            New workflow
+          </Link>
         </div>
-        {isPlatform && (
-          <Link
-            href="/platform"
-            aria-current={isActive('/platform') ? 'page' : undefined}
-            title={collapsed && !mobile ? 'Platform' : undefined}
-            className={cn(
-              'mt-1 flex items-center gap-3 rounded-lg border border-dashed px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
-              collapsed && !mobile && 'justify-center px-2',
+      )}
+
+      <nav className="oa-scroll flex-1 space-y-4 overflow-y-auto p-3" aria-label="Primary">
+        {navSections.map((section) => (
+          <div key={section.label}>
+            {(!collapsed || mobile) && (
+              <p className="px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
+                {section.label}
+              </p>
             )}
-          >
-            <ShieldCheck className="h-5 w-5 shrink-0" aria-hidden />
-            {(!collapsed || mobile) && <span>Platform</span>}
-          </Link>
-        )}
-        {isPlatform && (!collapsed || mobile) && (
-          <Link
-            href="/master/marketplace"
-            aria-current={isActive('/master/marketplace') ? 'page' : undefined}
-            className="mt-1 flex items-center gap-3 rounded-lg px-3 py-2 pl-11 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            <span>Marketplace moderation</span>
-          </Link>
+            <div className="space-y-0.5">{section.items.map(renderLink)}</div>
+          </div>
+        ))}
+
+        <div>
+          {(!collapsed || mobile) && (
+            <p className="px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
+              Developer
+            </p>
+          )}
+          <div role="group" aria-label="Developer" className="space-y-0.5">
+            {developerNav.map(renderLink)}
+          </div>
+        </div>
+
+        {isPlatform && (
+          <div className="space-y-0.5">
+            {(!collapsed || mobile) && (
+              <p className="px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
+                Platform
+              </p>
+            )}
+            <Link
+              href="/platform"
+              aria-current={isActive('/platform') ? 'page' : undefined}
+              title={collapsed && !mobile ? 'Platform' : undefined}
+              className={cn(
+                'flex items-center gap-2.5 rounded-lg border border-dashed px-2.5 py-[7px] text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
+                collapsed && !mobile && 'justify-center px-2',
+              )}
+            >
+              <ShieldCheck className="h-[18px] w-[18px] shrink-0" aria-hidden />
+              {(!collapsed || mobile) && <span>Platform</span>}
+            </Link>
+            {(!collapsed || mobile) && (
+              <Link
+                href="/master/marketplace"
+                className="flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] pl-10 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <span>Marketplace moderation</span>
+              </Link>
+            )}
+          </div>
         )}
       </nav>
 
-      <nav className="space-y-1 border-t border-sidebar-border p-3" aria-label="Secondary">
-        {secondaryNav.map(renderLink)}
+      <nav className="space-y-0.5 border-t border-sidebar-border p-3" aria-label="Secondary">
+        {footerNav.map(renderLink)}
       </nav>
 
       <div className="border-t border-sidebar-border p-3">
-        {(!collapsed || mobile) ? (
+        {!collapsed || mobile ? (
           <div className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-background/60 px-2.5 py-1.5">
             <p className="text-[11px] text-muted-foreground">OpenAgent v0.1.0</p>
             <kbd className="oa-kbd">Ctrl K</kbd>
           </div>
         ) : (
-          <p className="text-center text-[11px] text-muted-foreground" aria-hidden>v0.1</p>
+          <p className="text-center text-[11px] text-muted-foreground" aria-hidden>
+            v0.1
+          </p>
         )}
       </div>
     </aside>

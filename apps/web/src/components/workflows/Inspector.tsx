@@ -4,24 +4,51 @@ import * as React from 'react';
 import { nodeMeta, triggerMeta, type ConfigField } from '@/features/workflows/node-catalog';
 import { getExpressionSuggestions } from '@/features/workflows/expressions';
 import type { WorkflowEditor } from '@/features/workflows/use-workflow-editor';
-import type { WorkflowNodeRunResult } from '@/features/workflows/workflows-api';
+import { useWorkflowSchedule, type WorkflowNodeRunResult } from '@/features/workflows/workflows-api';
 import { Input } from '@/components/ui/input';
 import { Textarea, Select, Switch, Field } from '@/components/ui/form';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Trash2, Settings2, KeyRound, Play } from 'lucide-react';
+import { Trash2, Settings2, KeyRound, Play, X } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+const CATEGORY_VAR: Record<string, string> = {
+  Triggers: 'trigger',
+  Logic: 'logic',
+  Data: 'data',
+  AI: 'ai',
+  Agents: 'agents',
+  Tools: 'tools',
+  HTTP: 'http',
+  Integrations: 'tools',
+  Human: 'human',
+  Utilities: 'utility',
+  Advanced: 'advanced',
+};
+
+function categoryTint(category: string): string {
+  return `hsl(var(--node-${CATEGORY_VAR[category] ?? 'utility'}))`;
+}
 
 export function Inspector({
   editor,
   disabled = false,
   onTestStep,
+  workflowId,
 }: {
   editor: WorkflowEditor;
   disabled?: boolean;
   /** Execute this single node with the supplied input (n8n "Test step"). */
   onTestStep?: (nodeId: string, input: Record<string, unknown>) => Promise<WorkflowNodeRunResult>;
+  /** Enables the live schedule preview for Schedule triggers. */
+  workflowId?: string;
 }) {
   const { definition, selection, validation, dispatch } = editor;
+  const [tab, setTab] = React.useState<'parameters' | 'settings'>('parameters');
+
+  React.useEffect(() => {
+    setTab('parameters');
+  }, [selection?.kind, selection?.id]);
 
   if (!selection) {
     return <WorkflowSettingsPanel editor={editor} disabled={disabled} />;
@@ -31,8 +58,8 @@ export function Inspector({
     const edge = definition.edges.find((e) => e.id === selection.id);
     if (!edge) return <EmptyInspector />;
     return (
-      <div className="oa-panel flex h-full min-h-0 flex-col overflow-hidden">
-        <InspectorHeader title="Edge" subtitle={`${edge.from} → ${edge.to}`} onDelete={disabled ? undefined : () => dispatch({ type: 'delete-selection' })} />
+      <div className="flex h-full min-h-0 flex-col overflow-hidden bg-card">
+        <InspectorHeader title="Edge" subtitle={`${edge.from} → ${edge.to}`} onClose={() => editor.select(null)} onDelete={disabled ? undefined : () => dispatch({ type: 'delete-selection' })} />
         <div className="oa-scroll flex-1 space-y-4 overflow-y-auto p-4">
           <Field label="Branch label" htmlFor="edge-label" help="Shown on the canvas. For condition nodes, use the output port name.">
             <Input
@@ -108,44 +135,84 @@ export function Inspector({
       : { type: 'update-node', id: item.id, patch: { config } });
   };
 
+  const meta = isTrigger ? triggerMeta(trigger!.type) : nodeMeta(node!.type);
+  const Icon = meta.icon;
+  const tint = categoryTint(isTrigger ? 'Triggers' : (meta as { category?: string }).category ?? 'Utilities');
+
   return (
-    <div className="oa-panel flex h-full min-h-0 flex-col overflow-hidden">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-card">
       <InspectorHeader
         title={item.name}
         subtitle={isTrigger ? `Trigger · ${trigger!.type}` : `Node · ${node!.type}`}
+        icon={<Icon className="h-4 w-4" aria-hidden />}
+        tint={tint}
+        onClose={() => editor.select(null)}
         onDelete={disabled ? undefined : () => dispatch({ type: 'delete-selection' })}
       />
-      <div className="oa-scroll flex-1 space-y-4 overflow-y-auto p-4">
-        {errors.length > 0 && (
-          <Alert variant="destructive">
-            <AlertDescription>
-              <ul className="list-disc space-y-0.5 pl-4">
-                {errors.map((e, i) => (
-                  <li key={i}>{e.message}</li>
-                ))}
-              </ul>
-            </AlertDescription>
-          </Alert>
-        )}
-        <Field label="Name" htmlFor="item-name">
-          <Input id="item-name" value={item.name} disabled={disabled} onChange={(e) => setName(e.target.value)} />
-        </Field>
-        {fields.map((f) => (
-          <ConfigInput
-            key={f.key}
-            field={f}
-            value={item.config?.[f.key]}
-            disabled={disabled}
-            suggestions={getExpressionSuggestions({
-              variables: definition.variables.map((v) => v.name),
-              nodeIds: definition.nodes.map((n) => n.id),
-              triggerIds: definition.triggers.map((t) => t.id),
-            })}
-            onChange={(v) => setConfig(f.key, v)}
-          />
-        ))}
-        {isTrigger && trigger!.type === 'webhook' && <WebhookUrl path={String(trigger!.config?.path ?? '')} />}
+      <div className="flex items-center gap-1 border-b border-border px-2 py-1.5" role="tablist" aria-label="Node detail tabs">
+        <button
+          role="tab"
+          aria-selected={tab === 'parameters'}
+          data-active={tab === 'parameters'}
+          onClick={() => setTab('parameters')}
+          className="oa-studio-tab"
+        >
+          Parameters
+        </button>
         {!isTrigger && (
+          <button
+            role="tab"
+            aria-selected={tab === 'settings'}
+            data-active={tab === 'settings'}
+            onClick={() => setTab('settings')}
+            className="oa-studio-tab"
+          >
+            Settings
+          </button>
+        )}
+      </div>
+      <div className="oa-scroll flex-1 space-y-4 overflow-y-auto p-4">
+        {tab === 'parameters' && (
+          <>
+            {errors.length > 0 && (
+              <Alert variant="destructive">
+                <AlertDescription>
+                  <ul className="list-disc space-y-0.5 pl-4">
+                    {errors.map((e, i) => (
+                      <li key={i}>{e.message}</li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+              </Alert>
+            )}
+            <Field label="Name" htmlFor="item-name">
+              <Input id="item-name" value={item.name} disabled={disabled} onChange={(e) => setName(e.target.value)} />
+            </Field>
+            {fields.map((f) => (
+              <ConfigInput
+                key={f.key}
+                field={f}
+                value={item.config?.[f.key]}
+                disabled={disabled}
+                suggestions={getExpressionSuggestions({
+                  variables: definition.variables.map((v) => v.name),
+                  nodeIds: definition.nodes.map((n) => n.id),
+                  triggerIds: definition.triggers.map((t) => t.id),
+                })}
+                onChange={(v) => setConfig(f.key, v)}
+              />
+            ))}
+            {isTrigger && trigger!.type === 'webhook' && <WebhookUrl path={String(trigger!.config?.path ?? '')} />}
+            {isTrigger && trigger!.type === 'schedule' && workflowId && (
+              <SchedulePreview workflowId={workflowId} triggerId={item.id} />
+            )}
+            {onTestStep && <TestStep nodeId={item.id} disabled={disabled} onTestStep={onTestStep} />}
+            <p className="oa-caption">
+              ID: <span className="oa-code">{item.id}</span>
+            </p>
+          </>
+        )}
+        {tab === 'settings' && !isTrigger && (
           <>
             <Field label="Enabled" htmlFor="node-enabled" help="Disabled nodes are skipped by validation and future execution.">
               <Switch
@@ -220,10 +287,6 @@ export function Inspector({
             </Field>
           </>
         )}
-        {onTestStep && <TestStep nodeId={item.id} disabled={disabled} onTestStep={onTestStep} />}
-        <p className="oa-caption">
-          ID: <span className="oa-code">{item.id}</span>
-        </p>
       </div>
     </div>
   );
@@ -315,6 +378,35 @@ function TestStep({
         </div>
       )}
     </div>
+  );
+}
+
+function SchedulePreview({ workflowId, triggerId }: { workflowId: string; triggerId: string }) {
+  const { rows, isLoading } = useWorkflowSchedule(workflowId);
+  const row = rows.find((r) => r.trigger_id === triggerId);
+
+  return (
+    <Field
+      label="Next runs"
+      htmlFor="schedule-preview"
+      help="Computed from the saved version's cron. Publish the workflow to activate the schedule."
+    >
+      {isLoading ? (
+        <p className="oa-caption">Loading…</p>
+      ) : !row ? (
+        <p className="oa-caption">Save the workflow to preview its timetable.</p>
+      ) : row.next_runs.length === 0 ? (
+        <p className="oa-caption">This cron never fires, or is not valid.</p>
+      ) : (
+        <ul id="schedule-preview" className="space-y-1 rounded-lg border bg-muted/40 p-2 text-xs">
+          {row.next_runs.map((t) => (
+            <li key={t} className="oa-code">
+              {new Date(t).toLocaleString()} · {row.timezone}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Field>
   );
 }
 
@@ -524,34 +616,66 @@ function ConfigInput({
   }
 }
 
-function InspectorHeader({ title, subtitle, onDelete }: { title: string; subtitle: string; onDelete?: () => void }) {
+function InspectorHeader({
+  title,
+  subtitle,
+  icon,
+  tint,
+  onDelete,
+  onClose,
+}: {
+  title: string;
+  subtitle: string;
+  icon?: React.ReactNode;
+  tint?: string;
+  onDelete?: () => void;
+  onClose?: () => void;
+}) {
   return (
     <div className="flex items-center justify-between gap-2 border-b border-border/70 px-3 py-2.5">
       <div className="flex min-w-0 items-center gap-2.5">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          <Settings2 className="h-4 w-4" aria-hidden />
+        <span
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/50"
+          style={
+            tint
+              ? { backgroundColor: `color-mix(in srgb, ${tint} 14%, transparent)`, color: tint }
+              : undefined
+          }
+        >
+          {icon ?? <Settings2 className="h-4 w-4" aria-hidden />}
         </span>
         <div className="min-w-0">
           <h2 className="truncate text-sm font-semibold leading-tight">{title}</h2>
           <p className="oa-caption truncate capitalize">{subtitle}</p>
         </div>
       </div>
-      {onDelete && (
-        <button
-          onClick={onDelete}
-          aria-label={`Delete ${title}`}
-          className="shrink-0 rounded-lg p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
-      )}
+      <div className="flex shrink-0 items-center gap-0.5">
+        {onDelete && (
+          <button
+            onClick={onDelete}
+            aria-label={`Delete ${title}`}
+            className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
+        {onClose && (
+          <button
+            onClick={onClose}
+            aria-label="Close node detail"
+            className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
 function EmptyInspector() {
   return (
-    <div className="oa-panel flex h-full flex-col items-center justify-center p-6 text-center">
+    <div className="flex h-full flex-col items-center justify-center p-6 text-center">
       <Settings2 className="mb-2 h-6 w-6 text-muted-foreground" aria-hidden />
       <p className="text-sm text-muted-foreground">Select a trigger, node, or edge to configure it.</p>
     </div>
@@ -568,7 +692,7 @@ function WorkflowSettingsPanel({ editor, disabled }: { editor: WorkflowEditor; d
   };
 
   return (
-    <div className="oa-panel flex h-full min-h-0 flex-col overflow-hidden">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-card">
       <div className="border-b border-border/70 px-4 py-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-primary">

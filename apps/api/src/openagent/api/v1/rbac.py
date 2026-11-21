@@ -1,20 +1,20 @@
 from datetime import datetime
-from typing import Optional, List
+from typing import List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, Request, HTTPException, status, Query
-from pydantic import BaseModel, Field, EmailStr
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openagent.db.session import get_db
-from openagent.db.models import Permission, Role, RoleType, RolePermission
-from openagent.db.repositories import PermissionRepository, RoleRepository
-from openagent.schemas.base import ApiErrorResponse, PaginationParams, PaginatedResponse
 from openagent.api.dependencies import (
     get_current_org_context,
     require_permission,
-    require_organization_role,
 )
-from openagent.services.authorization import AuthorizationService
+from openagent.db.models import Permission, RoleType
+from openagent.db.repositories import PermissionRepository, RoleRepository
+from openagent.db.session import get_db
+from openagent.schemas.base import ApiErrorResponse, PaginatedResponse
 
 router = APIRouter(prefix="/organizations/{organization_id}/rbac", tags=["rbac"])
 
@@ -533,7 +533,7 @@ async def add_role_permission(
             detail={"error": "Permission not found", "code": "PERMISSION_NOT_FOUND"},
         )
     
-    rp = await repo.add_permission(role_id, permission_id)
+    await repo.add_permission(role_id, permission_id)
     await db.commit()
     
     return {"message": "Permission added to role"}

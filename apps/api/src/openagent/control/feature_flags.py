@@ -14,7 +14,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Optional
 
 # Flag keys that touch security controls. These can be *read* but never
 # *weakened* by flag evaluation alone.

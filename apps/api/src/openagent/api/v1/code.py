@@ -511,6 +511,7 @@ async def verify_task(task_id: UUID, request: VerifyTaskRequest,
     evaluates observable evidence only.
     """
     from sqlalchemy import select
+
     from openagent.code.security import scan_text_for_secrets
     from openagent.db.models.code import CodeTestResult
     from openagent.evaluator.integrations import verify_code_change

@@ -98,7 +98,10 @@ class SandboxToolExecutor:
     async def execute(self, tool_name: str, arguments: dict[str, Any],
                       context: Optional[dict[str, Any]] = None) -> dict[str, Any]:
         from openagent.sandbox.service import (
-            SandboxNotFound, SandboxPolicyDenied, SandboxSecurityError)
+            SandboxNotFound,
+            SandboxPolicyDenied,
+            SandboxSecurityError,
+        )
         ctx = context or {}
         db = ctx.get("db")
         if db is None:
@@ -156,8 +159,8 @@ class SandboxToolExecutor:
 
 def ensure_sandbox_tools_registered(db_session_factory=None) -> "SandboxToolExecutor":
     """Register sandbox tools + executor with Tool Runtime (idempotent)."""
-    from openagent.runtime.tools import tool_executor_registry, tool_registry
     from openagent.runtime.tools import ToolDefinition as RuntimeToolDefinition
+    from openagent.runtime.tools import tool_executor_registry, tool_registry
 
     executor = SandboxToolExecutor(service_factory=_service_factory)
     if tool_executor_registry.get_executor("sandbox") is None:

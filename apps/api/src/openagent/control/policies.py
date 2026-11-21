@@ -66,7 +66,7 @@ class PolicyResolver:
         for policy_id, check in self._checks:
             try:
                 decision = check(context)
-            except Exception as exc:
+            except Exception:
                 if self.fail_closed:
                     return PolicyDecision.deny(
                         f"policy {policy_id} errored (fail-closed)",

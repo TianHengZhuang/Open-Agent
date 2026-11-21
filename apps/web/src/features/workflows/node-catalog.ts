@@ -674,7 +674,7 @@ const BUILTIN_NODES: NodeMeta[] = [
     type: 'subworkflow',
     version: 1,
     label: 'Subworkflow',
-    description: 'Reference another workflow (runs in a later phase).',
+    description: 'Run another workflow in-process (same organization, cycle-safe).',
     icon: WorkflowIcon,
     category: 'Advanced',
     source: 'builtin',

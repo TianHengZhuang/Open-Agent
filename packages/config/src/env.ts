@@ -4,9 +4,7 @@ export const EnvSchema = z.object({
   OPENAGENT_ENV: z
     .enum(["development", "staging", "production"])
     .default("development"),
-  OPENAGENT_AUTH_MODE: z
-    .enum(["local", "production"])
-    .default("production"),
+  OPENAGENT_AUTH_MODE: z.enum(["local", "production"]).default("production"),
   NEXT_PUBLIC_OPENAGENT_AUTH_MODE: z
     .enum(["local", "production"])
     .default("production"),

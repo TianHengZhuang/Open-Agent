@@ -1,14 +1,12 @@
 import asyncio
 import time
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Callable, Awaitable, TypeVar
-from dataclasses import dataclass, field
-from enum import Enum
-from contextlib import asynccontextmanager
 from collections import defaultdict
-
-from openagent.core.config import get_settings
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from enum import Enum
+from typing import Any, Dict, Optional
 
 
 class LockType(str, Enum):
@@ -239,7 +237,7 @@ class RateLimiter:
             # Get oldest entry to calculate retry after
             oldest = await self.redis.zrange(key, 0, 0, withscores=True)
             if oldest:
-                retry_after = int(oldest[0][1] + window_seconds - time.time()) + 1
+                retry_after = max(1, int(oldest[0][1] + window_seconds - time.time()) + 1)
             else:
                 retry_after = window_seconds
             return False, 0, retry_after
@@ -284,16 +282,6 @@ class Semaphore:
     async def _try_acquire(self) -> Optional[str]:
         """Try to acquire a semaphore slot."""
         # Use Lua script for atomic check-and-acquire
-        lua_script = """
-        local current = redis.call('scard', KEYS[1])
-        if current < tonumber(ARGV[1]) then
-            local slot = ARGV[2]
-            redis.call('sadd', KEYS[1], slot)
-            return slot
-        else
-            return nil
-        end
-        """
         
         slot = f"slot_{uuid.uuid4().hex[:16]}"
         result = await self.redis.eval(

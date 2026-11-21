@@ -18,8 +18,13 @@ from openagent.approvals.engine import ApprovalEngine, CreateRequest
 from openagent.approvals.policy import evaluate_policies
 from openagent.approvals.risk import evaluate_risk
 from openagent.approvals.taxonomy import is_known_category
-from openagent.approvals.types import (ActionContext, ApprovalKind, GuardResult,
-                                        HumanBlockReason, PolicyDecision)
+from openagent.approvals.types import (
+    ActionContext,
+    ApprovalKind,
+    GuardResult,
+    HumanBlockReason,
+    PolicyDecision,
+)
 
 logger = structlog.get_logger("openagent.guard")
 

@@ -1,20 +1,20 @@
-import uuid
-from datetime import datetime
-from typing import Optional, List, TYPE_CHECKING
-from sqlalchemy import String, Text, Enum as SQLEnum, ForeignKey, Index, UniqueConstraint, Boolean
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
 import enum
+from typing import TYPE_CHECKING, List, Optional
 
-from openagent.db.models.base import Base, TimestampMixin, SoftDeleteMixin, UUIDMixin
+from sqlalchemy import Boolean, Index, String
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from openagent.db.models.base import Base, SoftDeleteMixin, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
-    from openagent.db.models.membership import Membership
     from openagent.db.models.api_key import ApiKey
     from openagent.db.models.email_verification import EmailVerificationToken
+    from openagent.db.models.membership import Membership
+    from openagent.db.models.memory import Memory
     from openagent.db.models.password_reset import PasswordResetToken
-    from openagent.db.models.session import Session
     from openagent.db.models.platform_owner import PlatformOwner
+    from openagent.db.models.session import Session
     from openagent.db.models.team import TeamMembership
 
 

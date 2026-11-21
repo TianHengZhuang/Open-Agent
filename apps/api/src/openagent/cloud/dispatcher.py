@@ -17,19 +17,27 @@ from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Optional
 
 from openagent.cloud.errors import (
-    EntitlementDenied, IncidentBlocked, PlacementFailed, QuotaExceeded,
+    EntitlementDenied,
+    IncidentBlocked,
+    PlacementFailed,
+    QuotaExceeded,
 )
 from openagent.cloud.ops import (
-    QuotaCheck, check_budget, evaluate_quotas, incident_allows_submit,
+    QuotaCheck,
+    check_budget,
+    evaluate_quotas,
+    incident_allows_submit,
 )
 from openagent.cloud.placement import (
-    ExecutionPlacementEngine, PlacementDecision, PlacementRequest,
+    ExecutionPlacementEngine,
+    PlacementDecision,
     RegionRegistry,
 )
 from openagent.cloud.queues import CloudMessage, normalize_priority, route_queue
 from openagent.cloud.runtime import ExecutionHandle, ExecutionRequest, ExecutionView
 from openagent.cloud.types import (
-    DataResidency, ExecutionPriority, ExecutionState,
+    DataResidency,
+    ExecutionState,
     is_valid_execution_transition,
 )
 
@@ -251,6 +259,7 @@ class ExecutionDispatcher:
     def _place(self, request: ExecutionRequest, ctx: DispatchContext,
                priority: str, execution_id: str) -> PlacementDecision:
         from openagent.cloud.placement import PlacementRequest as PR
+
         # When no workers are registered (fresh install), fall back to a
         # region-validated direct placement instead of failing closed.
         from openagent.cloud.placement import WorkerAdvert

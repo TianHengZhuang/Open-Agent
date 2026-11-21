@@ -1,18 +1,19 @@
+import enum
 import uuid
 from datetime import datetime
-from typing import Optional, List, Dict, Any, TYPE_CHECKING
-from sqlalchemy import String, Text, JSON, ForeignKey, Index, Enum as SQLEnum
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
-import enum
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from openagent.db.models.base import Base, TimestampMixin, SoftDeleteMixin, UUIDMixin
+from sqlalchemy import JSON, ForeignKey, Index, String, Text
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from openagent.db.models.base import Base, SoftDeleteMixin, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
-    from openagent.db.models.organization import Organization
     from openagent.db.models.integration import Integration
     from openagent.db.models.mcp import MCPServer
-    from openagent.db.models.tool import Tool
+    from openagent.db.models.organization import Organization
 
 
 class CredentialType(str, enum.Enum):

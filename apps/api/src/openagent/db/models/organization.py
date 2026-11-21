@@ -1,32 +1,30 @@
-import uuid
-from datetime import datetime
-from typing import Optional, List, Dict, Any, TYPE_CHECKING
-from sqlalchemy import String, Text, JSON, Index
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
 import enum
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from openagent.db.models.base import Base, TimestampMixin, SoftDeleteMixin, UUIDMixin
+from sqlalchemy import JSON, Index, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from openagent.db.models.base import Base, SoftDeleteMixin, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
-    from openagent.db.models.membership import Membership
-    from openagent.db.models.api_key import ApiKey
     from openagent.db.models.agent import Agent
-    from openagent.db.models.workflow import Workflow
+    from openagent.db.models.api_key import ApiKey
+    from openagent.db.models.approval import Approval
+    from openagent.db.models.audit_log import AuditLog
+    from openagent.db.models.conversation import Conversation
     from openagent.db.models.credential import Credential
+    from openagent.db.models.evaluation import Evaluation
     from openagent.db.models.integration import Integration
     from openagent.db.models.mcp import MCPServer
-    from openagent.db.models.tool import Tool
-    from openagent.db.models.memory import Memory
-    from openagent.db.models.conversation import Conversation
-    from openagent.db.models.approval import Approval
-    from openagent.db.models.evaluation import Evaluation
-    from openagent.db.models.audit_log import AuditLog
-    from openagent.db.models.webhook import Webhook
-    from openagent.db.models.role import Role
-    from openagent.db.models.team import Team
+    from openagent.db.models.membership import Membership
+    from openagent.db.models.memory import Memory, MemoryPolicy
     from openagent.db.models.organization_invitation import OrganizationInvitation
+    from openagent.db.models.role import Role
     from openagent.db.models.service_account import ServiceAccount
+    from openagent.db.models.team import Team
+    from openagent.db.models.tool import Tool
+    from openagent.db.models.webhook import Webhook
+    from openagent.db.models.workflow import Workflow
 
 
 class OrganizationStatus(str, enum.Enum):

@@ -1,12 +1,13 @@
-from typing import Optional, List
+from typing import List
 from uuid import UUID
-from sqlalchemy import select, func
+
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from openagent.db.models.credential import Credential, CredentialStatus, CredentialType
+from openagent.db.models.integration import Integration, IntegrationProvider
+from openagent.db.models.mcp import MCPServer, MCPTransport
 from openagent.db.repositories.base import BaseRepository
-from openagent.db.models.credential import Credential, CredentialType, CredentialStatus
-from openagent.db.models.integration import Integration, IntegrationProvider, IntegrationStatus
-from openagent.db.models.mcp import MCPServer, MCPTransport, MCPServerStatus
 
 
 class CredentialRepository(BaseRepository[Credential]):
@@ -34,7 +35,7 @@ class CredentialRepository(BaseRepository[Credential]):
         return list(result.scalars().all())
 
     async def list_expiring(self, organization_id: UUID, days: int = 30) -> List[Credential]:
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
         threshold = datetime.now(timezone.utc) + timedelta(days=days)
         result = await self.session.execute(
             select(Credential)

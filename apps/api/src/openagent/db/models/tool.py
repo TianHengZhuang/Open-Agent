@@ -1,16 +1,27 @@
+import enum
 import uuid
 from datetime import datetime
-from typing import Optional, List, Dict, Any, TYPE_CHECKING
-from sqlalchemy import String, Text, JSON, ForeignKey, Index, Enum as SQLEnum, UniqueConstraint, Boolean, Integer, DateTime
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
-import enum
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from openagent.db.models.base import Base, TimestampMixin, SoftDeleteMixin, UUIDMixin
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from openagent.db.models.base import Base, SoftDeleteMixin, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
     from openagent.db.models.organization import Organization
-    from openagent.db.models.credential import Credential
 
 
 class ToolType(str, enum.Enum):

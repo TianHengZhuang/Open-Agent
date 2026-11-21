@@ -1,8 +1,9 @@
-import time
+import ipaddress
 import secrets
-from typing import Optional, Dict, Tuple
-from dataclasses import dataclass, field
-from collections import defaultdict
+import time
+from dataclasses import dataclass
+from typing import Dict, Optional, Tuple
+
 import structlog
 from fastapi import Request
 
@@ -135,17 +136,19 @@ class RedisRateLimiter:
         return True, limit - current_count - 1, 0
 
 
-import secrets
+_RATE_LIMITER: InMemoryRateLimiter | RedisRateLimiter | None = None
 
 
 def get_rate_limiter() -> InMemoryRateLimiter | RedisRateLimiter:
-    """Get rate limiter based on configuration."""
-    settings = get_settings()
-    
-    if settings.REDIS_URL and not settings.is_development:
-        return RedisRateLimiter(settings.REDIS_URL)
-    
-    return InMemoryRateLimiter()
+    """Return the process-wide limiter (never a fresh bucket per request)."""
+    global _RATE_LIMITER
+    if _RATE_LIMITER is None:
+        settings = get_settings()
+        if settings.REDIS_URL and not settings.is_development:
+            _RATE_LIMITER = RedisRateLimiter(settings.REDIS_URL)
+        else:
+            _RATE_LIMITER = InMemoryRateLimiter()
+    return _RATE_LIMITER
 
 
 async def rate_limit_dependency(
@@ -155,8 +158,7 @@ async def rate_limit_dependency(
     window_seconds: int,
 ) -> None:
     """FastAPI dependency for rate limiting."""
-    from fastapi import HTTPException, Request
-    from starlette.responses import Response
+    from fastapi import HTTPException
     
     limiter = get_rate_limiter()
     allowed, remaining, retry_after = await limiter.check_rate_limit(
@@ -191,22 +193,45 @@ AUTH_RATE_LIMITS = {
 }
 
 
+def _peer_is_trusted_proxy(peer: str) -> bool:
+    networks = get_settings().trusted_proxy_cidrs_list
+    if not networks:
+        return False
+    try:
+        address = ipaddress.ip_address(peer)
+    except ValueError:
+        return False
+    for cidr in networks:
+        try:
+            if address in ipaddress.ip_network(cidr, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 async def get_client_identifier(request: Request) -> str:
-    """Get client identifier for rate limiting."""
-    # Try to get real IP from headers (for proxied deployments)
+    """Get a spoof-resistant client identifier for rate limiting.
+
+    Forwarded headers are honoured only when the direct socket peer is in the
+    configured TRUSTED_PROXY_CIDRS list; otherwise any client could reset its
+    own bucket by sending a new X-Forwarded-For value.
+    """
+    peer = request.client.host if request.client else "unknown"
+    if not _peer_is_trusted_proxy(peer):
+        return peer
+
     forwarded_for = request.headers.get("X-Forwarded-For")
     if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    
+        candidate = forwarded_for.split(",")[0].strip()
+        if candidate:
+            return candidate
+
     real_ip = request.headers.get("X-Real-IP")
     if real_ip:
-        return real_ip
-    
-    # Fallback to client host
-    if request.client:
-        return request.client.host
-    
-    return "unknown"
+        return real_ip.strip()
+
+    return peer
 
 
 async def check_auth_rate_limit(

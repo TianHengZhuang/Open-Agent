@@ -8,17 +8,13 @@ last known-good verified version. Every transition is audited.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openagent.db.models.developer import (
-    DeveloperProject,
     ExtensionDefinition,
-    ExtensionDeployment,
     ExtensionInstallation,
     ExtensionVersion,
 )
@@ -26,13 +22,9 @@ from openagent.developer.manifest import load_manifest_dict
 from openagent.developer.packaging import (
     PackageFile,
     build_package,
-    inspect_package,
-    verify_checksums,
 )
-from openagent.developer.permissions import check_permissions
 from openagent.developer.security import scan_files
-from openagent.developer.signing import sign_digest
-from openagent.developer.versioning import check_compatibility, validate_semver
+from openagent.developer.versioning import check_compatibility
 
 
 def _utcnow() -> datetime:

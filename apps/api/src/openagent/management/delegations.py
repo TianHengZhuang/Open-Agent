@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from openagent.management.types import DelegationPolicy, DelegationStatus
+from openagent.management.types import DelegationPolicy
 from openagent.orchestration.assignment import AgentCandidate, assign_agent
 
 

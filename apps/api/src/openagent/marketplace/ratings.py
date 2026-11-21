@@ -19,7 +19,7 @@ def aggregate(ratings: list[int], verified_flags: list[bool] | None = None) -> d
     average = round(sum(clean) / count, 2) if count else 0.0
     verified = 0
     if verified_flags is not None:
-        verified = sum(1 for flag, value in zip(verified_flags, ratings)
+        verified = sum(1 for flag, value in zip(verified_flags, ratings, strict=False)
                        if flag and isinstance(value, int) and 1 <= int(value) <= 5)
     return {
         "rating_average": average,

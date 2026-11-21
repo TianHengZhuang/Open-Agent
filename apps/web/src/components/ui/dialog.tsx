@@ -36,7 +36,10 @@ export function Dialog({ open, onClose, title, description, children, footer, wi
       <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden />
       <div
         ref={ref}
-        className={cn('relative w-full rounded-lg border bg-card p-6 shadow-lg animate-fade-in', wide ? 'max-w-2xl' : 'max-w-lg')}
+        className={cn(
+          'relative max-h-[calc(100vh-2rem)] w-full overflow-y-auto rounded-lg border bg-card p-6 shadow-lg animate-fade-in',
+          wide ? 'max-w-2xl' : 'max-w-lg',
+        )}
       >
         <h2 className="text-lg font-semibold">{title}</h2>
         {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}

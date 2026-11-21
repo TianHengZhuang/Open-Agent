@@ -144,7 +144,7 @@ class ConnectorToolExecutor(ToolExecutor):
                             "error": f"No accessible '{connector_id}' connection",
                             "error_code": "NO_CONNECTION"}
                 connection_id = str(connection.id)
-            except Exception as exc:
+            except Exception:
                 return {"status": "error",
                         "error": "Connection resolution failed",
                         "error_code": "NO_CONNECTION"}

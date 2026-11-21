@@ -1,26 +1,22 @@
 import hashlib
-import secrets
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Any, Dict
-from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from sqlalchemy import String, Text, ForeignKey, Index, Enum as SQLEnum, DateTime, JSON
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from fastapi import Depends, HTTPException, Request
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text, select, update
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy.orm import Mapped, mapped_column
 
-from openagent.db.models.base import Base, TimestampMixin, UUIDMixin
 from openagent.core.config import get_settings
-from openagent.core.security import hash_token, verify_token, generate_secure_token
-from fastapi import Depends, HTTPException, Request
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import TYPE_CHECKING
+from openagent.core.security import generate_secure_token, hash_token
+from openagent.db.models.base import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
-    from openagent.db.session import get_db as _get_db_impl
+    pass
 
 def _get_db() -> AsyncSession:
     """Lazy import to avoid circular dependency with db.session."""
@@ -120,7 +116,10 @@ class IdempotencyService:
         if existing:
             # Check if expired
             if datetime.now(timezone.utc) > existing.expires_at:
-                # Expired, treat as new
+                # Expired: remove the stale row first so the unique key_hash can
+                # be reused, then treat this as a new request.
+                await self.db.delete(existing)
+                await self.db.flush()
                 return await self._create_idempotency_key(key, key_hash, method, endpoint, body, request_hash, organization_id, user_id), True
 
             # Check if request matches
@@ -142,7 +141,9 @@ class IdempotencyService:
                 return existing, False
             
             if existing.status == IdempotencyStatus.FAILED:
-                # Allow retry for failed requests
+                # Allow retry for failed requests by replacing the failed row.
+                await self.db.delete(existing)
+                await self.db.flush()
                 return await self._create_idempotency_key(key, key_hash, method, endpoint, body, request_hash, organization_id, user_id), True
 
             # Still processing
@@ -309,5 +310,4 @@ def require_idempotency(
 
 
 # Import needed for HTTPException
-from fastapi import HTTPException
 from uuid import UUID

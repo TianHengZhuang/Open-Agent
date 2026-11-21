@@ -1,18 +1,20 @@
 from datetime import datetime
-from typing import Optional, List
+from typing import List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, Request, HTTPException, status, Query
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openagent.db.session import get_db
-from openagent.db.models import Team, TeamMembership, TeamMembershipRole, User
-from openagent.db.repositories import TeamRepository, TeamMembershipRepository, RoleRepository
-from openagent.schemas.base import ApiErrorResponse, PaginationParams, PaginatedResponse
 from openagent.api.dependencies import (
     get_current_org_context,
     require_permission,
 )
+from openagent.db.models import Team, TeamMembership, TeamMembershipRole, User
+from openagent.db.repositories import RoleRepository, TeamRepository
+from openagent.db.session import get_db
+from openagent.schemas.base import ApiErrorResponse, PaginatedResponse
 
 router = APIRouter(prefix="/organizations/{organization_id}/teams", tags=["teams"])
 
@@ -96,7 +98,6 @@ async def list_teams(
     teams = await repo.list_by_organization(organization_id, limit=1000)  # Get all for pagination
     
     # Get member counts
-    from openagent.db.models import TeamMembership
     from sqlalchemy import func
     
     team_ids = [t.id for t in teams]
@@ -152,7 +153,6 @@ async def create_team(
     
     # Check if name already exists
     from sqlalchemy import select
-    from openagent.db.models import Team
     existing_name = await db.execute(
         select(Team).where(Team.organization_id == organization_id, Team.name == data.name)
     )

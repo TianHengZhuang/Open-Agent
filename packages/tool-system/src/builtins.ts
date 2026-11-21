@@ -6,6 +6,7 @@ import {
 } from "./types";
 import { OpenAgentLogger, createChildLogger } from "@openagent/logger";
 import type { BinaryToTextEncoding } from "crypto";
+import { safeFetch } from "./network-guard";
 
 const logger: OpenAgentLogger = createChildLogger({
   module: "tool-system:builtins",
@@ -620,8 +621,10 @@ export class BuiltinToolAdapter implements ToolAdapter {
     const body = input.body;
     const timeout = (input.timeout as number) || 30000;
     const followRedirects = input.follow_redirects !== false;
-    // const maxRedirects = (input.max_redirects as number) || 10; // TODO: implement redirect limit
-    // const validateCertificates = input.validate_certificates !== false; // TODO: implement cert validation
+    const maxRedirects = Math.min(
+      Math.max(Number(input.max_redirects) || 10, 0),
+      5,
+    );
 
     const allowedSchemes = (toolConfig.allowed_schemes as string[]) || [
       "http",
@@ -632,7 +635,6 @@ export class BuiltinToolAdapter implements ToolAdapter {
       "127.0.0.1",
       "0.0.0.0",
     ];
-    // const blockedIps = (toolConfig.blocked_ips as string[]) || ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '169.254.0.0/16', '127.0.0.0/8']; // TODO: implement IP blocking
     const maxResponseSize =
       (toolConfig.max_response_size as number) || 10 * 1024 * 1024;
 
@@ -678,7 +680,13 @@ export class BuiltinToolAdapter implements ToolAdapter {
         }
       }
 
-      const response = await fetch(fullUrl, fetchOptions);
+      // safeFetch resolves and validates every IP (including redirect targets)
+      // and enforces the 5-hop limit. TLS verification is always enabled.
+      const response = await safeFetch(fullUrl, fetchOptions, {
+        allowedSchemes,
+        blockedDomains,
+        maxRedirects: followRedirects ? maxRedirects : 0,
+      });
       clearTimeout(timeoutId);
 
       const responseHeaders: Record<string, string> = {};

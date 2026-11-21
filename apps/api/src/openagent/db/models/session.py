@@ -1,9 +1,10 @@
 import uuid
 from datetime import datetime
-from typing import Optional, TYPE_CHECKING
-from sqlalchemy import String, Text, ForeignKey, Index
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from typing import TYPE_CHECKING, Optional
+
+from sqlalchemy import ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from openagent.db.models.base import Base, TimestampMixin, UUIDMixin
 

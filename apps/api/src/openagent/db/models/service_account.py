@@ -1,17 +1,21 @@
+from __future__ import annotations
+
+import enum
 import uuid
 from datetime import datetime
-from typing import Optional, List, TYPE_CHECKING
-from sqlalchemy import String, Text, ForeignKey, Index, Enum as SQLEnum, JSON
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
-import enum
+from typing import TYPE_CHECKING, List, Optional
 
-from openagent.db.models.base import Base, TimestampMixin, SoftDeleteMixin, UUIDMixin
+from sqlalchemy import JSON, ForeignKey, Index, String, Text
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from openagent.db.models.base import Base, SoftDeleteMixin, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
     from openagent.db.models.organization import Organization
+    from openagent.db.models.permission import Permission, ServiceAccountPermission
     from openagent.db.models.user import User
-    from openagent.db.models.permission import Permission
 
 
 class ServiceAccountStatus(str, enum.Enum):

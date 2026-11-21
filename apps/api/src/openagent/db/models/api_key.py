@@ -1,15 +1,16 @@
 import uuid
 from datetime import datetime
-from typing import Optional, List, TYPE_CHECKING
-from sqlalchemy import String, Text, JSON, ForeignKey, Index
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
+from typing import TYPE_CHECKING, List, Optional
 
-from openagent.db.models.base import Base, TimestampMixin, SoftDeleteMixin, UUIDMixin
+from sqlalchemy import JSON, ForeignKey, Index, String
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from openagent.db.models.base import Base, SoftDeleteMixin, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
-    from openagent.db.models.user import User
     from openagent.db.models.organization import Organization
+    from openagent.db.models.user import User
 
 
 class ApiKey(TimestampMixin, SoftDeleteMixin, UUIDMixin, Base):

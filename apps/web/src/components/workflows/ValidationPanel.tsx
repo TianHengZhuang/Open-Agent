@@ -29,7 +29,7 @@ export function ValidationPanel({ editor }: { editor: WorkflowEditor }) {
   const shown = serverResult ?? { valid: validation.valid, errors: validation.errors, warnings: validation.warnings };
 
   return (
-    <div className="oa-panel flex h-full min-h-0 flex-col overflow-hidden" aria-live="polite">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-card" aria-live="polite">
       <div className="flex items-center justify-between gap-2 border-b border-border/70 px-3 py-2.5">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           {shown.valid ? (

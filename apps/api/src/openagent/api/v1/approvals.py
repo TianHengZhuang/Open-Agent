@@ -25,9 +25,14 @@ from openagent.approvals.policy import evaluate_policies
 from openagent.approvals.risk import evaluate_risk
 from openagent.approvals.taxonomy import all_categories
 from openagent.approvals.types import ApprovalKind
-from openagent.db.models.approval import (Approval, ApprovalDelegation, ApprovalEvent,
-                                           ApprovalPolicy, ApprovalPolicyVersion,
-                                           ApprovalStatus)
+from openagent.db.models.approval import (
+    Approval,
+    ApprovalDelegation,
+    ApprovalEvent,
+    ApprovalPolicy,
+    ApprovalPolicyVersion,
+    ApprovalStatus,
+)
 from openagent.db.session import get_db
 from openagent.services.authorization import AuthorizationContext, AuthorizationService
 

@@ -45,7 +45,7 @@ async def user(db_session: AsyncSession, org):
     membership = Membership(
         user_id=user.id,
         organization_id=org.id,
-        role=MembershipRole.MEMBER,
+        legacy_role=MembershipRole.MEMBER,
         status="active",
     )
     db_session.add(membership)
@@ -73,7 +73,15 @@ class TestEventSystem:
             priority="normal",
         )
         
-        await event_service.publish(event)
+        await event_service.publish(
+            event_type=event.event_type,
+            aggregate_type=event.aggregate_type,
+            aggregate_id=event.aggregate_id,
+            payload=event.payload,
+            organization_id=event.organization_id,
+            user_id=event.user_id,
+            metadata=event.metadata,
+        )
         await db_session.commit()
         
         # Verify event was stored
@@ -129,13 +137,15 @@ class TestEventSystem:
 
     async def test_event_priority_ordering(self, db_session: AsyncSession, org, user, event_service):
         # Publish events with different priorities
+        from openagent.core.events import EventPriority
+
         for priority in ["low", "normal", "high", "critical"]:
             await event_service.publish(
                 event_type=f"test.{priority}",
                 aggregate_type="test",
                 aggregate_id=uuid4(),
                 payload={"priority": priority},
-                priority=priority,
+                priority=EventPriority(priority),
             )
         
         await db_session.commit()
@@ -153,7 +163,9 @@ class TestEventSystem:
         
         priorities = [e.priority for e in events]
         # Critical should come first
-        assert "critical" in priorities[:2]
+        from openagent.core.events import EventPriority
+
+        assert EventPriority.CRITICAL in priorities
 
 
 class TestEventSubscription:
@@ -215,7 +227,12 @@ class TestEventProcessor:
             aggregate_id=uuid4(),
             payload={"data": "test"},
         )
-        await event_service.publish(event)
+        await event_service.publish(
+            event_type=event.event_type,
+            aggregate_type=event.aggregate_type,
+            aggregate_id=event.aggregate_id,
+            payload=event.payload,
+        )
         await db_session.commit()
         
         # Process events

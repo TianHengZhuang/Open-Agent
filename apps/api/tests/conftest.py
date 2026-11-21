@@ -20,9 +20,14 @@ from openagent.db.models import (
 from openagent.core.config import get_settings
 
 
-# Test database URL - use the application's database URL
-# In CI/CD, this should point to a PostgreSQL test database
-TEST_DATABASE_URL = get_settings().DATABASE_URL
+# Test database URL. SQLite runs in memory so a previous test run can never
+# leak committed rows into the next one; PostgreSQL CI uses its dedicated URL.
+_configured_database_url = get_settings().DATABASE_URL
+TEST_DATABASE_URL = (
+    "sqlite+aiosqlite://"
+    if _configured_database_url.startswith("sqlite")
+    else _configured_database_url
+)
 
 
 @pytest.fixture(scope="session")
@@ -58,13 +63,31 @@ async def test_engine():
 
 @pytest_asyncio.fixture
 async def db_session(test_engine) -> AsyncSession:
-    async_session_maker = async_sessionmaker(
-        test_engine, class_=AsyncSession, expire_on_commit=False
-    )
-    
-    async with async_session_maker() as session:
-        yield session
-        await session.rollback()
+    # Run each test inside an outer transaction. ``create_savepoint`` lets
+    # fixture/model code call ``commit()`` (which releases a savepoint) without
+    # persisting rows; the outer rollback at teardown restores a clean database.
+    is_sqlite = TEST_DATABASE_URL.startswith("sqlite")
+    async with test_engine.connect() as connection:
+        # SQLite needs a real BEGIN; SQLAlchemy's begin() is logical only and
+        # a top-level SAVEPOINT would otherwise commit on RELEASE.
+        if is_sqlite:
+            await connection.exec_driver_sql("BEGIN")
+            transaction = None
+        else:
+            transaction = await connection.begin()
+        session = AsyncSession(
+            bind=connection,
+            expire_on_commit=False,
+            join_transaction_mode="create_savepoint",
+        )
+        try:
+            yield session
+        finally:
+            await session.close()
+            if is_sqlite:
+                await connection.exec_driver_sql("ROLLBACK")
+            elif transaction is not None and transaction.is_active:
+                await transaction.rollback()
 
 
 @pytest_asyncio.fixture
@@ -139,7 +162,7 @@ async def membership_a(db_session: AsyncSession, user_a: User, org_a: Organizati
     membership = Membership(
         user_id=user_a.id,
         organization_id=org_a.id,
-        role=MembershipRole.OWNER,
+        legacy_role=MembershipRole.OWNER,
         status=MembershipStatus.ACTIVE
     )
     db_session.add(membership)
@@ -153,7 +176,7 @@ async def membership_b(db_session: AsyncSession, user_b: User, org_b: Organizati
     membership = Membership(
         user_id=user_b.id,
         organization_id=org_b.id,
-        role=MembershipRole.OWNER,
+        legacy_role=MembershipRole.OWNER,
         status=MembershipStatus.ACTIVE
     )
     db_session.add(membership)

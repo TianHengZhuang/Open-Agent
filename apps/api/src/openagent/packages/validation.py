@@ -16,7 +16,8 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from openagent.packages import config_schema, dependencies as dep_module
+from openagent.packages import config_schema
+from openagent.packages import dependencies as dep_module
 from openagent.packages import security as security_module
 from openagent.packages.manifest import (
     ManifestError,

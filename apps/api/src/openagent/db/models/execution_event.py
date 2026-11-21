@@ -1,16 +1,16 @@
 import uuid
 from datetime import datetime
-from typing import Optional, Dict, Any, TYPE_CHECKING
-from sqlalchemy import String, Text, JSON, ForeignKey, Index, Integer
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from typing import TYPE_CHECKING, Any, Dict, Optional
+
+from sqlalchemy import JSON, ForeignKey, Index, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from openagent.db.models.base import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
-    from openagent.db.models.organization import Organization
-    from openagent.db.models.workflow_execution import WorkflowExecution
     from openagent.db.models.agent_run import AgentRun
+    from openagent.db.models.workflow_execution import WorkflowExecution
 
 
 class ExecutionEvent(TimestampMixin, UUIDMixin, Base):

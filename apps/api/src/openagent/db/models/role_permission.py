@@ -1,15 +1,15 @@
 import uuid
-from datetime import datetime
 from typing import TYPE_CHECKING
+
 from sqlalchemy import ForeignKey, Index, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from openagent.db.models.base import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
-    from openagent.db.models.role import Role
     from openagent.db.models.permission import Permission
+    from openagent.db.models.role import Role
     from openagent.db.models.service_account import ServiceAccount
 
 

@@ -7,11 +7,9 @@ Never exposed without the worker service token.
 
 from __future__ import annotations
 
-import hashlib
 import hmac
-import secrets
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
@@ -20,7 +18,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from openagent.cloud.errors import InvalidExecutionTransition, InvalidWorkerTransition
 from openagent.cloud.service import get_cloud_service
-from openagent.cloud.types import is_valid_execution_transition
 from openagent.cloud.workers import WorkerRecord
 from openagent.core.config import get_settings
 from openagent.db.models.cloud import CloudWorker, WorkerHeartbeat
@@ -104,7 +101,7 @@ async def register_worker(
     service = get_cloud_service()
     service.require_enabled()
     try:
-        record = service.register_worker(WorkerRecord(
+        service.register_worker(WorkerRecord(
             worker_id=body.worker_id,
             service_identity=f"svc:{body.worker_id}",
             region_id=body.region, pool_id=body.pool,

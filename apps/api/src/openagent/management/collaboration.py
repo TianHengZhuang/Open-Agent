@@ -7,8 +7,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from openagent.management.types import (
-    NON_NEGOTIABLE_FIELDS,
     NEGOTIABLE_FIELDS,
+    NON_NEGOTIABLE_FIELDS,
     BlockedReason,
     CollaborationAction,
     ProgressReport,

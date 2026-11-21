@@ -1,25 +1,22 @@
-import json
 import uuid
-from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List, Callable, Awaitable
-from dataclasses import dataclass, field
-from enum import Enum
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import Enum
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional
 
-from sqlalchemy import String, Text, ForeignKey, Index, Enum as SQLEnum, DateTime, JSON
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from fastapi import Depends
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy import Index, String, select
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy.orm import Mapped, mapped_column
 
-from openagent.db.models.base import Base, TimestampMixin, UUIDMixin
 from openagent.core.config import get_settings
-from fastapi import Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import TYPE_CHECKING
+from openagent.db.models.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
-    from openagent.db.session import get_db as _get_db_impl
+    pass
 
 def _get_db() -> AsyncSession:
     """Lazy import to avoid circular dependency with db.session."""
@@ -322,7 +319,7 @@ class EventService:
         event_types: List[str],
         callback_url: str,
         secret: str,
-    ) -> None:
+    ) -> "EventSubscription":
         """Create an event subscription for webhook delivery."""
         from openagent.core.security import hash_token
         from openagent.db.models import EventSubscription
@@ -339,6 +336,7 @@ class EventService:
         )
         self.db.add(subscription)
         await self.db.flush()
+        return subscription
 
 
 # Dependency for event service - lazy import to avoid circular imports

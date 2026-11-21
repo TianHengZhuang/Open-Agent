@@ -16,12 +16,13 @@ import { StudioShell } from '../../../shell';
 const INTERVALS = ['ONE_TIME', 'DAILY', 'MONTHLY', 'YEARLY', 'CUSTOM'];
 const MODELS = ['FREE', 'ONE_TIME', 'SUBSCRIPTION', 'USAGE_BASED', 'TIERED', 'VOLUME', 'CUSTOM'];
 
-export default function ProductPricingPage({ params }: { params: { id: string } }) {
+export default function ProductPricingPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = React.use(params);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const pricesQuery = useQuery({
-    queryKey: ['product-prices', params.id],
-    queryFn: () => commerceApi.prices(params.id),
+    queryKey: ['product-prices', id],
+    queryFn: () => commerceApi.prices(id),
   });
   const [amount, setAmount] = React.useState('9.99');
   const [currency, setCurrency] = React.useState('USD');
@@ -30,14 +31,14 @@ export default function ProductPricingPage({ params }: { params: { id: string } 
 
   const create = useMutation({
     mutationFn: () =>
-      commerceApi.createPrice(params.id, {
+      commerceApi.createPrice(id, {
         amount: amount.trim(),
         currency,
         pricing_model: pricingModel,
         billing_interval: interval,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['product-prices', params.id] });
+      queryClient.invalidateQueries({ queryKey: ['product-prices', id] });
       toast({ kind: 'success', title: 'Price created' });
     },
     onError: (e) => toast({ kind: 'error', title: 'Create failed', description: toUserMessage(e) }),

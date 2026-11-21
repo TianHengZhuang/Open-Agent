@@ -8,7 +8,7 @@ before any state change; all decisions are audited.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from uuid import UUID
 
 import structlog
@@ -69,6 +69,8 @@ from openagent.db.repositories.management import (
 )
 from openagent.management.authority import (
     ManagerProfile as ProfileData,
+)
+from openagent.management.authority import (
     check_authority,
 )
 from openagent.management.collaboration import (
@@ -1107,7 +1109,7 @@ class ManagementService:
         from openagent.orchestration.discovery import discover_agents
 
         by_role: Dict[str, List[AgentCandidate]] = {}
-        for role, capabilities in request.required_roles.items():
+        for role, _capabilities in request.required_roles.items():
             agents = await discover_agents(
                 self.db, organization_id=organization_id, capabilities=None, limit=100)
             candidates = []
@@ -1129,7 +1131,7 @@ class ManagementService:
         total_budget = float((request.budget or {}).get("total", 0.0) or 0.0)
         shares = split_budget(total_budget, [1.0] * max(1, len(formed.members)))
         member_budgets = {
-            member.agent_id: share for member, share in zip(formed.members, shares)
+            member.agent_id: share for member, share in zip(formed.members, shares, strict=False)
         }
         # Deadline propagation (§74): stagger member deadlines within the
         # charter window; none may extend the parent deadline.

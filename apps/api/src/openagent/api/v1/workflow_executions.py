@@ -2,30 +2,28 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Optional, List, Dict, Any
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openagent.db.session import get_db
-from openagent.db.models import (
-    Workflow,
-    WorkflowExecution,
-    WorkflowExecutionStatus,
-    WorkflowExecutionTriggerType,
-    ExecutionEvent,
-)
-from openagent.db.repositories import WorkflowRepository, WorkflowExecutionRepository
-from openagent.schemas.base import ApiErrorResponse, PaginatedResponse
 from openagent.api.dependencies import (
     get_current_org_context,
     require_permission,
 )
+from openagent.db.models import (
+    ExecutionEvent,
+    Workflow,
+    WorkflowExecution,
+    WorkflowExecutionStatus,
+)
+from openagent.db.session import get_db
 from openagent.runtime.core import get_runtime
+from openagent.schemas.base import ApiErrorResponse, PaginatedResponse
 
 router = APIRouter(prefix="/organizations/{organization_id}/workflows", tags=["workflow-execution"])
 
@@ -323,7 +321,6 @@ async def get_execution(
         )
     
     # Get node runs
-    from openagent.db.models import WorkflowExecution as WE
     # For now, we don't have a separate node_runs table, so we'll extract from execution metadata
     node_runs = []
     if execution.metadata and "node_runs" in execution.metadata:

@@ -2,16 +2,18 @@
 
 export const dynamic = 'force-dynamic';
 
+import { use } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/states';
 import { commerceApi } from '@/lib/commerce';
 import { StudioShell } from '../../../shell';
 
-export default function ProductAccessPage({ params }: { params: { id: string } }) {
+export default function ProductAccessPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
   const query = useQuery({
-    queryKey: ['product-entitlements', params.id],
-    queryFn: () => commerceApi.entitlements(params.id),
+    queryKey: ['product-entitlements', id],
+    queryFn: () => commerceApi.entitlements(id),
   });
   const rows = query.data?.data ?? [];
 

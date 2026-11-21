@@ -10,6 +10,7 @@ from openagent.api import v1_router
 from openagent.core.config import get_settings
 from openagent.core.logging import configure_logging, get_logger
 from openagent.core.metrics import MetricsMiddleware
+from openagent.core.security.csrf import CSRFMiddleware
 from openagent.core.security.headers import (
     RequestSizeLimitMiddleware,
     RequestTimeoutMiddleware,
@@ -138,8 +139,18 @@ async def lifespan(app: FastAPI):
         logger.info("SQLite schema ensured", database=settings.DATABASE_URL)
     # Fail fast in production when dependencies are unreachable; warn in dev.
     await _probe_dependencies(fail_fast=settings.is_production)
+    # Workflow Schedule triggers fire from this loop (n8n parity). It is
+    # disabled with OPENAGENT_WORKFLOW_SCHEDULER=0.
+    from openagent.runtime.schedule_runner import start_schedule_loop
+
+    schedule_task = asyncio.create_task(start_schedule_loop())
     yield
     logger.info("Shutting down OpenAgent API")
+    schedule_task.cancel()
+    try:
+        await schedule_task
+    except asyncio.CancelledError:
+        pass
     await close_db()
     logger.info("Database connections closed")
 
@@ -166,6 +177,7 @@ def create_app() -> FastAPI:
     )
 
     # Security middleware (order matters - first added = outermost)
+    app.add_middleware(CSRFMiddleware)
     app.add_middleware(RequestTimeoutMiddleware, timeout=60.0)
     app.add_middleware(RequestSizeLimitMiddleware, max_size=50 * 1024 * 1024)  # 50MB
     app.add_middleware(SecurityHeadersMiddleware)

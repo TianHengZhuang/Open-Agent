@@ -1,31 +1,27 @@
-from typing import Optional, List, Set
-from uuid import UUID
 from dataclasses import dataclass
+from typing import List, Optional, Set
+from uuid import UUID
+
+import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-import structlog
 
+from openagent.core.config import get_settings
 from openagent.db.models import (
-    User,
-    Organization,
     Membership,
     MembershipStatus,
-    Role,
-    RolePermission,
     Permission,
+    Role,
+    ServiceAccountStatus,
     Team,
     TeamMembership,
-    ServiceAccount,
-    ServiceAccountStatus,
-    ServiceAccountPermission,
 )
 from openagent.db.repositories import (
-    RoleRepository,
     PermissionRepository,
-    TeamRepository,
+    RoleRepository,
     ServiceAccountRepository,
+    TeamRepository,
 )
-from openagent.core.config import get_settings
 
 logger = structlog.get_logger("openagent.authz")
 

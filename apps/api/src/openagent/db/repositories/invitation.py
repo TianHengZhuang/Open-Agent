@@ -1,12 +1,13 @@
-from typing import Optional, List
-from uuid import UUID
 from datetime import datetime, timezone
-from sqlalchemy import select, func, update
+from typing import List, Optional
+from uuid import UUID
+
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openagent.db.repositories.base import BaseRepository
-from openagent.db.models import OrganizationInvitation, InvitationStatus, Role
 from openagent.core.security.tokens import create_token_pair
+from openagent.db.models import InvitationStatus, OrganizationInvitation
+from openagent.db.repositories.base import BaseRepository
 
 
 class OrganizationInvitationRepository(BaseRepository[OrganizationInvitation]):

@@ -8,8 +8,6 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from openagent.identity.types import RiskLevel
-
 POLICY_SECTIONS = ("authentication", "mfa", "session", "network",
                     "data", "ai", "tool", "workload", "environment",
                     "incident")

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 # High-confidence override markers only — no fuzzy universal DLP.
 OVERRIDE_PATTERNS = (

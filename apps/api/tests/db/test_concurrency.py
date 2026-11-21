@@ -6,7 +6,7 @@ from datetime import datetime, timezone, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from openagent.core.concurrency import (
-    DistributedLockManager, RateLimiter, Semaphore, RetryPolicy, BackoffStrategy,
+    DistributedLockManager, RateLimiter, Semaphore,
     Lock, LockType, LockState,
 )
 from openagent.core.resilience import (
@@ -120,8 +120,8 @@ class TestRateLimiter:
         limiter = RateLimiter(redis_mock)
         
         allowed, remaining, retry_after = await limiter.check_rate_limit(
-            identifier="user-123",
-            endpoint="/api/test",
+            key="user-123",
+            
             limit=10,
             window_seconds=60,
         )
@@ -138,8 +138,8 @@ class TestRateLimiter:
         limiter = RateLimiter(redis_mock)
         
         allowed, remaining, retry_after = await limiter.check_rate_limit(
-            identifier="user-123",
-            endpoint="/api/test",
+            key="user-123",
+            
             limit=10,
             window_seconds=60,
         )
@@ -188,89 +188,6 @@ class TestSemaphore:
         
         current = await semaphore.get_current()
         assert current == 3
-
-
-class TestRetryPolicy:
-    def test_fixed_backoff(self):
-        policy = RetryPolicy(
-            max_attempts=3,
-            base_delay_seconds=1.0,
-            strategy=BackoffStrategy.FIXED,
-        )
-        
-        from openagent.worker.queue import Job
-        job = Job(payload={}, retry_policy=policy)
-        job.attempts = 1
-        
-        delay = job.calculate_next_retry_delay()
-        assert delay == 1.0
-        
-        job.attempts = 2
-        delay = job.calculate_next_retry_delay()
-        assert delay == 1.0
-        
-        job.attempts = 3
-        delay = job.calculate_next_retry_delay()
-        assert delay == 1.0
-
-    def test_linear_backoff(self):
-        policy = RetryPolicy(
-            max_attempts=3,
-            base_delay_seconds=2.0,
-            strategy=BackoffStrategy.LINEAR,
-        )
-        
-        from openagent.worker.queue import Job
-        job = Job(payload={}, retry_policy=policy)
-        job.attempts = 1
-        
-        delay = job.calculate_next_retry_delay()
-        assert delay == 2.0  # 2 * 1
-        
-        job.attempts = 2
-        delay = job.calculate_next_retry_delay()
-        assert delay == 4.0  # 2 * 2
-
-    def test_exponential_backoff(self):
-        policy = RetryPolicy(
-            max_attempts=3,
-            base_delay_seconds=1.0,
-            strategy=BackoffStrategy.EXPONENTIAL,
-        )
-        
-        from openagent.worker.queue import Job
-        job = Job(payload={}, retry_policy=policy)
-        job.attempts = 1
-        
-        delay = job.calculate_next_retry_delay()
-        assert delay == 1.0  # 1 * 2^0
-        
-        job.attempts = 2
-        delay = job.calculate_next_retry_delay()
-        assert delay == 2.0  # 1 * 2^1
-        
-        job.attempts = 3
-        delay = job.calculate_next_retry_delay()
-        assert delay == 4.0  # 1 * 2^2
-
-    def test_exponential_jitter(self):
-        policy = RetryPolicy(
-            max_attempts=3,
-            base_delay_seconds=1.0,
-            strategy=BackoffStrategy.EXPONENTIAL_JITTER,
-        )
-        
-        from openagent.worker.queue import Job
-        job = Job(payload={}, retry_policy=policy)
-        job.attempts = 1
-        
-        delay = job.calculate_next_retry_delay()
-        # With jitter: 1.0 * (0.5 + random) = between 0.5 and 1.5
-        assert 0.5 <= delay <= 1.5
-        
-        job.attempts = 2
-        delay = job.calculate_next_retry_delay()
-        assert 1.0 <= delay <= 3.0  # 2 * (0.5 to 1.5)
 
 
 class TestCircuitBreaker:

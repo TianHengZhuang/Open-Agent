@@ -69,6 +69,31 @@ export function useWorkflow(id: string) {
   };
 }
 
+export interface ScheduleRow {
+  trigger_id: string;
+  name: string;
+  cron: string;
+  timezone: string;
+  next_runs: string[];
+  workflow_id: string;
+}
+
+export function useWorkflowSchedule(id: string, enabled = true) {
+  const { currentOrgId } = useOrganization();
+  const query = useQuery({
+    queryKey: [...workflowKeys.detail(currentOrgId, id), 'schedule'] as const,
+    queryFn: async () => {
+      const res = await api.get<{ triggers?: ScheduleRow[] }>(
+        `${base(currentOrgId)}/${id}/schedule`,
+      );
+      return res.triggers ?? [];
+    },
+    enabled: !!currentOrgId && !!id && enabled,
+    staleTime: 15_000,
+  });
+  return { rows: query.data ?? [], isLoading: query.isLoading };
+}
+
 export function useWorkflowVersions(id: string) {
   const { currentOrgId } = useOrganization();
   const query = useQuery({

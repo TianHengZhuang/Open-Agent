@@ -1,22 +1,23 @@
+import enum
 import uuid
 from datetime import datetime
-from typing import Optional, Dict, Any, TYPE_CHECKING, List
-from sqlalchemy import String, Text, JSON, ForeignKey, Index, Enum as SQLEnum, Float, Integer, Boolean, DateTime
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
-import enum
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from openagent.db.models.base import Base, TimestampMixin, UUIDMixin, SoftDeleteMixin
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from openagent.db.models.base import Base, SoftDeleteMixin, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
-    from openagent.db.models.organization import Organization
-    from openagent.db.models.user import User
     from openagent.db.models.agent import Agent
     from openagent.db.models.agent_run import AgentRun
-    from openagent.db.models.task import Task
     from openagent.db.models.conversation import Conversation
+    from openagent.db.models.organization import Organization
+    from openagent.db.models.task import Task
     from openagent.db.models.team import Team
-    from openagent.db.models.agent_run import AgentRun
+    from openagent.db.models.user import User
 
 
 class MemoryType(str, enum.Enum):

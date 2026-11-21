@@ -271,9 +271,9 @@ def _task_plan_from_input(data: PlanInput, fallback_objective: str) -> TaskPlan:
     from openagent.orchestration.types import (
         DependencyPolicy,
         PlannedTask,
+        RetryStrategy,
         RiskLevel,
         TaskPriority,
-        RetryStrategy,
     )
 
     objective = data.objective or fallback_objective
@@ -377,6 +377,7 @@ async def list_orchestrations(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     status_filter: Optional[str] = Query(None, alias="status"),
+    search: Optional[str] = Query(None, max_length=200),
     auth_context=Depends(get_current_org_context),
     db: AsyncSession = Depends(get_db),
 ):
@@ -389,6 +390,10 @@ async def list_orchestrations(
     if status_filter:
         query = query.where(OrchestrationRun.status == status_filter)
         count_query = count_query.where(OrchestrationRun.status == status_filter)
+    if search:
+        pattern = f"%{search.strip()}%"
+        query = query.where(OrchestrationRun.objective.ilike(pattern))
+        count_query = count_query.where(OrchestrationRun.objective.ilike(pattern))
     total = (await db.execute(count_query)).scalar_one()
     rows = list(
         (await db.execute(

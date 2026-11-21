@@ -3,104 +3,168 @@
 from fastapi import APIRouter
 
 from openagent.api.health import router as health_router
-from openagent.api.v1.auth import router as auth_router
-from openagent.api.v1.organizations import router as organizations_router
-from openagent.api.v1.rbac import router as rbac_router
-from openagent.api.v1.teams import router as teams_router
-from openagent.api.v1.invitations import router as invitations_router
-from openagent.api.v1.service_accounts import router as service_accounts_router
-from openagent.api.v1.workflows import router as workflows_router
-from openagent.api.v1.workflow_executions import router as workflow_executions_router
-from openagent.api.v1.workflow_hooks import router as workflow_hooks_router
-from openagent.api.v1.koro import router as koro_router
 from openagent.api.v1.agents import router as agents_router
-from openagent.api.v1.tools import router as tools_router
-from openagent.api.v1.mcp import router as mcp_router
-from openagent.api.v1.orchestrations import router as orchestrations_router
-from openagent.api.v1.memory import router as memory_router
-from openagent.api.v1.management import router as management_router
+from openagent.api.v1.approvals import delegations_router as approval_delegations_router
+from openagent.api.v1.approvals import policies_router as approval_policies_router
+from openagent.api.v1.approvals import router as approvals_router
+from openagent.api.v1.auth import router as auth_router
 from openagent.api.v1.browser import router as browser_router
-from openagent.api.v1.repositories import router as repositories_router
-from openagent.api.v1.code import router as code_router
-from openagent.api.v1.sandboxes import router as sandboxes_router
-from openagent.api.v1.sandboxes import profiles_router as sandbox_profiles_router
-from openagent.api.v1.sandboxes import exec_router as sandbox_executions_router
-from openagent.api.v1.approvals import (router as approvals_router,
-                                        policies_router as approval_policies_router,
-                                        delegations_router as approval_delegations_router)
-from openagent.api.v1.evaluations import (router as evaluations_router,
-                                          rubrics_router as evaluation_rubrics_router,
-                                          gates_router as quality_gates_router,
-                                          benchmarks_router as benchmarks_router,
-                                          attempts_router as correction_plans_router,
-                                          quality_router as quality_router)
-from openagent.api.v1.integrations import (router as connectors_router,
-                                           connections_router as integration_connections_router,
-                                           credentials_router as connector_credentials_router,
-                                           webhooks_mgmt_router as connector_webhooks_router,
-                                           webhooks_router as inbound_webhooks_router)
-from openagent.api.v1.packages import (router as packages_router,
-                                       skills_router as package_skills_router,
-                                       presets_router as package_presets_router,
-                                       catalog_router as package_catalog_router,
-                                       installations_router as package_installations_router)
-from openagent.api.v1.marketplace import (
-    advisories_router as marketplace_advisories_router,
-    commerce_router as marketplace_commerce_router,
-    distribution_router as marketplace_distribution_router,
-    favorites_router as marketplace_favorites_router,
-    listings_router as marketplace_listings_router,
-    marketplace_router as marketplace_discovery_router,
-    marketplaces_router as marketplaces_router,
-    moderation_router as marketplace_moderation_router,
-    notifications_router as marketplace_notifications_router,
-    publisher_router as publisher_studio_router,
-    publishers_router as publishers_router,
-    reports_router as marketplace_reports_router,
-    reviews_router as reviews_router,
-)
-from openagent.api.v1.commerce import (
-    billing_router as commerce_billing_router,
-    checkout_router as commerce_checkout_router,
-    prices_router as commerce_prices_router,
-    products_router as commerce_products_router,
-    registries_router as commerce_registries_router,
-)
-from openagent.api.v1.commerce_ops import (
-    credits_router as commerce_credits_router,
-    entitlements_router as commerce_entitlements_router,
-    quotas_router as commerce_quotas_router,
-    subscriptions_router as commerce_subscriptions_router,
-    usage_router as commerce_usage_router,
-)
-from openagent.api.v1.commerce_billing import (
-    disputes_router as commerce_disputes_router,
-    invoices_router as commerce_invoices_router,
-    master_billing_router as commerce_master_router,
-    payouts_router as commerce_payouts_router,
-    promotions_router as commerce_promotions_router,
-    refunds_router as commerce_refunds_router,
-    revenue_router as commerce_revenue_router,
-    webhooks_router as commerce_webhooks_router,
+from openagent.api.v1.cloud import (
+                                        master_router as cloud_master_router,
 )
 from openagent.api.v1.cloud import (
-    router as cloud_router,
-    regions_router as cloud_regions_router,
-    master_router as cloud_master_router,
+                                        regions_router as cloud_regions_router,
+)
+from openagent.api.v1.cloud import (
+                                        router as cloud_router,
 )
 from openagent.api.v1.cloud_files import router as cloud_files_router
 from openagent.api.v1.cloud_workers import router as cloud_workers_router
-from openagent.api.v1.operations import router as operations_router
-from openagent.api.v1.platform import router as platform_control_router
-from openagent.api.v1.enterprise import router as enterprise_router
-from openagent.api.v1.identity import router as identity_router
-from openagent.api.v1.scim import router as scim_router
-from openagent.api.v1.developer import (
-    extensions_router as developer_extensions_router,
-    local_registry_router as developer_local_registry_router,
-    public_router as developer_public_router,
-    router as developer_router,
+from openagent.api.v1.code import router as code_router
+from openagent.api.v1.commerce import (
+                                        billing_router as commerce_billing_router,
 )
+from openagent.api.v1.commerce import (
+                                        checkout_router as commerce_checkout_router,
+)
+from openagent.api.v1.commerce import (
+                                        prices_router as commerce_prices_router,
+)
+from openagent.api.v1.commerce import (
+                                        products_router as commerce_products_router,
+)
+from openagent.api.v1.commerce import (
+                                        registries_router as commerce_registries_router,
+)
+from openagent.api.v1.commerce_billing import (
+                                        disputes_router as commerce_disputes_router,
+)
+from openagent.api.v1.commerce_billing import (
+                                        invoices_router as commerce_invoices_router,
+)
+from openagent.api.v1.commerce_billing import (
+                                        master_billing_router as commerce_master_router,
+)
+from openagent.api.v1.commerce_billing import (
+                                        payouts_router as commerce_payouts_router,
+)
+from openagent.api.v1.commerce_billing import (
+                                        promotions_router as commerce_promotions_router,
+)
+from openagent.api.v1.commerce_billing import (
+                                        refunds_router as commerce_refunds_router,
+)
+from openagent.api.v1.commerce_billing import (
+                                        revenue_router as commerce_revenue_router,
+)
+from openagent.api.v1.commerce_billing import (
+                                        webhooks_router as commerce_webhooks_router,
+)
+from openagent.api.v1.commerce_ops import (
+                                        credits_router as commerce_credits_router,
+)
+from openagent.api.v1.commerce_ops import (
+                                        entitlements_router as commerce_entitlements_router,
+)
+from openagent.api.v1.commerce_ops import (
+                                        quotas_router as commerce_quotas_router,
+)
+from openagent.api.v1.commerce_ops import (
+                                        subscriptions_router as commerce_subscriptions_router,
+)
+from openagent.api.v1.commerce_ops import (
+                                        usage_router as commerce_usage_router,
+)
+from openagent.api.v1.developer import (
+                                        extensions_router as developer_extensions_router,
+)
+from openagent.api.v1.developer import (
+                                        local_registry_router as developer_local_registry_router,
+)
+from openagent.api.v1.developer import (
+                                        public_router as developer_public_router,
+)
+from openagent.api.v1.developer import (
+                                        router as developer_router,
+)
+from openagent.api.v1.enterprise import router as enterprise_router
+from openagent.api.v1.evaluations import attempts_router as correction_plans_router
+from openagent.api.v1.evaluations import benchmarks_router as benchmarks_router
+from openagent.api.v1.evaluations import gates_router as quality_gates_router
+from openagent.api.v1.evaluations import quality_router as quality_router
+from openagent.api.v1.evaluations import router as evaluations_router
+from openagent.api.v1.evaluations import rubrics_router as evaluation_rubrics_router
+from openagent.api.v1.identity import router as identity_router
+from openagent.api.v1.integrations import connections_router as integration_connections_router
+from openagent.api.v1.integrations import credentials_router as connector_credentials_router
+from openagent.api.v1.integrations import router as connectors_router
+from openagent.api.v1.integrations import webhooks_mgmt_router as connector_webhooks_router
+from openagent.api.v1.integrations import webhooks_router as inbound_webhooks_router
+from openagent.api.v1.invitations import router as invitations_router
+from openagent.api.v1.koro import router as koro_router
+from openagent.api.v1.management import router as management_router
+from openagent.api.v1.marketplace import (
+                                        advisories_router as marketplace_advisories_router,
+)
+from openagent.api.v1.marketplace import (
+                                        commerce_router as marketplace_commerce_router,
+)
+from openagent.api.v1.marketplace import (
+                                        distribution_router as marketplace_distribution_router,
+)
+from openagent.api.v1.marketplace import (
+                                        favorites_router as marketplace_favorites_router,
+)
+from openagent.api.v1.marketplace import (
+                                        listings_router as marketplace_listings_router,
+)
+from openagent.api.v1.marketplace import (
+                                        marketplace_router as marketplace_discovery_router,
+)
+from openagent.api.v1.marketplace import (
+                                        marketplaces_router as marketplaces_router,
+)
+from openagent.api.v1.marketplace import (
+                                        moderation_router as marketplace_moderation_router,
+)
+from openagent.api.v1.marketplace import (
+                                        notifications_router as marketplace_notifications_router,
+)
+from openagent.api.v1.marketplace import (
+                                        publisher_router as publisher_studio_router,
+)
+from openagent.api.v1.marketplace import (
+                                        publishers_router as publishers_router,
+)
+from openagent.api.v1.marketplace import (
+                                        reports_router as marketplace_reports_router,
+)
+from openagent.api.v1.marketplace import (
+                                        reviews_router as reviews_router,
+)
+from openagent.api.v1.mcp import router as mcp_router
+from openagent.api.v1.memory import router as memory_router
+from openagent.api.v1.operations import router as operations_router
+from openagent.api.v1.orchestrations import router as orchestrations_router
+from openagent.api.v1.organizations import router as organizations_router
+from openagent.api.v1.packages import catalog_router as package_catalog_router
+from openagent.api.v1.packages import installations_router as package_installations_router
+from openagent.api.v1.packages import presets_router as package_presets_router
+from openagent.api.v1.packages import router as packages_router
+from openagent.api.v1.packages import skills_router as package_skills_router
+from openagent.api.v1.platform import router as platform_control_router
+from openagent.api.v1.rbac import router as rbac_router
+from openagent.api.v1.repositories import router as repositories_router
+from openagent.api.v1.sandboxes import exec_router as sandbox_executions_router
+from openagent.api.v1.sandboxes import profiles_router as sandbox_profiles_router
+from openagent.api.v1.sandboxes import router as sandboxes_router
+from openagent.api.v1.scim import router as scim_router
+from openagent.api.v1.service_accounts import router as service_accounts_router
+from openagent.api.v1.teams import router as teams_router
+from openagent.api.v1.tools import router as tools_router
+from openagent.api.v1.workflow_executions import router as workflow_executions_router
+from openagent.api.v1.workflow_hooks import router as workflow_hooks_router
+from openagent.api.v1.workflows import router as workflows_router
 
 router = APIRouter()
 router.include_router(health_router)

@@ -1,14 +1,11 @@
 import abc
 import hashlib
-import mimetypes
-import os
-import shutil
 import uuid
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, BinaryIO, Dict, List, Optional, AsyncGenerator
-from dataclasses import dataclass, field
+from typing import Any, AsyncGenerator, BinaryIO, Dict, List, Optional
 
 from openagent.core.config import get_settings
 
@@ -163,6 +160,7 @@ class LocalStorageBackend(StorageBackend):
         
         # Save metadata
         meta_path = self._get_metadata_path(key)
+        meta_path.parent.mkdir(parents=True, exist_ok=True)
         import json
         with open(meta_path, "w") as f:
             json.dump({
@@ -559,5 +557,3 @@ async def get_storage_service() -> StorageService:
 
 # Import needed for StorageFile
 from typing import List
-import asyncio
-from contextlib import asynccontextmanager

@@ -2,12 +2,12 @@
 
 ## Current Repository State
 
-This is a fresh monorepo initialization for OpenAgent - an open-source AI Workforce Operating System.
+OpenAgent is an open-source AI Workforce Operating System. The monorepo contains the Next.js web app, FastAPI API, background worker, shared TypeScript packages, and the Electron desktop shell.
 
 ## Chosen Stack
 
 ### Frontend
-- **Framework**: Next.js 14+ (App Router)
+- **Framework**: Next.js 15+ (App Router, React 19)
 - **Language**: TypeScript (strict mode)
 - **Styling**: Tailwind CSS
 - **UI Components**: shadcn/ui + Radix UI primitives
@@ -39,7 +39,7 @@ openagent/
 │   ├── web/             # Next.js frontend
 │   ├── api/             # FastAPI backend
 │   ├── worker/          # Background job worker
-│   ├── desktop/         # Future Tauri/Electron app
+│   ├── desktop/         # Electron desktop shell
 │   └── docs/            # Documentation site
 ├── packages/            # Shared internal packages
 │   ├── core/            # Core utilities, constants
@@ -133,33 +133,25 @@ Environment-based configuration with `.env.example` for documentation. No secret
 
 Structured JSON logging in production, pretty logging in development. Request correlation IDs included.
 
-## Future Extension Points
+## Implemented Capability Layers
 
-1. **Agent Runtime** - Pluggable agent execution engine
-2. **Workflow Engine** - Visual workflow builder (authoring: done, MP07) + execution (MP08) + `orchestration` node (MP13)
-3. **Model Router** - Multi-provider LLM routing
-4. **Tool System** - Extensible tool framework
-5. **MCP** - Model Context Protocol integration
-6. **Multi-Agent Orchestration (MP13)** - `apps/api/src/openagent/orchestration/` (runs, task graph, planner + validation, assignment, delegation, handoff, budgets, supervisor, executor) with tables `orchestration_runs/tasks/dependencies`, `agent_relationships/capabilities/messages/handoffs/conflicts`, budget ledgers, and events; API under `/organizations/{id}/orchestrations`; worker queue `orchestration`; frontend `/orchestrations` workspace + `/agents/organization`. See `docs/multi-agent-architecture.md`.
-7. **Management Layer (MP14)** - `apps/api/src/openagent/management/` (manager profiles + authority, contracts, formal delegation lifecycle, structured handoff + context manifests, review/revision/quality gates, escalation chains + human hook, dynamic teams + charters, collaboration/negotiation/commitments, availability/capacity, manager loop, routed messaging, prompt builder; boundaries for MP15/MP19/MP20); tables `manager_profiles/agent_contracts/delegation_requests/agent_commitments/handoff_packages/review_results/escalations/agent_departments/dynamic_teams/team_charters/dynamic_team_memberships/agent_availability/agent_capacity/plan_versions/collaboration_requests/manager_decisions`; API under `/organizations/{id}/management` + SSE stream; `manager_tick` worker job; frontend `/management`, escalation center, org chart, workspace management tabs. See `docs/manager-architecture.md`.
-3. **Model Router** - Multi-provider LLM routing
-4. **Tool System** - Extensible tool framework
-5. **MCP** - Model Context Protocol integration
-6. **Memory** - Vector + relational memory
-7. **Browser (MP16)** - `apps/api/src/openagent/browser/` (service, security gates, observations, tools, client) + `packages/browser/` (provider-neutral Playwright/Chromium engine: sessions, tasks, actions, extraction, hardening, research, vision hooks, artifacts, telemetry, SDK) + API `/api/v1/browser/*` + frontend `/browser` workspace & `/browser/playground`; DB tables `browser_*` (migration `015`); tools `browser.*` registered in Tool Runtime; workflow nodes `browser_agent/action/extract`. See `docs/browser/overview.md`.
-8. **Code Agent (MP17)** - `apps/api/src/openagent/code/` (service, providers, safe git, intelligence/indexing, patches, review, security, tools, client) + API `/api/v1/repositories/*` & `/api/v1/code/*` + frontend `/code` workspace & `/code/playground` + SDK `code` namespace (`packages/sdk`, `CodeClient`); DB tables `repositories/code_workspaces/code_tasks/code_task_steps/code_file_index/code_symbols/code_references/code_dependencies/code_chunks/code_embeddings/code_execution_runs/code_test_results/code_reviews/code_review_findings/code_patches/code_commits/code_pull_requests` (migration `016`); tools `code.*` registered in Tool Runtime; workflow nodes `code_agent/search/read/patch/test/lint/review`, `git_commit`, `create_pr` (validator + executors + frontend catalog); docs `docs/code-agent/*`; examples `examples/code-agent/*`. Execution profiles + `CodeExecutionProvider` form the MP18 sandbox boundary. See `docs/code-agent/overview.md`.
-9. **Sandbox (MP18)** - `apps/api/src/openagent/sandbox/` (policy engine, profiles, docker/local providers + k8s stub, manager, tools, client, code adapter, settings + prod checks) + API `/api/v1/sandboxes/*`, `/api/v1/sandbox-profiles/*`, `/api/v1/sandbox-executions/*` + frontend `/sandbox` console & `/sandbox/playground` + SDK `sandbox` namespace (`packages/sdk`, `SandboxClient`); DB tables `sandboxes/sandbox_profiles/sandbox_executions/sandbox_leases/sandbox_artifacts/sandbox_events/sandbox_image_policies` (migration `017`); tools `sandbox.*` registered in Tool Runtime; Code Agent execution migrated to Sandbox via `SandboxCodeExecutionProvider` (host runner is explicit dev-only fallback, refused in production); images `infrastructure/docker/sandbox/`; static gate `scripts/sandbox_security_gate.py` (CI); docs `docs/sandbox/*`; examples `examples/sandbox/*`. See `docs/sandbox/overview.md`.
-10. **Approval & Guardrails (MP19)** - `apps/api/src/openagent/approvals/` (types/state machine, taxonomy, risk engine, declarative policy engine, hashing/redaction, ApprovalEngine, central guard, runtime integrations, escalation, delegation, notifications, metrics, config) + API `/api/v1/organizations/{id}/approvals|approval-policies|approval-delegations` + approval-bound resume for WAITING workflow executions + `approval_id` verification in tool/browser/code/sandbox execution paths (client `approved` booleans are never proof); DB tables `approval_steps/decisions/policies/policy_versions/escalations/action_snapshots/events/delegations` (migration `018`); frontend `/approvals` center + detail with danger confirmation + policy simulator hook; SDK `approvals` namespace; docs `docs/security/approval-system|guardrails|risk-engine|high-risk-actions|human-in-the-loop`, `docs/architecture/approval-architecture`, `docs/api/approvals`; examples `examples/approvals/*`.
-11. **Evaluator & Quality Control (MP20)** - `apps/api/src/openagent/evaluator/` (types/lifecycle, criteria + versioned rubrics, tamper-resistant evidence, deterministic verifiers, provider-neutral LLM judge via Model Router, scoring/consensus/decisions, EvaluatorEngine, SelfCorrectionEngine with budgets + loop detection, quality gates, benchmarks + regression, runtime integrations, metrics, config) + API `/api/v1/organizations/{id}/evaluations|evaluation-rubrics|quality-gates|benchmarks|correction-plans|quality` + verify hooks on agents/runs, workflows/executions, tools (incl. MCP), code tasks, browser tasks, orchestration reviews + workflow nodes `verify/evaluate/assert/quality_gate/retry/correct` (validator + executors + frontend catalog; human review reuses `approval` node + MP19); DB tables `evaluation_evidence/results/disagreements/rubrics/rubric_versions/verification_checks/correction_plans/attempts/feedback/quality_gates/benchmarks/benchmark_runs` + `evaluations` MP20 columns (migration `019`); frontend `/quality` center + evaluation detail (evidence/checks/votes/timeline/feedback) + gates + benchmarks; SDK `evaluator` namespace (no force-success APIs); docs `docs/ai/evaluator-engine|verification|self-correction|quality-gates|evidence-system|agent-evaluation|model-evaluation`, `docs/architecture/evaluation-architecture`, `docs/api/evaluations`; examples `examples/evaluator/*`.
-12. **Universal Integrations (MP21)** - `apps/api/src/openagent/connectors/` (types/lifecycles, manifest validation, registry + capability discovery, Fernet credential crypto, SSRF guard, shared HTTP stack with retries/circuit-breaker/pooling, OAuth2 manager with PKCE, webhook verify/normalize, polling cursors, rate limits, pagination caps, mapping engine, normalized resources, ConnectorEngine pipeline, guarded SQL connector, metrics, config) + 11 official providers (gmail/slack/discord/telegram/github/gitlab/google_calendar/google_drive/notion/hubspot/postgres) + generic HTTP executor for declarative custom connectors + API `/api/v1/organizations/{id}/connectors|integration-connections|credentials|connector-webhooks` + signature-authenticated `POST /api/v1/webhooks/:connector/:connection/:endpoint` + Tool Runtime delegation (`connector:*` tools, single engine-owned gate) + workflow nodes `connector_action/trigger/search/resource` (validator + executors + frontend catalog) + agent discovery search (incl. MCP origins); DB tables `connectors/versions/capabilities/actions/triggers/resources/connections/permissions/webhooks/events/health/usage/cursors` + legacy `integrations` migration (migration `020`); frontend `/integrations` + catalog + detail + connection + custom API builder + webhooks + settings credentials; SDK `integrations` namespace + `packages/connector-sdk`; docs `docs/integrations/*`, `docs/api/integrations`; examples `examples/integrations/*`; generator `scripts/connector-new.py`.
-8. **Sandbox** - Secure code execution
-9. **Evaluator** - Agent/workflow evaluation
-10. **Evaluator** - Agent/workflow evaluation
-11. **Marketplace (MP22 foundation)** - `apps/api/src/openagent/packages/` (types, semver + constraints, manifest, config schema, dependency resolver, security scanner, signing, validation engine, export/import, installer with preview/update/rollback, catalog abstraction, resource graph, telemetry, programmatic builders) + tables `reusable_packages/package_versions/package_resources/package_dependencies/skills/skill_versions/presets/preset_versions/package_installations/installation_resources/package_signatures/package_security_scans/package_validation_results/package_forks/package_update_plans/package_categories/publisher_profiles` (migration `021`) + API `/organizations/{id}/packages|skills|presets|catalog|installations` + frontend Template Center `/templates`, detail `/templates/[slug]`, `/skills`, `/presets`, `/settings/packages`, catalog-backed `/marketplace` + SDK `packages` namespace + CLI `scripts/openagent_package.py` + official samples `marketplace/packages/*`. See `docs/packages/`.
-12. **Marketplace, Publishers & Commerce Foundation (MP23)** - `apps/api/src/openagent/marketplace/` (listing lifecycle + transitions, publisher verification, policy engine + license-compat heuristics, provider-neutral search query, factual ratings, review eligibility + anti-abuse, content sanitizer + URL safety, content-addressed distribution with archive bomb/traversal guards, billing-provider protocol with disabled default, entitlement gates, registry trust, transparent recommendations, explainable health, notification fan-out with prefs) + tables `marketplaces/policies/listings/listing_versions/publisher_members/publisher_followers/categories/tags/listing_tags/reviews/responses/review_reports/favorites/events/analytics_daily/security_advisories/package_revocations/distribution_artifacts/locations/artifact_downloads/marketplace_reports/moderation_actions/products/prices/entitlements/revenue/payouts/billing_webhook_events/notifications/notification_prefs/registries` + extended `publisher_profiles` (migration `022`) + API `/marketplace|/listings|/publishers|/reviews|/favorites|/security-advisories|/marketplace-reports|/master/marketplace|/distribution|/commerce|/publisher|/notifications` + worker queue `marketplace` + frontend `/marketplace` (+search, category, detail, publisher), `/publisher/*` studio, `/master/marketplace` console + SDK `marketplace/publishers/listings/reviews/advisories/distribution` namespaces + CLI `marketplace|publisher` groups + dev seed `scripts/seed_marketplace.py`. Real payments/payouts deferred to MP24. See `docs/marketplace/`.
-13. **Cloud Registry, Billing, Entitlements & Creator Revenue (MP24)** - `apps/api/src/openagent/commerce/` (money/minor-units, provider-neutral `BillingProvider`/`PayoutProvider`/`TaxProvider` + deterministic mock + disabled default, registry client with local/mock providers, entitlement engine, quota/usage math, ledger/fee math, coupon validation, webhook verification) + `service.py` orchestration (verified-webhook-only payments, dual-written entitlements, idempotent everything, audited everything) + tables `billing_customers/checkout_sessions/payments/payment_events/subscriptions/commerce_entitlements/usage_meters/records/summaries/quotas/quota_usage/invoices/lines/refunds/disputes/credit_accounts/transactions/fee_policies/creator_ledger_entries/commerce_payouts/payout_events/promotions/promo_codes/redemptions/tax_calculations/registry_syncs/registry_cache/registry_credentials` + extended MP23 tables (migration `023`, extended `ProductType`/`PricingModel` enums) + API `/registries|/products|/prices|/checkout|/subscriptions|/entitlements|/usage|/quotas|/invoices|/refunds|/disputes|/credits|/revenue|/payouts|/promotions|/billing|/webhooks/billing/{provider}|/master/billing` + worker queue `commerce` (usage aggregation, entitlement expiry, webhook backlog, payout sweep) + frontend `/settings/registries|/settings/billing|/settings/usage`, `/publisher/products|/publisher/revenue`, `/master/billing` + SDK `registries/billing/products/prices/checkout/subscriptions/entitlements/usage/quotas/invoices/revenue/payouts` namespaces + CLI `scripts/openagent_commerce.py` + RBAC `billing|payout|registry` resources. See `docs/commerce/`, `docs/billing/`, `docs/entitlements/`, `docs/usage/`, `docs/creator-monetization/`, `docs/payouts/`, `docs/registries/`.
-11. **Billing** - Usage metering
-12. **Enterprise** - SSO, RBAC, audit logs
+1. **Agent Runtime** — pluggable agent execution engine
+2. **Workflow Engine** — visual authoring, execution, and the `orchestration` node
+3. **Model Router** — multi-provider LLM routing
+4. **Tool System** — extensible tool framework with SSRF-guarded HTTP tools
+5. **MCP** — Model Context Protocol integration
+6. **Memory** — vector + relational memory
+7. **Browser** — provider-neutral Playwright automation and research
+8. **Code Agent** — repository intelligence, patches, review, and git workflows
+9. **Sandbox** — isolated execution with production fail-closed policy
+10. **Approvals & Guardrails** — risk engine, policy engine, human-in-the-loop resume
+11. **Evaluator & Quality Control** — rubrics, deterministic verifiers, LLM judge, quality gates
+12. **Universal Integrations** — connector registry, OAuth, webhooks, guarded HTTP/SQL
+13. **Marketplace & Packages** — listings, publisher verification, distribution, install/rollback
+14. **Commerce, Billing & Entitlements** — provider-neutral billing, quotas, creator revenue
+15. **Developer Platform** — extensions, SDK, CLI, signing, and lifecycle management
+
+Each layer is organization-scoped, audited, and covered by the API/web test suites. Detailed design notes live under `docs/`.
 
 ## MP28 Developer Platform (Extension Architecture)
 
@@ -243,9 +235,14 @@ path with visibility checks).
 
 ## Security Baseline
 
+- Opaque SHA-256 session tokens in HttpOnly, SameSite=Lax cookies; Secure cookies in production
+- Argon2 password hashing; Fernet+HKDF credential envelope encryption
+- CSRF double-submit validation and trusted-proxy-aware rate limiting
+- Organization-scoped RBAC enforced in application/repository layers
 - CORS configured per environment
 - Security headers (CSP, HSTS, etc.)
 - Input validation at API boundaries
+- SSRF-aware outbound HTTP (scheme/IP/DNS/redirect validation)
 - No stack traces in production errors
 - Secrets only in environment variables
 - Dependency scanning in CI

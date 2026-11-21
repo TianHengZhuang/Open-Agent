@@ -65,6 +65,9 @@ class GitRunner:
     def _check_args(args: list[str]) -> None:
         if not args:
             raise GitSecurityError("empty git command")
+        # Read-only version probe used by health checks.
+        if args == ["--version"]:
+            return
         if args[0] not in ALLOWED_GIT_COMMANDS:
             raise GitSecurityError(f"git subcommand '{args[0]}' is not allowed")
         for a in args[1:]:

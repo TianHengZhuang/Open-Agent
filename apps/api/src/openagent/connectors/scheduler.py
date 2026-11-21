@@ -44,7 +44,9 @@ async def ensure_poll_job(db: AsyncSession, *, organization_id: UUID,
     """Create (or reuse) an interval scheduler job for a polling trigger."""
     from openagent.connectors.config import ConnectorSettings
     from openagent.core.scheduler import (
-        ScheduleConfig, ScheduleTriggerType, SchedulerService,
+        ScheduleConfig,
+        SchedulerService,
+        ScheduleTriggerType,
     )
     floor = ConnectorSettings().CONNECTOR_POLL_MIN_INTERVAL
     interval = max(int(interval_seconds or floor), floor)
@@ -74,8 +76,8 @@ async def run_due_polls(db: AsyncSession, *, organization_id: UUID,
     """Run one bounded poll cycle for due polling cursors. Safe to call from
     a scheduler tick or the manual poll endpoint."""
     from openagent.connectors.engine import ConnectorEngine
-    from openagent.connectors.registry import registry
     from openagent.connectors.providers import provider_ids, register_official
+    from openagent.connectors.registry import registry
     from openagent.db.models.connector import ConnectorConnection, ConnectorCursor
     if not provider_ids():
         register_official()

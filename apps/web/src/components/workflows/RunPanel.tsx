@@ -176,12 +176,14 @@ export function RunPanel({
 
   return (
     <section
-      className="oa-panel overflow-hidden"
+      className="flex h-full min-h-0 flex-col overflow-hidden border-t border-border bg-card"
       aria-label="Workflow test run results"
       data-testid="run-panel"
     >
-      <header className="flex flex-wrap items-center gap-3 border-b border-border/70 bg-muted/30 px-3 py-2.5">
-        <h2 className="text-sm font-semibold">Test run</h2>
+      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border/70 bg-muted/20 px-3 py-2">
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold">
+          <Play className="h-3.5 w-3.5 text-primary" aria-hidden /> Test run
+        </h2>
         {running && (
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" /> Running…
@@ -214,7 +216,7 @@ export function RunPanel({
         </button>
       </header>
 
-      <div className="space-y-3 p-3">
+      <div className="oa-scroll min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {error && (
           <p className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-sm text-destructive" role="alert">
             {error}

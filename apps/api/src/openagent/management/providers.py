@@ -9,11 +9,15 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
+from openagent.management.embedding_providers import (  # noqa: F401
+    EmbeddingProvider,
+    EmbeddingResult,
+)
+
 # Re-export MP19/MP20 boundaries from their home modules so consumers have
 # a single import surface.
 from openagent.management.escalation import ApprovalPolicy, ApprovalRequestHook  # noqa: F401
 from openagent.management.review import EvaluationHook, QualityGate, ReviewProvider  # noqa: F401
-from openagent.management.embedding_providers import EmbeddingProvider, EmbeddingResult  # noqa: F401
 
 
 class ContextProvider(ABC):

@@ -5,8 +5,6 @@ policy view. Scoped to the caller's organization (§47-54, §58-61).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -16,11 +14,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from openagent.api.dependencies import get_current_org_context
 from openagent.control.enterprise import (
-    SessionPolicy, apply_preset, ip_allowed, merge_retention,
+    SessionPolicy,
+    apply_preset,
+    merge_retention,
 )
-from openagent.control.observability import redact
 from openagent.db.models.control import (
-    IpPolicyRow, PrivateEnrollmentRow, RotationJobRow,
+    IpPolicyRow,
+    PrivateEnrollmentRow,
+    RotationJobRow,
 )
 from openagent.db.session import get_db
 from openagent.services.authorization import AuthorizationContext
@@ -180,6 +181,7 @@ async def redeem_enrollment(
     db: AsyncSession = Depends(get_db),
 ):
     import hashlib
+
     from openagent.control.enterprise import PrivateEnrollment
     digest = hashlib.sha256(token.encode()).hexdigest()
     row = (await db.execute(select(PrivateEnrollmentRow).where(

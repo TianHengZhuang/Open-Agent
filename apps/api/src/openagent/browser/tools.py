@@ -154,8 +154,8 @@ def ensure_browser_tools_registered(db_session_factory=None) -> "BrowserToolExec
     Every browser capability flows through Tool Registry -> Policy ->
     Authorization -> Risk -> Credential Resolution -> Browser Engine.
     """
-    from openagent.runtime.tools import tool_executor_registry, tool_registry
     from openagent.runtime.tools import ToolDefinition as RuntimeToolDefinition
+    from openagent.runtime.tools import tool_executor_registry, tool_registry
 
     executor = BrowserToolExecutor(service_factory=_service_factory)
     if tool_executor_registry.get_executor("browser") is None:

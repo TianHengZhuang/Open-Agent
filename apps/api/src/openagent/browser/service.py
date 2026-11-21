@@ -601,7 +601,8 @@ class BrowserService:
     async def create_profile(self, *, organization_id: UUID, owner_id: UUID, display_name: str,
                              browser_type: str = "chromium", profile_type: str = "EPHEMERAL",
                              storage_state: Optional[dict] = None, policy: Optional[dict] = None) -> BrowserProfile:
-        from openagent.db.models.browser import BrowserProfileType as PT, BrowserType as BT
+        from openagent.db.models.browser import BrowserProfileType as PT
+        from openagent.db.models.browser import BrowserType as BT
         if profile_type != "EPHEMERAL" and not policy:
             raise BrowserSecurityError("Persistent profiles require explicit policy authorization")
         p = BrowserProfile(organization_id=organization_id, owner_id=owner_id,

@@ -7,7 +7,7 @@ platform-only controls leak here (§80).
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -17,20 +17,26 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openagent.api.dependencies import get_current_org_context
-from openagent.control import diagnostics as diag
-from openagent.control.enterprise import merge_retention
 from openagent.control.observability import (
-    STANDARD_SLIS, ErrorBudget, Telemetry, get_context, redact,
+    STANDARD_SLIS,
+    ErrorBudget,
+    get_context,
+    redact,
 )
 from openagent.control.reliability import (
-    Alert, AlertEngine, AlertRule, Incident, summarize_health,
+    AlertRule,
+    Incident,
 )
 from openagent.control.service import get_control_service
-from openagent.control.types import HealthState
 from openagent.db.models.audit_log import AuditLog
 from openagent.db.models.control import (
-    AlertRow, AlertRuleRow, DeploymentRow, IncidentRow,
-    IncidentTimelineRow, MaintenanceRow, PlatformEventRow,
+    AlertRow,
+    AlertRuleRow,
+    DeploymentRow,
+    IncidentRow,
+    IncidentTimelineRow,
+    MaintenanceRow,
+    PlatformEventRow,
     ServiceSloRow,
 )
 from openagent.db.models.security_event import SecurityEvent

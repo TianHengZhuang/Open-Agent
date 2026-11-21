@@ -17,8 +17,8 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 # ------------------------------------------------------- correlation (§17) ---
-_current_context: ContextVar[dict[str, str]] = ContextVar(
-    "openagent_correlation", default={})
+_current_context: ContextVar[Optional[dict[str, str]]] = ContextVar(
+    "openagent_correlation", default=None)
 
 CORRELATION_KEYS = ("request_id", "trace_id", "span_id", "execution_id",
                     "task_id", "organization_id")
@@ -31,7 +31,7 @@ def new_ids() -> dict[str, str]:
 
 
 def bind_context(**values: str) -> dict[str, str]:
-    current = dict(_current_context.get())
+    current = dict(_current_context.get() or {})
     for key in CORRELATION_KEYS:
         if values.get(key):
             current[key] = str(values[key])
@@ -40,7 +40,7 @@ def bind_context(**values: str) -> dict[str, str]:
 
 
 def get_context() -> dict[str, str]:
-    return dict(_current_context.get())
+    return dict(_current_context.get() or {})
 
 
 def clear_context() -> None:

@@ -1,16 +1,17 @@
-import uuid
-from datetime import datetime
-from typing import Optional, Dict, Any, TYPE_CHECKING
-from sqlalchemy import String, Text, JSON, ForeignKey, Index, Enum as SQLEnum
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
 import enum
+import uuid
+from typing import TYPE_CHECKING, Any, Dict, Optional
+
+from sqlalchemy import JSON, ForeignKey, Index, String, Text
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from openagent.db.models.base import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
-    from openagent.db.models.user import User
     from openagent.db.models.organization import Organization
+    from openagent.db.models.user import User
 
 
 class SecurityEventType(str, enum.Enum):

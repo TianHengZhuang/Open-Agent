@@ -202,7 +202,7 @@ async def execute_sqlite(*, path: str, sql: str,
             columns = [d[0] for d in (cursor.description or [])]
     except Exception as exc:
         raise DatabaseError(f"Query failed: {exc}", code="QUERY_FAILED") from exc
-    clipped = [dict(zip(columns, r)) for r in rows[: validated["max_rows"]]]
+    clipped = [dict(zip(columns, r, strict=False)) for r in rows[: validated["max_rows"]]]
     return {"status": "ok", "kind": validated["kind"], "rows": clipped,
             "row_count": len(rows), "truncated": len(rows) > len(clipped),
             "latency_ms": int((time.time() - started) * 1000)}

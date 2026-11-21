@@ -21,20 +21,21 @@ const NEXT: Record<string, string[]> = {
   CLOSED: [],
 };
 
-export default function IncidentDetailPage({ params }: { params: { id: string } }) {
+export default function IncidentDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = React.use(params);
   const [detail, setDetail] = React.useState<{ title: string; status: string; severity: string; timeline: { at: string; actor: string; message: string }[] } | null>(null);
   const [target, setTarget] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
 
   const load = React.useCallback(async () => {
     try {
-      const res = await fetchIncidentDetail(params.id);
+      const res = await fetchIncidentDetail(id);
       setDetail(res);
       setTarget('');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load incident');
     }
-  }, [params.id]);
+  }, [id]);
 
   React.useEffect(() => { load(); }, [load]);
 
@@ -45,7 +46,7 @@ export default function IncidentDetailPage({ params }: { params: { id: string } 
           <PageHeader
             title={detail?.title ?? 'Incident'}
             description="Immutable timeline, responders and resolution."
-            breadcrumbs={[{ label: 'Home', href: '/' }, { label: 'Operations', href: '/operations' }, { label: 'Incidents', href: '/operations/incidents' }, { label: detail?.title ?? params.id }]}
+            breadcrumbs={[{ label: 'Home', href: '/' }, { label: 'Operations', href: '/operations' }, { label: 'Incidents', href: '/operations/incidents' }, { label: detail?.title ?? id }]}
           />
           {error ? <p className="oa-caption">{error}</p> : detail ? (
             <>
@@ -58,7 +59,7 @@ export default function IncidentDetailPage({ params }: { params: { id: string } 
                       <option value="">Move to…</option>
                       {(NEXT[detail.status] ?? []).map((s) => <option key={s} value={s}>{s}</option>)}
                     </Select>
-                    <Button disabled={!target} onClick={async () => { await transitionIncident(params.id, target); await load(); }}>
+                    <Button disabled={!target} onClick={async () => { await transitionIncident(id, target); await load(); }}>
                       Apply
                     </Button>
                   </div>

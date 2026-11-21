@@ -2,35 +2,34 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Optional, List, Dict, Any
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, HTTPException, status, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openagent.db.session import get_db
+from openagent.api.dependencies import get_current_org_context, require_permission
 from openagent.db.models import (
-    ModelProvider as ModelProviderModel,
-    ModelConfig as ModelConfigModel,
-    ModelAlias as ModelAliasModel,
-    RoutingPolicy as RoutingPolicyModel,
     ModelAlias as ModelAliasModel,
 )
-from openagent.db.models.base import Base
+from openagent.db.models import (
+    ModelConfig as ModelConfigModel,
+)
+from openagent.db.models import (
+    ModelProvider as ModelProviderModel,
+)
+from openagent.db.models import (
+    RoutingPolicy as RoutingPolicyModel,
+)
 from openagent.db.session import get_db
-from openagent.schemas.base import ApiErrorResponse, PaginatedResponse
-from openagent.api.dependencies import get_current_org_context, require_permission
-from openagent.runtime.model_registry import model_registry, ModelConfig, ModelAlias
-from openagent.runtime.routing_policy import RoutingPolicyEngine, RoutingPolicy
-from openagent.runtime.router import ModelRouter, ModelRoutingRequest, RoutingResult, get_router, initialize_router
-from openagent.runtime.model_registry import model_registry, ModelConfig, ModelAlias
-from openagent.runtime.model_adapters import model_provider_registry
-from openagent.runtime.routing_policy import RoutingPolicyEngine
-from openagent.runtime.router import ModelRouter, ModelRoutingRequest, RoutingResult
-from openagent.lib.api import toUserMessage
+from openagent.runtime.router import (
+    ModelRoutingRequest,
+    get_router,
+)
+from openagent.schemas.base import ApiErrorResponse
 
 router = APIRouter(prefix="/api/v1", tags=["model-router"])
 
@@ -481,7 +480,7 @@ async def create_model(
     await require_permission("models:create")(request, db)
     
     # Verify provider exists
-    provider = await _get_provider_or_404(db, organization_id, data.provider_id)
+    await _get_provider_or_404(db, organization_id, data.provider_id)
     
     # Check for duplicate
     existing = await db.execute(
@@ -603,7 +602,7 @@ async def get_model(
     provider_result = await db.execute(
         select(ModelProviderModel).where(ModelProviderModel.provider_id == model.provider_id)
     )
-    provider = provider_result.scalar_one_or_none()
+    provider_result.scalar_one_or_none()
     
     # Build response
     resp = ModelDetailResponse(
@@ -871,9 +870,6 @@ async def route_model(
         privacy_mode=data.privacy_mode,
         tool_calling=data.tool_calling,
         structured_output=data.structured_output,
-        streaming=data.streaming,
-        preferred_model=data.preferred_model,
-        preferred_model_id=data.preferred_model_id,
         model_alias=data.model_alias,
         model_hint=data.model_hint,
         organization_id=str(organization_id),

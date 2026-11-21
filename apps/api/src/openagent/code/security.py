@@ -8,7 +8,7 @@ organization, tool, credential, sandbox, or approval policy.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
@@ -312,7 +312,7 @@ def is_protected_branch(branch: str, extra_protected: Optional[list[str]] = None
 
 
 def task_branch_name(task_id: str) -> str:
-    safe = re.sub(r"[^A-Za-z0-9_-]", "", task_id)[:48]
+    safe = re.sub(r"[^A-Za-z0-9-]", "", task_id)[:48]
     return f"openagent/task/{safe}"
 
 

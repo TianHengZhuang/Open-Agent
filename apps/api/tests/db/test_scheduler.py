@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 import pytest_asyncio
 from uuid import uuid4
@@ -45,7 +46,7 @@ async def user(db_session: AsyncSession, org):
     membership = Membership(
         user_id=user.id,
         organization_id=org.id,
-        role=MembershipRole.MEMBER,
+        legacy_role=MembershipRole.MEMBER,
         status=MembershipStatus.ACTIVE,
     )
     db_session.add(membership)

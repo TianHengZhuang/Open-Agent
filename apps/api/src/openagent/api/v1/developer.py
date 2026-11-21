@@ -18,24 +18,21 @@ Routes (all versioned under /api/v1):
 
 from __future__ import annotations
 
-import hashlib
 import uuid
-from datetime import UTC, datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openagent.api.dependencies import get_current_org_context, require_permission
+from openagent.api.dependencies import require_permission
 from openagent.db.models.developer import (
     DeveloperEnvironment,
     DeveloperProject,
-    DeveloperProjectMember,
     DeveloperWebhook,
-    DeveloperWebhookDelivery,
     ExtensionAnalyticsDaily,
     ExtensionDefinition,
     ExtensionDeployment,
@@ -45,12 +42,11 @@ from openagent.db.models.developer import (
 )
 from openagent.db.session import get_db
 from openagent.developer import service as dev_service
-from openagent.developer.errors import sign_webhook
 from openagent.developer.manifest import load_manifest_dict
-from openagent.developer.packaging import PackageFile, build_package, inspect_package
+from openagent.developer.packaging import PackageFile, build_package
 from openagent.developer.permissions import check_permissions
 from openagent.developer.security import install_hooks_safe, scan_files
-from openagent.developer.signing import generate_keypair, sign_digest, verify_digest
+from openagent.developer.signing import verify_digest
 from openagent.developer.types import (
     API_VERSION,
     DEVELOPER_EVENTS,

@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional
+
 from pydantic import BaseModel, EmailStr
 
 
@@ -32,13 +33,13 @@ class DevelopmentEmailProvider(EmailProvider):
     
     async def send(self, message: EmailMessage) -> bool:
         print(f"\n{'='*60}")
-        print(f"DEVELOPMENT EMAIL")
+        print("DEVELOPMENT EMAIL")
         print(f"{'='*60}")
         print(f"To: {message.to}")
         print(f"Subject: {message.subject}")
         print(f"From: {message.from_name or ''} <{message.from_email or 'noreply@openagent.dev'}>")
         print(f"Reply-To: {message.reply_to or 'noreply@openagent.dev'}")
-        print(f"Text Content:")
+        print("Text Content:")
         print(f"{message.text_content or message.html_content}")
         print(f"{'='*60}\n")
         return True
@@ -74,8 +75,8 @@ class SMTPEmailProvider(EmailProvider):
     
     async def send(self, message: EmailMessage) -> bool:
         import smtplib
-        from email.mime.text import MIMEText
         from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
         
         try:
             msg = MIMEMultipart("alternative")

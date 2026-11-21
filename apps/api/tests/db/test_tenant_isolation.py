@@ -104,7 +104,7 @@ async def membership_a(db_session: AsyncSession, user_a: User, org_a: Organizati
     membership = await repo.create(
         user_id=user_a.id,
         organization_id=org_a.id,
-        role=MembershipRole.OWNER,
+        legacy_role=MembershipRole.OWNER,
         status=MembershipStatus.ACTIVE
     )
     await db_session.commit()
@@ -117,7 +117,7 @@ async def membership_b(db_session: AsyncSession, user_b: User, org_b: Organizati
     membership = await repo.create(
         user_id=user_b.id,
         organization_id=org_b.id,
-        role=MembershipRole.OWNER,
+        legacy_role=MembershipRole.OWNER,
         status=MembershipStatus.ACTIVE
     )
     await db_session.commit()
@@ -257,13 +257,13 @@ class TestAgentRunTenantIsolation:
             organization_id=org_a.id,
             agent_id=agent_a.id,
             status=AgentRunStatus.RUNNING,
-            input={}
+            input_data={}
         )
         run_b = await run_repo.create(
             organization_id=org_b.id,
             agent_id=agent_b.id,
             status=AgentRunStatus.RUNNING,
-            input={}
+            input_data={}
         )
         await db_session.commit()
         
@@ -432,14 +432,14 @@ class TestMCPServerTenantIsolation:
         mcp_a = await repo.create(
             organization_id=org_a.id,
             name="MCP Server A",
-            server_url="http://mcp-a.example.com",
+            endpoint="http://mcp-a.example.com",
             transport=MCPTransport.STDIO,
             status=MCPServerStatus.ACTIVE
         )
         mcp_b = await repo.create(
             organization_id=org_b.id,
             name="MCP Server B",
-            server_url="http://mcp-b.example.com",
+            endpoint="http://mcp-b.example.com",
             transport=MCPTransport.STDIO,
             status=MCPServerStatus.ACTIVE
         )
@@ -464,13 +464,13 @@ class TestMemoryTenantIsolation:
         mem_a = await repo.create(
             organization_id=org_a.id,
             user_id=user_a.id,
-            memory_type=MemoryType.LONG_TERM,
+            memory_type=MemoryType.EPISODIC,
             content="Memory A"
         )
         mem_b = await repo.create(
             organization_id=org_b.id,
             user_id=user_b.id,
-            memory_type=MemoryType.LONG_TERM,
+            memory_type=MemoryType.EPISODIC,
             content="Memory B"
         )
         await db_session.commit()

@@ -13,7 +13,11 @@ from typing import Any
 
 from openagent.connectors.errors import ProviderError, ProviderErrorKind
 from openagent.connectors.providers._base import (
-    base_url, bearer_headers, ok, secrets_of, validate_input,
+    base_url,
+    bearer_headers,
+    ok,
+    secrets_of,
+    validate_input,
 )
 
 _ALLOWED_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"}

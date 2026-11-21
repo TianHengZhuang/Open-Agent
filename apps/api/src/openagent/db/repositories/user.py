@@ -1,10 +1,11 @@
-from typing import Optional, List
+from typing import List, Optional
 from uuid import UUID
-from sqlalchemy import select, func
+
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openagent.db.repositories.base import BaseRepository
 from openagent.db.models.user import User, UserStatus
+from openagent.db.repositories.base import BaseRepository
 
 
 class UserRepository(BaseRepository[User]):

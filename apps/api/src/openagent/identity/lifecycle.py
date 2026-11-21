@@ -12,7 +12,9 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from openagent.identity.types import (
-    IdentityStatus, IdentityType, is_valid_identity_transition,
+    IdentityStatus,
+    IdentityType,
+    is_valid_identity_transition,
 )
 
 

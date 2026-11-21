@@ -8,9 +8,7 @@ never appear in tool input, prompts, logs, or errors.
 
 from __future__ import annotations
 
-import os
-import stat
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional, Protocol
 from urllib.parse import urlparse
@@ -19,7 +17,6 @@ import httpx
 import structlog
 
 from openagent.code.git import GitRunner, GitSecurityError
-from openagent.code.security import redact_text
 
 logger = structlog.get_logger("code.providers")
 
@@ -133,7 +130,7 @@ class LocalGitProvider:
         sha = (await self.runner.check(["rev-parse", "HEAD"], cwd=dest)).strip()
         branch = (await self.runner.check(
             ["rev-parse", "--abbrev-ref", "HEAD"], cwd=dest)).strip()
-        return CloneResult(path=dest, head_sha=sha, branch=branch)
+        return CloneResult(path=str((self.runner.root / dest).resolve()), head_sha=sha, branch=branch)
 
     async def fetch(self, repo_path: str, auth: GitAuth, remote: str = "origin") -> None:
         await self.runner.check(["fetch", "--prune", remote], cwd=repo_path)
@@ -183,7 +180,7 @@ class GenericGitProvider:
         sha = (await self.runner.check(["rev-parse", "HEAD"], cwd=dest)).strip()
         branch = (await self.runner.check(
             ["rev-parse", "--abbrev-ref", "HEAD"], cwd=dest)).strip()
-        return CloneResult(path=dest, head_sha=sha, branch=branch)
+        return CloneResult(path=str((self.runner.root / dest).resolve()), head_sha=sha, branch=branch)
 
     async def fetch(self, repo_path: str, auth: GitAuth, remote: str = "origin") -> None:
         await self.runner.check(["fetch", "--prune", remote], cwd=repo_path,

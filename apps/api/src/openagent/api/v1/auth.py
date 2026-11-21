@@ -1,31 +1,31 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Optional
-from fastapi import APIRouter, Depends, Request, Response, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field, EmailStr
+
+import structlog
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.security import HTTPBearer
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-import structlog
 
+from openagent.core.config import get_settings
+from openagent.core.security import create_token_pair, hash_token
+from openagent.core.security.rate_limit import check_auth_rate_limit
+from openagent.db.models import Session, User, UserStatus
 from openagent.db.session import get_db
-from openagent.db.models import User, UserStatus, Session
-from openagent.services.workspaces import ensure_personal_workspace
 from openagent.schemas.base import ApiErrorResponse
 from openagent.services.auth import (
-    AuthenticationService,
-    MasterAccountService,
-    AuthenticationError,
-    InvalidCredentialsError,
     AccountNotVerifiedError,
     AccountSuspendedError,
+    AuthenticationError,
+    AuthenticationService,
+    EmailAlreadyExistsError,
+    InvalidCredentialsError,
+    PasswordPolicyError,
     TokenExpiredError,
     TokenInvalidError,
-    PasswordPolicyError,
-    EmailAlreadyExistsError,
 )
-from openagent.core.security import hash_token, verify_token, create_token_pair
-from openagent.core.config import get_settings
-from openagent.core.security.rate_limit import check_auth_rate_limit
+from openagent.services.workspaces import ensure_personal_workspace
 
 logger = structlog.get_logger("openagent.auth")
 
@@ -543,7 +543,7 @@ async def verify_email(
     auth_service = AuthenticationService(db)
     
     try:
-        user = await auth_service.verify_email(
+        await auth_service.verify_email(
             token=data.token,
             request_id=getattr(request.state, "request_id", None),
         )
@@ -658,7 +658,7 @@ async def reset_password(
     auth_service = AuthenticationService(db)
     
     try:
-        user = await auth_service.reset_password(
+        await auth_service.reset_password(
             token=data.token,
             new_password=data.password,
             ip_address=request.client.host if request.client else None,

@@ -1,65 +1,14 @@
-from openagent.db.repositories.base import BaseRepository
-from openagent.db.repositories.user import UserRepository
-from openagent.db.repositories.organization import OrganizationRepository
-from openagent.db.repositories.membership import MembershipRepository
 from openagent.db.repositories.agent import AgentRepository, AgentVersionRepository
-from openagent.db.repositories.workflow import WorkflowRepository, WorkflowVersionRepository, WorkflowExecutionRepository
-from openagent.db.repositories.task import TaskRepository
 from openagent.db.repositories.agent_run import AgentRunRepository
+from openagent.db.repositories.audit import (
+    ApprovalRepository,
+    AuditLogRepository,
+    EvaluationRepository,
+)
+from openagent.db.repositories.base import BaseRepository
 from openagent.db.repositories.credential import CredentialRepository, IntegrationRepository
-from openagent.db.repositories.mcp import (
-    MCPServerRepository,
-    MCPServerVersionRepository,
-    MCPConnectionRepository,
-    MCPToolRepository,
-    MCPResourceRepository,
-    MCPPromptRepository,
-    MCPHealthRepository,
-    MCPPolicyRepository,
-    MCPToolExecutionRepository,
-)
-from openagent.db.repositories.memory import (
-    MemoryRepository,
-    MemoryVersionRepository,
-    MemoryAccessLogRepository,
-    MemoryEmbeddingRepository,
-    MemoryLinkRepository,
-    MemoryConflictRepository,
-    MemoryConsolidationJobRepository,
-    MemoryPolicyRepository,
-)
-from openagent.db.repositories.memory import ConversationRepository, MessageRepository
-from openagent.db.repositories.audit import ApprovalRepository, EvaluationRepository, AuditLogRepository
-from openagent.db.repositories.webhook import WebhookRepository, ApiKeyRepository
-from openagent.db.repositories.session import SessionRepository
-from openagent.db.repositories.permission import PermissionRepository
-from openagent.db.repositories.role import RoleRepository
-from openagent.db.repositories.team import TeamRepository, TeamMembershipRepository
+from openagent.db.repositories.execution_event import ExecutionEventRepository
 from openagent.db.repositories.invitation import OrganizationInvitationRepository
-from openagent.db.repositories.service_account import ServiceAccountRepository
-from openagent.db.repositories.tool import (
-    ToolRepository,
-    ToolVersionRepository,
-    ToolProviderRepository,
-    ToolPolicyRepository,
-    ToolExecutionRepository,
-    ToolExecutionEventRepository,
-    ToolHealthRepository,
-    ToolUsageRepository,
-)
-from openagent.db.repositories.orchestration import (
-    AgentCapabilityRepository,
-    AgentConflictRepository,
-    AgentHandoffRepository,
-    AgentMessageRepository,
-    AgentRelationshipRepository,
-    OrchestrationBudgetLedgerRepository,
-    OrchestrationEventRepository,
-    OrchestrationRunRepository,
-    OrchestrationTaskAttemptRepository,
-    OrchestrationTaskDependencyRepository,
-    OrchestrationTaskRepository,
-)
 from openagent.db.repositories.management import (
     AgentAvailabilityRepository,
     AgentCapacityRepository,
@@ -78,6 +27,67 @@ from openagent.db.repositories.management import (
     ReviewResultRepository,
     TeamCharterRepository,
 )
+from openagent.db.repositories.mcp import (
+    MCPConnectionRepository,
+    MCPHealthRepository,
+    MCPPolicyRepository,
+    MCPPromptRepository,
+    MCPResourceRepository,
+    MCPServerRepository,
+    MCPServerVersionRepository,
+    MCPToolExecutionRepository,
+    MCPToolRepository,
+)
+from openagent.db.repositories.membership import MembershipRepository
+from openagent.db.repositories.memory import (
+    ConversationRepository,
+    MemoryAccessLogRepository,
+    MemoryConflictRepository,
+    MemoryConsolidationJobRepository,
+    MemoryEmbeddingRepository,
+    MemoryLinkRepository,
+    MemoryPolicyRepository,
+    MemoryRepository,
+    MemoryVersionRepository,
+    MessageRepository,
+)
+from openagent.db.repositories.orchestration import (
+    AgentCapabilityRepository,
+    AgentConflictRepository,
+    AgentHandoffRepository,
+    AgentMessageRepository,
+    AgentRelationshipRepository,
+    OrchestrationBudgetLedgerRepository,
+    OrchestrationEventRepository,
+    OrchestrationRunRepository,
+    OrchestrationTaskAttemptRepository,
+    OrchestrationTaskDependencyRepository,
+    OrchestrationTaskRepository,
+)
+from openagent.db.repositories.organization import OrganizationRepository
+from openagent.db.repositories.permission import PermissionRepository
+from openagent.db.repositories.role import RoleRepository
+from openagent.db.repositories.service_account import ServiceAccountRepository
+from openagent.db.repositories.session import SessionRepository
+from openagent.db.repositories.task import TaskRepository
+from openagent.db.repositories.team import TeamMembershipRepository, TeamRepository
+from openagent.db.repositories.tool import (
+    ToolExecutionEventRepository,
+    ToolExecutionRepository,
+    ToolHealthRepository,
+    ToolPolicyRepository,
+    ToolProviderRepository,
+    ToolRepository,
+    ToolUsageRepository,
+    ToolVersionRepository,
+)
+from openagent.db.repositories.user import UserRepository
+from openagent.db.repositories.webhook import ApiKeyRepository, WebhookRepository
+from openagent.db.repositories.workflow import (
+    WorkflowExecutionRepository,
+    WorkflowRepository,
+    WorkflowVersionRepository,
+)
 
 __all__ = [
     "BaseRepository",
@@ -91,6 +101,7 @@ __all__ = [
     "WorkflowExecutionRepository",
     "TaskRepository",
     "AgentRunRepository",
+    "ExecutionEventRepository",
     "CredentialRepository",
     "IntegrationRepository",
     "MCPServerRepository",

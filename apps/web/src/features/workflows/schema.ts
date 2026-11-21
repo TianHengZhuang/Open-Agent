@@ -9,7 +9,7 @@ const triggerSchema = z.object({
   id: z.string().min(1),
   type: z.enum(['manual', 'webhook', 'schedule', 'event']),
   name: z.string().min(1),
-  config: z.record(z.unknown()).default({}),
+  config: z.record(z.string(), z.unknown()).default({}),
 });
 
 const nodeSchema = z.object({
@@ -22,7 +22,7 @@ const nodeSchema = z.object({
   type_version: z.number().int().min(1).optional(),
   name: z.string().min(1),
   position: z.object({ x: z.number(), y: z.number() }).optional(),
-  config: z.record(z.unknown()).default({}),
+  config: z.record(z.string(), z.unknown()).default({}),
   retry_policy: z.object({ max_attempts: z.number().int().min(0).max(10) }).optional(),
   timeout_seconds: z.number().positive().optional(),
   approval_required: z.boolean().optional(),
@@ -58,7 +58,7 @@ export const workflowDefinitionSchema = z.object({
   nodes: z.array(nodeSchema),
   edges: z.array(edgeSchema),
   variables: z.array(variableSchema).default([]),
-  settings: z.record(z.unknown()).default({}),
+  settings: z.record(z.string(), z.unknown()).default({}),
 });
 
 export type WorkflowDefinitionInput = z.infer<typeof workflowDefinitionSchema>;

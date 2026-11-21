@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { usePathname } from 'next/navigation';
 import { Sidebar } from './sidebar';
 import { TopNav } from './top-nav';
 import { CommandPalette } from './command-palette';
@@ -16,6 +17,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useLocalStorage<boolean>('oa:sidebar-collapsed', false);
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [paletteOpen, setPaletteOpen] = React.useState(false);
+  const pathname = usePathname();
+  // The workflow studio owns the full viewport below the global top bar.
+  const isStudio = /^\/workflows\/[^/]+\/edit\/?$/.test(pathname ?? '');
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -53,11 +57,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         tabIndex={-1}
         className={cn('min-h-screen pt-16 transition-all duration-200', collapsed ? 'lg:pl-16' : 'lg:pl-64')}
       >
-        <div className="oa-page p-4 sm:p-6">
-          <ErrorBoundary label="page">
-            {children}
-          </ErrorBoundary>
-        </div>
+        {isStudio ? (
+          <div className="h-[calc(100dvh-4rem)] overflow-hidden">
+            <ErrorBoundary label="page">{children}</ErrorBoundary>
+          </div>
+        ) : (
+          <div className="oa-page p-4 sm:p-6">
+            <ErrorBoundary label="page">{children}</ErrorBoundary>
+          </div>
+        )}
       </main>
 
       {mobileOpen && (

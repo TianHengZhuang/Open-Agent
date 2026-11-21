@@ -3,44 +3,41 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func, or_
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openagent.db.session import get_db
-from openagent.db.models import (
-    Tool,
-    ToolVersion,
-    ToolProvider,
-    ToolPolicy,
-    ToolExecution,
-    ToolExecutionEvent,
-    ToolLifecycleStatus,
-    ToolCategory,
-    ToolCapability,
-    ToolRiskLevel,
-    ToolExecutionMode,
-    ToolTrustLevel,
-    ToolProviderType,
-)
-from openagent.db.repositories import (
-    ToolRepository,
-    ToolVersionRepository,
-    ToolProviderRepository,
-    ToolPolicyRepository,
-    ToolExecutionRepository,
-    ToolExecutionEventRepository,
-)
-from openagent.schemas.base import ApiErrorResponse, PaginatedResponse
 from openagent.api.dependencies import (
     get_current_org_context,
     require_permission,
 )
-from openagent.core.config import get_settings
+from openagent.db.models import (
+    Tool,
+    ToolCapability,
+    ToolCategory,
+    ToolExecution,
+    ToolExecutionMode,
+    ToolLifecycleStatus,
+    ToolPolicy,
+    ToolProviderType,
+    ToolRiskLevel,
+    ToolTrustLevel,
+    ToolType,
+    ToolVersion,
+)
+from openagent.db.repositories import (
+    ToolExecutionEventRepository,
+    ToolExecutionRepository,
+    ToolPolicyRepository,
+    ToolRepository,
+    ToolVersionRepository,
+)
+from openagent.db.session import get_db
+from openagent.schemas.base import ApiErrorResponse, PaginatedResponse
 
 router = APIRouter(prefix="/organizations/{organization_id}/tools", tags=["tools"])
 
@@ -488,12 +485,12 @@ async def list_tools(
     """List tools in the organization."""
     await require_permission("tool:read")(request, db)
 
-    repo = ToolRepository(db)
+    ToolRepository(db)
     tool_category = ToolCategory(category) if category else None
     tool_risk = ToolRiskLevel(risk_level) if risk_level else None
     tool_status = ToolLifecycleStatus(status) if status else None
     tool_trust = ToolTrustLevel(trust_level) if trust_level else None
-    tag_list = tags.split(",") if tags else None
+    tags.split(",") if tags else None
 
     # For now, use basic filtering
     query = select(Tool).where(
@@ -780,7 +777,7 @@ async def list_tool_versions(
     """List versions for a tool."""
     await require_permission("tool:read")(request, db)
     repo = ToolRepository(db)
-    tool = await _get_tool_or_404(db, organization_id, tool_id, repo)
+    await _get_tool_or_404(db, organization_id, tool_id, repo)
 
     version_repo = ToolVersionRepository(db)
     total = (await db.execute(
@@ -819,7 +816,7 @@ async def create_tool_version(
     """Create a new version of a tool."""
     await require_permission("tool:update")(request, db)
     repo = ToolRepository(db)
-    tool = await _get_tool_or_404(db, organization_id, tool_id, repo)
+    await _get_tool_or_404(db, organization_id, tool_id, repo)
 
     version_repo = ToolVersionRepository(db)
     existing = await version_repo.get_by_tool_and_version(tool_id, data.version)
@@ -872,7 +869,7 @@ async def publish_tool_version(
     """Publish a tool version."""
     await require_permission("tool:update")(request, db)
     repo = ToolRepository(db)
-    tool = await _get_tool_or_404(db, organization_id, tool_id, repo)
+    await _get_tool_or_404(db, organization_id, tool_id, repo)
 
     version_repo = ToolVersionRepository(db)
     version_obj = await version_repo.get_by_tool_and_version(tool_id, version)
@@ -905,7 +902,7 @@ async def deprecate_tool_version(
     """Deprecate a tool version."""
     await require_permission("tool:update")(request, db)
     repo = ToolRepository(db)
-    tool = await _get_tool_or_404(db, organization_id, tool_id, repo)
+    await _get_tool_or_404(db, organization_id, tool_id, repo)
 
     version_repo = ToolVersionRepository(db)
     version_obj = await version_repo.get_by_tool_and_version(tool_id, version)
@@ -937,7 +934,8 @@ async def _execute_connector_tool(request, organization_id, data,
     from openagent.connectors.engine import ConnectorEngine, ConnectorError
     from openagent.connectors.types import ConnectorExecutionContext
     from openagent.db.models.connector import (
-        ConnectorConnection, ConnectionStatus,
+        ConnectionStatus,
+        ConnectorConnection,
     )
     tool_metadata = tool.metadata or {}
     connector_id = tool_metadata.get("connector")
@@ -1092,7 +1090,10 @@ async def execute_tool(
     # MP19 central guard: policy -> risk -> approval. No tool executes a
     # high-risk action outside this chain.
     from openagent.approvals.integrations import (
-        consume_approval, load_org_policies, park_for_approval, tool_action_context,
+        consume_approval,
+        load_org_policies,
+        park_for_approval,
+        tool_action_context,
     )
     from openagent.approvals.policy import evaluate_policies
     from openagent.approvals.risk import evaluate_risk
@@ -1194,8 +1195,8 @@ async def execute_tool(
             )
 
     # Import and use the tool execution runtime
-    from openagent.runtime.tools import ToolExecutionManager, tool_registry, tool_executor_registry
     from openagent.runtime.tools import ToolDefinition as RuntimeToolDefinition
+    from openagent.runtime.tools import ToolExecutionManager, tool_executor_registry, tool_registry
 
     # Convert to runtime tool definition
     runtime_tool = RuntimeToolDefinition(

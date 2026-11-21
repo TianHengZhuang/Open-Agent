@@ -12,7 +12,7 @@ import re
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Optional
+from typing import Any, Optional
 
 STREAM_EVENT_TYPES = (
     "execution.started", "execution.progress", "execution.completed",

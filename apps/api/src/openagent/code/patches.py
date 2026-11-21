@@ -247,7 +247,6 @@ def apply_file_patch(root: str, fp: FilePatch, dry_run: bool = False) -> ChangeR
     if fp.is_delete:
         if not resolved.is_file():
             raise PatchError(f"{target}: file does not exist")
-        original: list[str] = []
         if not dry_run:
             resolved.unlink()
         return ChangeRecord(file=target, old_start=1, old_lines=0,

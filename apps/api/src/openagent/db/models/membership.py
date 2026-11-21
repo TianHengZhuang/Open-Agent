@@ -1,17 +1,17 @@
-import uuid
-from datetime import datetime
-from typing import Optional, TYPE_CHECKING
-from sqlalchemy import String, ForeignKey, Index, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
 import enum
+import uuid
+from typing import TYPE_CHECKING, Optional
+
+from sqlalchemy import ForeignKey, Index, UniqueConstraint
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from openagent.db.models.base import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
-    from openagent.db.models.user import User
     from openagent.db.models.organization import Organization
     from openagent.db.models.role import Role
+    from openagent.db.models.user import User
 
 
 class MembershipRole(str, enum.Enum):

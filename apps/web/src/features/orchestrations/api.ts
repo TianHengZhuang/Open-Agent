@@ -39,6 +39,7 @@ export const orchKeys = {
 
 export function useOrchestrations(params?: {
   status?: string;
+  search?: string;
   page?: number;
   pageSize?: number;
 }) {
@@ -50,6 +51,7 @@ export function useOrchestrations(params?: {
         base(currentOrgId),
         {
           status: params?.status || undefined,
+          search: params?.search || undefined,
           page: params?.page ?? 1,
           page_size: params?.pageSize ?? 20,
         },
@@ -174,10 +176,29 @@ export function useCreateOrchestration() {
   const { currentOrgId } = useOrganization();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { objective: string; template?: string }) =>
+    mutationFn: (body: {
+      objective: string;
+      template?: string;
+      budget?: Record<string, number>;
+      metadata?: Record<string, unknown>;
+    }) =>
       api.post<OrchestrationSummary>(base(currentOrgId), body),
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: orchKeys.all });
+    },
+  });
+}
+
+export function usePlanOrchestration() {
+  const { currentOrgId } = useOrganization();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api.post<OrchestrationTask[]>(`${base(currentOrgId)}/${id}/plan`, {}),
+    onSettled: (_data, _error, id) => {
+      void qc.invalidateQueries({ queryKey: orchKeys.all });
+      void qc.invalidateQueries({ queryKey: orchKeys.detail(currentOrgId, id) });
+      void qc.invalidateQueries({ queryKey: orchKeys.tasks(currentOrgId, id) });
     },
   });
 }

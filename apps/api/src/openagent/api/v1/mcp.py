@@ -3,50 +3,34 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func, or_
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openagent.db.session import get_db
-from openagent.db.models import (
-    MCPServer,
-    MCPServerVersion,
-    MCPConnection,
-    MCPTool,
-    MCPResource,
-    MCPPrompt,
-    MCPHealth,
-    MCPPolicy,
-    MCPToolExecution,
-    MCPTransport,
-    MCPServerScope,
-    MCPTrustLevel,
-    MCPServerStatus,
-    MCPConnectionState,
-    Organization,
-)
-from openagent.db.repositories import (
-    MCPServerRepository,
-    MCPServerVersionRepository,
-    MCPConnectionRepository,
-    MCPToolRepository,
-    MCPResourceRepository,
-    MCPPromptRepository,
-    MCPHealthRepository,
-    MCPPolicyRepository,
-    MCPToolExecutionRepository,
-)
-from openagent.schemas.base import ApiErrorResponse, PaginatedResponse
 from openagent.api.dependencies import (
     get_current_org_context,
     require_permission,
-    AuthorizationContext,
 )
-from openagent.core.config import get_settings
+from openagent.db.models import (
+    MCPConnection,
+    MCPHealth,
+    MCPPolicy,
+    MCPPrompt,
+    MCPResource,
+    MCPServer,
+    MCPServerScope,
+    MCPServerStatus,
+    MCPTool,
+    MCPToolExecution,
+    MCPTransport,
+    MCPTrustLevel,
+)
+from openagent.db.session import get_db
+from openagent.schemas.base import ApiErrorResponse, PaginatedResponse
 
 router = APIRouter(prefix="/organizations/{organization_id}/mcp", tags=["mcp"])
 
@@ -553,14 +537,6 @@ async def install_mcp_server(
             )
 
     # Create server record
-    from openagent.runtime.mcp.registry import MCPServerRegistry
-    from openagent.runtime.tools import ToolRegistry, ToolExecutionRuntime
-    from openagent.runtime.mcp.registry import createMCPServerRegistry
-    from openagent.runtime.tools import createToolSystem, defaultExecutionOptions
-    from openagent.runtime.mcp.client import MCPClientManager
-    from openagent.runtime.tools import ToolRegistry as RuntimeToolRegistry
-    from openagent.runtime.tools import ToolExecutionRuntime as RuntimeToolExecutionRuntime
-    from openagent.runtime.tools import ToolExecutionOptions
 
     # For now, we'll use a simplified approach without full runtime
     server = MCPServer(
@@ -1182,11 +1158,5 @@ async def list_mcp_executions(
     return MCPToolExecutionListResponse(data=items, meta=create_pagination_meta(page, page_size, total))
 
 
-from datetime import datetime
-from sqlalchemy import func
-from uuid import UUID
-from fastapi import APIRouter, Depends, Request, HTTPException, status, Query
+from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional, List, Dict, Any

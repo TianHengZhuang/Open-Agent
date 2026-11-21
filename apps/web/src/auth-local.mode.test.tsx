@@ -5,7 +5,40 @@
 process.env.NEXT_PUBLIC_OPENAGENT_AUTH_MODE = 'local';
 
 import * as React from 'react';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// AuthProvider resolves a session through the API on mount. Mock the client so
+// the local-mode test does not depend on a running backend.
+vi.mock('@/lib/api', () => {
+  class ApiError extends Error {
+    status: number;
+    code: string;
+    constructor(message: string, opts: { status: number; code: string }) {
+      super(message);
+      this.status = opts.status;
+      this.code = opts.code;
+    }
+  }
+  const user = {
+    id: 'local-user',
+    email: 'local@openagent',
+    display_name: 'Local User',
+    avatar_url: null,
+    status: 'active',
+    email_verified: true,
+    is_superadmin: false,
+    is_platform_owner: false,
+    created_at: new Date(0).toISOString(),
+  };
+  return {
+    ApiError,
+    api: {
+      post: vi.fn(async () => ({ user })),
+      get: vi.fn(async () => user),
+      delete: vi.fn(async () => ({})),
+    },
+  };
+});
 import { useAuth } from '@/context/AuthContext';
 import { render, screen } from '@testing-library/react';
 import { Protected } from '@/components/protected';
@@ -25,7 +58,7 @@ describe('Local auth mode', () => {
 
 // Test 2: Protected component renders without redirect in local mode
 describe('Protected component in local mode', () => {
-  it('Protected component renders children without crashing', () => {
+  it('Protected component renders children without crashing', async () => {
     render(
       <AuthProvider>
         <Protected>
@@ -33,7 +66,9 @@ describe('Protected component in local mode', () => {
         </Protected>
       </AuthProvider>
     );
-    const content = screen.getByTestId('dashboard-content');
+    // AuthProvider resolves its session asynchronously; wait for the protected
+    // content instead of asserting while the initial loading state is shown.
+    const content = await screen.findByTestId('dashboard-content');
     expect(content).toHaveTextContent('Dashboard Content');
   });
 });

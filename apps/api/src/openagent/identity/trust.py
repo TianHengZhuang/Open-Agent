@@ -8,10 +8,13 @@ from __future__ import annotations
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from openagent.identity.types import (
-    AuthStrength, DeviceTrust, RiskLevel, strength_meets,
+    AuthStrength,
+    DeviceTrust,
+    RiskLevel,
+    strength_meets,
 )
 
 

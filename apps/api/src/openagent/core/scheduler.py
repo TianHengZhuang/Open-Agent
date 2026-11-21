@@ -1,26 +1,28 @@
 import asyncio
 import uuid
-from datetime import datetime, timezone, timedelta
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, Callable, Awaitable, Dict, List, Optional, Set
-from dataclasses import dataclass, field
-from abc import ABC, abstractmethod
-from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional
 
-from sqlalchemy import String, Text, ForeignKey, Index, Enum as SQLEnum, DateTime, JSON, Boolean
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete
-
-from openagent.db.models.base import Base, TimestampMixin, UUIDMixin
-from openagent.core.config import get_settings
 from fastapi import Depends
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy import (
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    select,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import TYPE_CHECKING
+from sqlalchemy.orm import Mapped, mapped_column
+
+from openagent.core.config import get_settings
+from openagent.db.models.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
-    from openagent.db.session import get_db as _get_db_impl
+    pass
 
 def _get_db() -> AsyncSession:
     """Lazy import to avoid circular dependency with db.session."""
@@ -30,10 +32,16 @@ def _get_db() -> AsyncSession:
 
 class ScheduleStatus(str, Enum):
     ACTIVE = "active"
+    PENDING = "pending"
+    RUNNING = "running"
     PAUSED = "paused"
     COMPLETED = "completed"
     FAILED = "failed"
     DELETED = "deleted"
+
+
+# Historical name used by scheduled-job run records.
+ScheduleRunStatus = ScheduleStatus
 
 
 class ScheduleTriggerType(str, Enum):
@@ -89,7 +97,7 @@ class ScheduledJob(Base, TimestampMixin):
     run_at: Mapped[Optional[datetime]] = mapped_column(nullable=True, index=True)
     timezone: Mapped[str] = mapped_column(String(50), default="UTC", nullable=False)
     status: Mapped[str] = mapped_column(
-        SQLEnum(ScheduleStatus.ACTIVE, ScheduleStatus.PAUSED, ScheduleStatus.COMPLETED, ScheduleStatus.FAILED, ScheduleStatus.DELETED,
+        SQLEnum(ScheduleStatus.ACTIVE, ScheduleStatus.PENDING, ScheduleStatus.RUNNING, ScheduleStatus.PAUSED, ScheduleStatus.COMPLETED, ScheduleStatus.FAILED, ScheduleStatus.DELETED,
                 name="schedule_status", create_constraint=True),
         default=ScheduleStatus.ACTIVE,
         nullable=False,
@@ -125,7 +133,7 @@ class ScheduledJobRun(Base, TimestampMixin):
         UUID(as_uuid=True), ForeignKey("scheduled_jobs.id", ondelete="CASCADE"), nullable=False, index=True
     )
     status: Mapped[str] = mapped_column(
-        SQLEnum(ScheduleStatus.ACTIVE, ScheduleStatus.PAUSED, ScheduleStatus.COMPLETED, ScheduleStatus.FAILED, ScheduleStatus.DELETED,
+        SQLEnum(ScheduleStatus.ACTIVE, ScheduleStatus.PENDING, ScheduleStatus.RUNNING, ScheduleStatus.PAUSED, ScheduleStatus.COMPLETED, ScheduleStatus.FAILED, ScheduleStatus.DELETED,
                 name="schedule_run_status", create_constraint=True),
         nullable=False
     )
@@ -152,6 +160,18 @@ class SchedulerService:
         self._lock = asyncio.Lock()
         self._job_handlers: Dict[str, Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]] = {}
     
+    @staticmethod
+    def _validate_cron(expression: Optional[str]) -> None:
+        if not expression:
+            raise ValueError("Cron expression is required")
+        fields = expression.split()
+        if len(fields) != 5:
+            raise ValueError("Cron expression must have five fields")
+        allowed = set("0123456789*/,-?LW#")
+        for field in fields:
+            if not field or any(char.upper() not in allowed for char in field):
+                raise ValueError(f"Invalid cron field: {field}")
+
     def register_handler(self, job_type: str, handler: Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]) -> None:
         """Register a job handler."""
         self._job_handlers[job_type] = handler
@@ -183,6 +203,8 @@ class SchedulerService:
         description: Optional[str] = None,
     ) -> ScheduledJob:
         """Create a new scheduled job."""
+        if config.trigger_type == ScheduleTriggerType.CRON or config.trigger_type == "cron":
+            self._validate_cron(config.cron_expression)
         # Calculate next run time
         next_run = self._calculate_next_run(config)
         
@@ -325,47 +347,47 @@ class SchedulerService:
         )
         self.db.add(run)
         await self.db.flush()
-        
-        try:
-            handler = self._job_handlers.get(job.job_type)
-            if not handler:
-                raise ValueError(f"No handler for job type: {job.job_type}")
-            
-            # Apply timeout
-            result = await asyncio.wait_for(
-                handler(job.payload),
-                timeout=job.timeout_seconds,
-            )
-            
-            run.status = ScheduleStatus.COMPLETED
-            run.completed_at = datetime.now(timezone.utc)
-            run.result = result
-            
-            # Update job
-            job.last_run_at = run.started_at
-            job.run_count += 1
-            job.next_run_at = self._calculate_next_run_for_job(job)
-            
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
+
+        handler = self._job_handlers.get(job.job_type)
+        if not handler:
             run.status = ScheduleStatus.FAILED
             run.completed_at = datetime.now(timezone.utc)
-            run.error = str(e)
-            
-            job.failure_count += 1
-            job.last_error = str(e)
-            
-            # Retry logic
-            if run.attempt < job.max_retries:
-                run.status = ScheduleStatus.PENDING
-                run.attempt += 1
-                # Retry will be handled by scheduler
-            else:
-                # Max retries exceeded
-                if job.failure_count >= job.max_retries:
+            run.error = f"No handler for job type: {job.job_type}"
+            await self.db.flush()
+            return run
+
+        last_error: Optional[str] = None
+        for attempt in range(1, max(job.max_retries, 1) + 1):
+            run.attempt = attempt
+            try:
+                result = await asyncio.wait_for(
+                    handler(job.payload),
+                    timeout=job.timeout_seconds,
+                )
+                run.status = ScheduleStatus.COMPLETED
+                run.completed_at = datetime.now(timezone.utc)
+                run.result = result
+                run.error = None
+                job.last_run_at = run.started_at
+                job.run_count += 1
+                job.next_run_at = self._calculate_next_run_for_job(job)
+                break
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                last_error = str(e)
+                run.status = ScheduleStatus.FAILED
+                run.error = last_error
+                job.failure_count += 1
+                job.last_error = last_error
+                if attempt < job.max_retries:
+                    run.status = ScheduleStatus.PENDING
+                    await self.db.flush()
+                    await asyncio.sleep(job.retry_delay_seconds)
+                else:
+                    run.completed_at = datetime.now(timezone.utc)
                     job.status = ScheduleStatus.FAILED
-        
+
         await self.db.flush()
         return run
     
@@ -421,7 +443,7 @@ class SchedulerService:
                 await self._check_and_execute_jobs()
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except Exception:
                 # Log error but continue
                 pass
             
@@ -467,7 +489,4 @@ async def get_scheduler_service(db: AsyncSession = Depends(lambda: _get_db())) -
 
 
 # Import needed modules
-import asyncio
-import time
-from datetime import timedelta
 from sqlalchemy import func

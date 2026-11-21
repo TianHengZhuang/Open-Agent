@@ -111,9 +111,22 @@ export interface WorkflowVariable {
   description?: string;
 }
 
+export interface StickyNote {
+  id: string;
+  /** World-space canvas position (px, 0,0 top-left). */
+  x: number;
+  y: number;
+  /** Canvas-relative; negative allowed. Should not sit on nodes. */
+  width: number;
+  height: number;
+  color: string;
+  text: string;
+}
+
 export interface WorkflowSettings {
   timezone?: string;
   max_concurrency?: number;
+  sticky_notes?: StickyNote[];
 }
 
 export interface WorkflowDefinition {

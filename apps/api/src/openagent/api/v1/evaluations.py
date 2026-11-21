@@ -52,6 +52,8 @@ from openagent.evaluator.gates import (
 from openagent.evaluator.metrics import inc as metrics_inc
 from openagent.evaluator.types import (
     CorrectionStrategy,
+    EvidenceTrust,
+    EvidenceType,
     is_known_evaluation_type,
 )
 from openagent.services.authorization import AuthorizationContext, AuthorizationService

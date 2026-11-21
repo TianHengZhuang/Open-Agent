@@ -10,10 +10,11 @@ import {
   Trash2,
   StickyNote,
   Maximize,
+  Plus,
 } from 'lucide-react';
 
 export interface MenuTarget {
-  kind: 'trigger' | 'node' | 'edge' | 'background';
+  kind: 'trigger' | 'node' | 'edge' | 'sticky' | 'background';
   id?: string;
   disabled?: boolean;
 }
@@ -29,12 +30,16 @@ export interface MenuAction {
 export function actionsForTarget(target: MenuTarget, hasClipboard: boolean): MenuAction[] {
   if (target.kind === 'background') {
     return [
+      { id: 'add', label: 'Add node', icon: <Plus className="h-4 w-4" /> },
       { id: 'paste', label: 'Paste', icon: <ClipboardPaste className="h-4 w-4" />, disabled: !hasClipboard },
       { id: 'fit', label: 'Fit to view', icon: <Maximize className="h-4 w-4" /> },
     ];
   }
   if (target.kind === 'edge') {
     return [{ id: 'delete', label: 'Delete edge', icon: <Trash2 className="h-4 w-4" />, destructive: true }];
+  }
+  if (target.kind === 'sticky') {
+    return [{ id: 'delete', label: 'Delete note', icon: <Trash2 className="h-4 w-4" />, destructive: true }];
   }
   const items: MenuAction[] = [
     { id: 'configure', label: 'Configure', icon: <Settings2 className="h-4 w-4" /> },

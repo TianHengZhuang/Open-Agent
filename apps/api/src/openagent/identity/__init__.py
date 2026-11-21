@@ -7,14 +7,14 @@ modular: core auth keeps working self-hosted with no IdP, no cloud.
 """
 
 from openagent.identity.types import (
-    IdentityType,
-    IdentityStatus,
-    IdentityProviderType,
     AuthMethod,
     AuthStrength,
-    DeviceTrust,
-    RiskLevel,
     DataClassification,
+    DeviceTrust,
+    IdentityProviderType,
+    IdentityStatus,
+    IdentityType,
+    RiskLevel,
 )
 
 __all__ = [

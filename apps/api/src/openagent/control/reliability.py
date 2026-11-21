@@ -10,12 +10,18 @@ import hashlib
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from openagent.control.types import (
-    AlertSeverity, AlertStatus, DeploymentStatus, HealthState,
-    IncidentStatus, ReleaseState, aggregate_health,
-    is_valid_incident_transition, public_status_for,
+    AlertSeverity,
+    AlertStatus,
+    DeploymentStatus,
+    HealthState,
+    IncidentStatus,
+    ReleaseState,
+    aggregate_health,
+    is_valid_incident_transition,
+    public_status_for,
 )
 
 HEALTH_COMPONENTS = ("api", "database", "redis", "queue", "workers",

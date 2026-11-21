@@ -7,10 +7,9 @@ Owner privileges are NEVER granted from IdP claims automatically.
 
 from __future__ import annotations
 
-import hashlib
 import secrets
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from openagent.identity.types import IdentityProviderType
@@ -100,7 +99,6 @@ class DomainClaim:
         return self.challenge
 
     def verify(self, presented: str) -> tuple[bool, str]:
-        import hmac as _hmac
         if not secrets.compare_digest(str(presented or ""), self.challenge):
             return False, "challenge mismatch"
         self.status = "VERIFIED"

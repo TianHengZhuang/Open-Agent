@@ -18,7 +18,7 @@ import re
 import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 from urllib.parse import urlparse
 
 from openagent.code.security import redact_dict, redact_text  # canonical, reused
@@ -222,9 +222,9 @@ def validate_sandbox_path(workspace_root: str, rel_path: str,
     root = Path(workspace_root).resolve()
     candidate = (root.joinpath(*parts) if parts else root)
     # String-level containment first (works for not-yet-existing paths).
-    s = str(candidate)
-    r = str(root)
-    if s != r and not s.startswith(r + "/"):
+    try:
+        candidate.relative_to(root)
+    except ValueError:
         return PathCheck(valid=False, reason="path escapes workspace")
     # Realpath containment for existing paths (symlink-escape defense).
     try:
@@ -396,7 +396,7 @@ def categorize_command(binary: str) -> str:
         return "read"
     if b in {"python", "python3", "pytest", "node", "npm", "pnpm", "yarn", "tsc", "eslint",
              "ruff", "mypy", "cargo", "rustc", "go", "javac", "java", "mvn", "gradle",
-             "dotnet", "make", "cmake", "ninja", "tsc", "vitest", "jest"}:
+             "dotnet", "make", "cmake", "ninja", "vitest", "jest"}:
         return "build" if b in {"make", "cmake", "ninja", "cargo", "mvn", "gradle",
                                 "dotnet", "tsc"} else ("test" if b in {
                                     "pytest", "vitest", "jest"} else "build")
@@ -417,7 +417,9 @@ def parse_argv(command: str, allow_shell: bool = False) -> list[str]:
     if not argv:
         raise ValueError("Empty command")
     binary = argv[0].split("/")[-1].lower()
-    if binary in ("bash", "sh", "powershell", "pwsh", "cmd", "cmd.exe", "ash", "zsh", "fish"):
+    if not allow_shell and binary in (
+        "bash", "sh", "powershell", "pwsh", "cmd", "cmd.exe", "ash", "zsh", "fish"
+    ):
         raise ValueError(f"Interactive shell '{binary}' requires an explicit shell grant")
     return argv
 
@@ -431,6 +433,10 @@ def check_command(command: str, policy: CommandPolicy) -> tuple[bool, str, str]:
         return False, str(e), "system"
     binary = argv[0].split("/")[-1].lower()
     category = categorize_command(binary)
+    # Privilege/container-management binaries are never allowed, even when a
+    # profile allowlist or empty allowlist would otherwise permit them.
+    if category == "privileged":
+        return False, f"privileged command '{binary}' is never allowed", category
     if binary in pol.denied_commands:
         return False, f"command '{binary}' is explicitly denied", category
     if category in pol.denied_categories:

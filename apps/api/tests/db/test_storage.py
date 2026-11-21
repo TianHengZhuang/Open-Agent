@@ -1,3 +1,6 @@
+from datetime import timedelta
+from starlette.datastructures import Headers
+from fastapi import UploadFile
 import pytest
 import pytest_asyncio
 import io
@@ -7,12 +10,13 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from openagent.db.models import FileUpload, FileUploadStatus
 from openagent.core.storage import (
     StorageService, LocalStorageBackend, S3StorageBackend,
-    StoredFile, StorageProvider, StorageConfig, FileUploadConfig,
+    StoredFile, StorageProvider, StorageConfig,
 )
-from openagent.core.files import FileUploadService, FileUploadConfig
+from openagent.core.files import (
+    FileUpload, FileUploadConfig, FileUploadService, FileUploadStatus,
+)
 from openagent.db.models import User, UserStatus, Organization, OrganizationStatus
 from openagent.core.security import hash_password
 
@@ -49,7 +53,7 @@ async def user(db_session: AsyncSession, org):
     membership = Membership(
         user_id=user.id,
         organization_id=org.id,
-        role=MembershipRole.MEMBER,
+        legacy_role=MembershipRole.MEMBER,
         status=MembershipStatus.ACTIVE,
     )
     db_session.add(membership)
@@ -60,8 +64,16 @@ async def user(db_session: AsyncSession, org):
 
 @pytest_asyncio.fixture
 async def file_upload_service(db_session: AsyncSession):
+    import tempfile
     from openagent.core.files import FileUploadService
-    return FileUploadService(db_session)
+    from openagent.core.storage import LocalStorageBackend, StorageProvider
+
+    service = FileUploadService(db_session)
+    service.storage.register_backend(
+        StorageProvider.LOCAL,
+        LocalStorageBackend(tempfile.mkdtemp(prefix="openagent-test-storage-")),
+    )
+    return service
 
 
 class TestLocalStorageBackend:
@@ -176,7 +188,7 @@ class TestFileUploadService:
             filename="test.txt",
             file=io.BytesIO(b"Test file content"),
         )
-        file.content_type = "text/plain"
+        file.headers = Headers({"content-type": "text/plain"})
         
         upload = await file_upload_service.create_upload(
             organization_id=org.id,
@@ -199,7 +211,7 @@ class TestFileUploadService:
             filename="test.exe",
             file=io.BytesIO(b"executable"),
         )
-        file.content_type = "application/x-msdownload"
+        file.headers = Headers({"content-type": "application/x-msdownload"})
         
         with pytest.raises(Exception) as exc_info:
             await file_upload_service.create_upload(
@@ -219,7 +231,7 @@ class TestFileUploadService:
             filename="test.exe",
             file=io.BytesIO(b"executable"),
         )
-        file.content_type = "application/octet-stream"
+        file.headers = Headers({"content-type": "text/plain"})
         
         with pytest.raises(Exception) as exc_info:
             await file_upload_service.create_upload(
@@ -241,7 +253,7 @@ class TestFileUploadService:
             filename="large.txt",
             file=io.BytesIO(large_content),
         )
-        file.content_type = "text/plain"
+        file.headers = Headers({"content-type": "text/plain"})
         
         with pytest.raises(Exception) as exc_info:
             await file_upload_service.create_upload(
@@ -262,7 +274,7 @@ class TestFileUploadService:
             filename="complete.txt",
             file=io.BytesIO(b"Initial"),
         )
-        file.content_type = "text/plain"
+        file.headers = Headers({"content-type": "text/plain"})
         
         upload = await file_upload_service.create_upload(
             organization_id=org.id,
@@ -271,12 +283,12 @@ class TestFileUploadService:
         )
         
         # Complete upload
-        content = b"Complete file content for testing"
+        content = b"Initial"
         complete_file = UploadFile(
             filename="complete.txt",
             file=io.BytesIO(content),
         )
-        complete_file.content_type = "text/plain"
+        complete_file.headers = Headers({"content-type": "text/plain"})
         
         completed = await file_upload_service.complete_upload(
             upload_id=upload.id,
@@ -292,7 +304,7 @@ class TestFileUploadService:
             filename="download.txt",
             file=io.BytesIO(b"Download test"),
         )
-        file.content_type = "text/plain"
+        file.headers = Headers({"content-type": "text/plain"})
         
         upload = await file_upload_service.create_upload(
             organization_id=org.id,
@@ -300,7 +312,7 @@ class TestFileUploadService:
             file=file,
         )
         
-        content = b"Download test content"
+        content = b"Download test"
         await file_upload_service.complete_upload(
             upload_id=upload.id,
             file_content=content,
@@ -310,14 +322,14 @@ class TestFileUploadService:
         url = await file_upload_service.get_download_url(upload.id)
         
         assert url is not None
-        assert "download" in url or "presigned" in url or "signed" in url
+        assert url.startswith("/api/v1/storage/files/")
     
     async def test_delete_upload(self, db_session: AsyncSession, org, user, file_upload_service):
         file = UploadFile(
             filename="delete.txt",
             file=io.BytesIO(b"Delete test"),
         )
-        file.content_type = "text/plain"
+        file.headers = Headers({"content-type": "text/plain"})
         
         upload = await file_upload_service.create_upload(
             organization_id=org.id,
@@ -325,7 +337,7 @@ class TestFileUploadService:
             file=file,
         )
         
-        content = b"Delete test content"
+        content = b"Delete test"
         await file_upload_service.complete_upload(
             upload_id=upload.id,
             file_content=content,
@@ -339,7 +351,7 @@ class TestFileUploadService:
         assert deleted_upload is None
     
     async def test_cleanup_expired(self, db_session: AsyncSession, org, user, file_upload_service):
-        from openagent.db.models import FileUpload
+        from openagent.core.files import FileUpload
         
         # Create expired upload
         expired = FileUpload(

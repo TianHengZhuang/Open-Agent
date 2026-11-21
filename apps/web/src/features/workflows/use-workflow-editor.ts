@@ -12,12 +12,14 @@ import {
 } from './serialize';
 import type {
   Clipboard,
+  StickyNote,
   TriggerType,
   ValidationResult,
   WorkflowDefinition,
   WorkflowEdge,
   WorkflowNode,
   WorkflowNodeType,
+  WorkflowSettings,
   WorkflowTrigger,
 } from './types';
 
@@ -56,7 +58,9 @@ type Action =
   | { type: 'toggle-select'; selection: Selection }
   | { type: 'box-select'; ids: string[] }
   | { type: 'undo' }
-  | { type: 'redo' };
+  | { type: 'redo' }
+  | { type: 'set-settings'; settings: WorkflowSettings }
+  | { type: 'move-sticky'; id: string; x: number; y: number };
 
 const HISTORY_LIMIT = 60;
 
@@ -201,6 +205,20 @@ function reducer(state: EditorState, action: Action): EditorState {  switch (act
         future: [state.definition, ...state.future].slice(0, HISTORY_LIMIT),
       };
     }
+    case 'set-settings':
+      return pushHistory(state, { ...state.definition, settings: action.settings });
+    case 'move-sticky': {
+      const stickies = (state.definition.settings.sticky_notes ?? []).map((s) =>
+        s.id === action.id ? { ...s, x: action.x, y: action.y } : s,
+      );
+      return {
+        ...state,
+        definition: {
+          ...state.definition,
+          settings: { ...state.definition.settings, sticky_notes: stickies },
+        },
+      };
+    }
     case 'redo': {
       if (state.future.length === 0) return state;
       const [next, ...rest] = state.future;
@@ -287,10 +305,12 @@ export function useWorkflowEditor(options: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftKey]);
 
-  // Autosave (debounced).
+  // Autosave (debounced). Waits for the saved baseline so an empty initial
+  // state can never clobber a real draft during the first load.
   useEffect(() => {
     if (!draftKey || !restoredDraft) return;
     const t = setTimeout(() => {
+      if (!baselineRef.current) return;
       try {
         window.localStorage.setItem(draftKey, JSON.stringify(stateRef.current.definition));
       } catch {
@@ -380,6 +400,42 @@ export function useWorkflowEditor(options: {
    * Paste clipboard contents with fresh ids, preserved internal edges, and a
    * visual offset. Returns pasted ids (selected afterwards).
    */
+  const addSticky = useCallback((x: number, y: number, color: string, text: string) => {
+    const note: StickyNote = {
+      id: newId('st'),
+      x,
+      y,
+      width: 220,
+      height: 140,
+      color,
+      text,
+    };
+    dispatch({ type: 'set-settings', settings: { ...stateRef.current.definition.settings, sticky_notes: [...(stateRef.current.definition.settings.sticky_notes ?? []), note] } });
+    return note.id;
+  }, []);
+
+  const updateSticky = useCallback((id: string, patch: Partial<StickyNote>) => {
+    dispatch({
+      type: 'set-settings',
+      settings: {
+        ...stateRef.current.definition.settings,
+        sticky_notes: (stateRef.current.definition.settings.sticky_notes ?? []).map((s) =>
+          s.id === id ? { ...s, ...patch } : s,
+        ),
+      },
+    });
+  }, []);
+
+  const deleteSticky = useCallback((id: string) => {
+    dispatch({
+      type: 'set-settings',
+      settings: {
+        ...stateRef.current.definition.settings,
+        sticky_notes: (stateRef.current.definition.settings.sticky_notes ?? []).filter((s) => s.id !== id),
+      },
+    });
+  }, []);
+
   const pasteClipboard = useCallback((): string[] => {
     const cb = clipboardRef.current;
     if (!cb || (cb.triggers.length === 0 && cb.nodes.length === 0)) return [];
@@ -449,6 +505,9 @@ export function useWorkflowEditor(options: {
     boxSelect,
     copySelection,
     pasteClipboard,
+    addSticky,
+    updateSticky,
+    deleteSticky,
     duplicateSelection,
     hasClipboard: clipboard !== null && (clipboard.triggers.length > 0 || clipboard.nodes.length > 0),
     dispatch,

@@ -37,8 +37,10 @@ from openagent.db.models.sandbox import (
     SandboxImagePolicy,
     SandboxLease,
     SandboxProfileRow,
-    SandboxProvider as SandboxProviderEnum,
     SandboxStatus,
+)
+from openagent.db.models.sandbox import (
+    SandboxProvider as SandboxProviderEnum,
 )
 from openagent.sandbox import security as sec
 from openagent.sandbox.config import SandboxSettings, is_production, load_settings

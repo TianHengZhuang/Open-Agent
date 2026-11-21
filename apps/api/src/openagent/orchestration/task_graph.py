@@ -8,7 +8,6 @@ from typing import Dict, List, Optional, Set
 
 from openagent.orchestration.types import DependencyPolicy, OrchTaskStatus
 
-
 TERMINAL_TASK_STATUSES = {
     OrchTaskStatus.SUCCEEDED,
     OrchTaskStatus.FAILED,

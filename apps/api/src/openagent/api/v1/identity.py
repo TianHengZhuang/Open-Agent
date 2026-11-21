@@ -18,33 +18,43 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openagent.api.dependencies import (
-    get_auth_context, get_current_org_context, require_platform_owner,
+    get_current_org_context,
 )
-from openagent.control.observability import redact
 from openagent.core.security.tokens import hash_token
-from openagent.db.models.control import IpPolicyRow
 from openagent.db.models.identity import (
-    AuthenticationEvent, ControlEvidenceRow, DeviceRow,
-    IdentityGroupMapping, IdentityProviderDomain, IdentityProviderRow,
-    PolicyDecisionRow, SecurityAlertRow, SecurityControlRow,
-    SecurityPolicyRow, SecurityPolicyVersionRow, SessionRiskEvent,
+    AuthenticationEvent,
+    ControlEvidenceRow,
+    DeviceRow,
+    IdentityGroupMapping,
+    IdentityProviderDomain,
+    IdentityProviderRow,
+    PolicyDecisionRow,
+    SecurityAlertRow,
+    SecurityControlRow,
+    SecurityPolicyRow,
+    SecurityPolicyVersionRow,
+    SessionRiskEvent,
 )
 from openagent.db.session import get_db
 from openagent.identity.mfa import (
-    MfaPolicy, auth_strength_for, mint_recovery_codes, new_totp_secret,
-    provisioning_uri, verify_totp,
+    mint_recovery_codes,
+    new_totp_secret,
+    provisioning_uri,
 )
 from openagent.identity.secpolicies import (
-    PolicySimulator, PolicyStore, SecurityPolicy, detect_drift,
+    PolicySimulator,
+    PolicyStore,
+    SecurityPolicy,
     posture_report,
 )
 from openagent.identity.sso import (
-    DomainRegistry, GroupMapping, SsoConfiguration, jit_plan,
-    resolve_memberships, sso_test_preview,
+    GroupMapping,
+    SsoConfiguration,
+    sso_test_preview,
 )
 from openagent.identity.trust import (
-    Device, RevocationRegistry, SessionContext, evaluate_step_up,
-    session_risk,
+    Device,
+    evaluate_step_up,
 )
 from openagent.services.authorization import AuthorizationContext
 
@@ -572,7 +582,6 @@ async def upsert_policy(
     auth: AuthorizationContext = Depends(get_current_org_context),
     db: AsyncSession = Depends(get_db),
 ):
-    from openagent.identity.secpolicies import SecurityPolicy
     if body.scope == "platform":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="Platform policy needs Master Account")
@@ -626,7 +635,7 @@ async def simulate_policy(
     db: AsyncSession = Depends(get_db),
 ):
     from openagent.identity.secpolicies import (
-        PolicySimulator, PolicyStore, SecurityPolicy, SimulationInput,
+        SimulationInput,
     )
     rows = (await db.execute(select(SecurityPolicyRow))).scalars().all()
     store = PolicyStore()
@@ -669,7 +678,6 @@ async def rollback_policy(
     auth: AuthorizationContext = Depends(get_current_org_context),
     db: AsyncSession = Depends(get_db),
 ):
-    from openagent.identity.secpolicies import PolicyStore, SecurityPolicy
     row = (await db.execute(select(SecurityPolicyRow).where(
         SecurityPolicyRow.id == policy_id))).scalar_one_or_none()
     if row is None:
@@ -808,7 +816,6 @@ async def posture(
     auth: AuthorizationContext = Depends(get_current_org_context),
     db: AsyncSession = Depends(get_db),
 ):
-    from openagent.identity.secpolicies import posture_report
     sso_count = (await db.execute(select(func.count(
         IdentityProviderRow.id)).where(
             IdentityProviderRow.organization_id == auth.organization_id,
@@ -905,6 +912,7 @@ async def mint_scim_credential(
     db: AsyncSession = Depends(get_db),
 ):
     import secrets as _secrets
+
     from openagent.db.models.identity import ScimCredentialRow
     raw = f"scim_{_secrets.token_urlsafe(32)}"
     row = ScimCredentialRow(

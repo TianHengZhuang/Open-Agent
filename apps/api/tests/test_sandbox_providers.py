@@ -17,13 +17,17 @@ from openagent.sandbox.providers import (
 
 def _spec(**kw):
     prof = get_profile("TEST")
-    return ContainerSpec(image="openagent-sandbox-base", cpu=prof.cpu,
-                         memory_mb=prof.memory_mb, pids_limit=prof.pids_limit,
-                         readonly_rootfs=True, network_mode="NO_NETWORK",
-                         mounts=[{"host": "/srv/ws", "container": "/workspace",
-                                  "read_only": False}],
-                         env={"CI": "true"},
-                         labels={"openagent.sandbox": "sbx_x"}, **kw)
+    fields = dict(
+        image="openagent-sandbox-base", cpu=prof.cpu,
+        memory_mb=prof.memory_mb, pids_limit=prof.pids_limit,
+        readonly_rootfs=True, network_mode="NO_NETWORK",
+        mounts=[{"host": "/srv/ws", "container": "/workspace",
+                 "read_only": False}],
+        env={"CI": "true"},
+        labels={"openagent.sandbox": "sbx_x"},
+    )
+    fields.update(kw)
+    return ContainerSpec(**fields)
 
 
 class TestDockerArgv:

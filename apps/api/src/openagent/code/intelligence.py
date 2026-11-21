@@ -12,10 +12,9 @@ import ast
 import fnmatch
 import hashlib
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, Protocol
-
 
 # --------------------------------------------------------------------------
 # Ignore rules / language detection

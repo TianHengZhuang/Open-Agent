@@ -1,20 +1,28 @@
 """Memory repository with advanced search capabilities including vector search."""
 
-from typing import Optional, List, Dict, Any
-from uuid import UUID
 from datetime import datetime, timezone
-from sqlalchemy import select, func, delete, and_, or_, text
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from typing import Any, Dict, List, Optional
+from uuid import UUID
 
-from openagent.db.repositories.base import BaseRepository
+from sqlalchemy import delete, func, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from openagent.db.models.conversation import Conversation, Message
 from openagent.db.models.memory import (
-    Memory, MemoryType, MemoryScope, MemoryVisibility, MemoryStatus,
-    MemoryEmbeddingStatus, MemorySourceType, MemoryVersion,
-    MemoryAccessLog, MemoryEmbedding, MemoryLink, MemoryLink,
-    MemoryConflict, MemoryConsolidationJob, MemoryPolicy, MemoryPolicy,
+    Memory,
+    MemoryAccessLog,
+    MemoryConflict,
+    MemoryConsolidationJob,
+    MemoryEmbedding,
+    MemoryLink,
+    MemoryPolicy,
+    MemoryScope,
+    MemoryStatus,
+    MemoryType,
+    MemoryVersion,
+    MemoryVisibility,
 )
-from openagent.db.models.conversation import Conversation, Message, ConversationStatus, MessageRole
+from openagent.db.repositories.base import BaseRepository
 
 
 class MemoryRepository(BaseRepository[Memory]):

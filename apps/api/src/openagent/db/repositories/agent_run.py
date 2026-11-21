@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Optional, List
+from typing import Dict, List, Optional
 from uuid import UUID
-from sqlalchemy import select, func
+
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openagent.db.models import AgentRun, AgentRunStatus
@@ -18,16 +19,28 @@ class AgentRunRepository(BaseRepository[AgentRun]):
     async def create(
         self,
         agent_id: UUID,
+        organization_id: Optional[UUID] = None,
+        status: AgentRunStatus = AgentRunStatus.QUEUED,
         agent_version_id: Optional[UUID] = None,
         workflow_execution_id: Optional[UUID] = None,
         input_data: Optional[Dict] = None,
     ) -> AgentRun:
+        if organization_id is None:
+            from openagent.db.models import Agent
+
+            result = await self.session.execute(
+                select(Agent.organization_id).where(Agent.id == agent_id)
+            )
+            organization_id = result.scalar_one_or_none()
+            if organization_id is None:
+                raise ValueError(f"Agent {agent_id} not found for run creation")
         run = AgentRun(
+            organization_id=organization_id,
             agent_id=agent_id,
             agent_version_id=agent_version_id,
             workflow_execution_id=workflow_execution_id,
             input=input_data or {},
-            status=AgentRunStatus.QUEUED,
+            status=status,
         )
         self.session.add(run)
         await self.session.flush()

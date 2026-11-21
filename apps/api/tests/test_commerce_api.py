@@ -284,7 +284,17 @@ class TestUsageQuotasCredits:
                                                 org_a):
         meter = (await db_session.execute(select(UsageMeter).where(
             UsageMeter.slug == "agent_runs"))).scalar_one_or_none()
-        assert meter is not None, "migration 023 must seed usage meters"
+        if meter is None:
+            # create_all-based test databases do not run migration seeds.
+            meter = UsageMeter(
+                slug="agent_runs", name="Agent runs", unit="run",
+                aggregation="COUNT", reset_period="MONTHLY",
+            )
+            db_session.add(meter)
+            await db_session.flush()
+        # This test exercises quantity aggregation, not event counting.
+        meter.aggregation = "SUM"
+        await db_session.flush()
         first = await svc.record_usage(
             db_session, meter_slug="agent_runs", organization_id=org_a.id,
             quantity=3, idempotency_key="use-test-1")

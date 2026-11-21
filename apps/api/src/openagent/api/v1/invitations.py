@@ -1,20 +1,22 @@
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, Request, HTTPException, status, Query
-from pydantic import BaseModel, Field, EmailStr
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel, EmailStr
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openagent.db.session import get_db
-from openagent.db.models import OrganizationInvitation, InvitationStatus, Role
-from openagent.db.repositories import OrganizationInvitationRepository, RoleRepository
-from openagent.schemas.base import ApiErrorResponse, PaginatedResponse
 from openagent.api.dependencies import (
     get_current_org_context,
     require_permission,
 )
-from openagent.services.email import EmailService, create_email_provider_from_settings
 from openagent.core.config import get_settings
+from openagent.db.models import InvitationStatus, Role
+from openagent.db.repositories import OrganizationInvitationRepository, RoleRepository
+from openagent.db.session import get_db
+from openagent.schemas.base import ApiErrorResponse, PaginatedResponse
+from openagent.services.email import EmailService, create_email_provider_from_settings
 
 router = APIRouter(prefix="/organizations/{organization_id}/invitations", tags=["invitations"])
 
@@ -97,8 +99,9 @@ async def list_invitations(
     )
     
     # Get role names and inviter names
-    from openagent.db.models import Role, User
     from sqlalchemy import select
+
+    from openagent.db.models import Role, User
     
     role_ids = [inv.role_id for inv in invitations]
     inviter_ids = [inv.invited_by for inv in invitations]
@@ -238,7 +241,7 @@ async def accept_invitation(
     db: AsyncSession = Depends(get_db),
 ):
     """Accept an organization invitation."""
-    from openagent.core.security.tokens import verify_token, hash_token
+    from openagent.core.security.tokens import hash_token
     
     token_hash = hash_token(data.token)
     repo = OrganizationInvitationRepository(db)
@@ -265,7 +268,7 @@ async def accept_invitation(
         )
     
     # Check if user already exists
-    from openagent.db.models import User, UserStatus
+    from openagent.db.models import UserStatus
     from openagent.db.repositories import UserRepository
     
     user_repo = UserRepository(db)
@@ -281,7 +284,7 @@ async def accept_invitation(
         await db.flush()
     
     # Create membership
-    from openagent.db.models import Membership, MembershipStatus, MembershipRole
+    from openagent.db.models import Membership, MembershipRole, MembershipStatus
     membership = Membership(
         user_id=user.id,
         organization_id=invitation.organization_id,
@@ -394,7 +397,7 @@ async def resend_invitation(
     
     await email_service.send_email(
         to=invitation.email,
-        subject=f"Invitation to join organization",
+        subject="Invitation to join organization",
         html_content=f"""
         <p>You've been invited to join the organization.</p>
         <p><a href="{accept_url}">Accept Invitation</a></p>

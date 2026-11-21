@@ -45,7 +45,7 @@ async def user(db_session: AsyncSession, org: Organization) -> User:
     membership = Membership(
         user_id=user.id,
         organization_id=org.id,
-        role="member",
+        legacy_role=MembershipRole.MEMBER,
         status="active",
     )
     db_session.add(membership)

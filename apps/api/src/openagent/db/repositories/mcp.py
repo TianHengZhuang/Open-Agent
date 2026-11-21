@@ -2,35 +2,32 @@
 
 from __future__ import annotations
 
-from typing import Optional, List, Dict, Any
-from uuid import UUID
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+from uuid import UUID
 
-from sqlalchemy import select, func, and_, or_, desc
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openagent.db.repositories.base import BaseRepository
 from openagent.db.models import (
-    MCPServer,
-    MCPServerVersion,
     MCPConnection,
-    MCPTool,
-    MCPResource,
-    MCPPrompt,
     MCPHealth,
     MCPPolicy,
+    MCPPrompt,
+    MCPResource,
+    MCPServer,
+    MCPServerVersion,
+    MCPTool,
     MCPToolExecution,
-    MCPServerStatus,
-    MCPConnectionState,
-    MCPTrustLevel,
 )
+from openagent.db.repositories.base import BaseRepository
 
 
 class MCPServerRepository(BaseRepository[MCPServer]):
     """Repository for MCP Server operations."""
 
     def __init__(self, session: AsyncSession):
-        super().__init__(session, MCPServer)
+        super().__init__(MCPServer, session)
 
     async def get_by_name_and_org(self, organization_id: UUID, name: str) -> Optional[MCPServer]:
         """Get server by name within an organization."""
@@ -418,20 +415,15 @@ class MCPToolExecutionRepository(BaseRepository[MCPToolExecution]):
         return list((await self.session.execute(query)).scalars().all()), total
 
 
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime, timezone
-from typing import Optional, List, Dict, Any
-from uuid import UUID
-from openagent.db.repositories.base import BaseRepository
 from openagent.db.models import (
-    MCPServer,
-    MCPServerVersion,
     MCPConnection,
-    MCPTool,
-    MCPResource,
-    MCPPrompt,
     MCPHealth,
     MCPPolicy,
+    MCPPrompt,
+    MCPResource,
+    MCPServer,
+    MCPServerVersion,
+    MCPTool,
     MCPToolExecution,
 )
+from openagent.db.repositories.base import BaseRepository

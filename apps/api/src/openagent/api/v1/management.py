@@ -1038,8 +1038,6 @@ async def manager_console(
     _check_org(organization_id, auth_context)
     await require_permission("agent:read")(request, db)
     service = _service(db)
-    from openagent.db.models.management import DynamicTeam, Escalation
-    from openagent.db.models.orchestration import OrchestrationTask
 
     teams = await service.teams.list(organization_id, limit=200)
     if run_id:

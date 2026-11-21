@@ -1,5 +1,7 @@
 """Browser domain package (provider-neutral orchestration, policy-aware)."""
 
+from openagent.browser.client import BrowserClient
+from openagent.browser.observations import compress_observation
 from openagent.browser.security import (
     classify_risk,
     detect_challenge,
@@ -16,10 +18,17 @@ from openagent.browser.security import (
     validate_redirect,
     validate_url,
 )
-from openagent.browser.service import BrowserNotFound, BrowserPolicyDenied, BrowserSecurityError, BrowserService
-from openagent.browser.tools import BROWSER_TOOLS, BrowserToolExecutor, ensure_browser_tools_registered
-from openagent.browser.observations import compress_observation
-from openagent.browser.client import BrowserClient
+from openagent.browser.service import (
+    BrowserNotFound,
+    BrowserPolicyDenied,
+    BrowserSecurityError,
+    BrowserService,
+)
+from openagent.browser.tools import (
+    BROWSER_TOOLS,
+    BrowserToolExecutor,
+    ensure_browser_tools_registered,
+)
 
 __all__ = [
     "BrowserService", "BrowserSecurityError", "BrowserPolicyDenied", "BrowserNotFound",

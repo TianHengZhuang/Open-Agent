@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { DataTable, Column } from '@/components/ui/table';
 import { StatusBadge } from '@/components/ui/status';
 import { PermissionGate } from '@/components/PermissionGate';
+import { CreateAgentDialog } from '@/components/agents/CreateAgentDialog';
 import { useOrgScopedList } from '@/lib/queries';
 import { useSearchParamsState } from '@/lib/queries';
 import { Plus, Search } from 'lucide-react';
@@ -17,6 +18,7 @@ import type { AgentSummary } from '@/types';
 
 export default function AgentsPage() {
   const [q, setQ] = React.useState('');
+  const [createOpen, setCreateOpen] = React.useState(false);
   const debounced = useSearchParamsState(q);
   const { items, total, isLoading, error, refetch } = useOrgScopedList<AgentSummary>(
     'agents',
@@ -41,7 +43,7 @@ export default function AgentsPage() {
             breadcrumbs={[{ label: 'Home', href: '/' }, { label: 'Agents' }]}
             actions={
               <PermissionGate permission="agent:create">
-                <Button><Plus className="mr-2 h-4 w-4" />Create agent</Button>
+                <Button onClick={() => setCreateOpen(true)}><Plus className="mr-2 h-4 w-4" />Create agent</Button>
               </PermissionGate>
             }
           />
@@ -60,11 +62,16 @@ export default function AgentsPage() {
             onRetry={() => refetch()}
             emptyTitle="No agents yet"
             emptyDescription="Create your first agent to give your workforce capabilities. The full agent runtime ships in a later phase."
-            emptyAction={<Button><Plus className="mr-2 h-4 w-4" />Create agent</Button>}
+            emptyAction={
+              <PermissionGate permission="agent:create">
+                <Button onClick={() => setCreateOpen(true)}><Plus className="mr-2 h-4 w-4" />Create agent</Button>
+              </PermissionGate>
+            }
           />
           <p className="oa-caption">{total} agent{total === 1 ? '' : 's'} · URL-synchronized search coming with backend filters</p>
         </div>
       </Layout>
+      <CreateAgentDialog open={createOpen} onClose={() => setCreateOpen(false)} />
     </Protected>
   );
 }

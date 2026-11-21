@@ -1,19 +1,18 @@
-import time
 import asyncio
+import time
+
 try:
     import psutil
 except ImportError:  # optional: only SystemMetricsCollector needs it
     psutil = None
 import os
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Callable, Awaitable
-from dataclasses import dataclass, field
-from enum import Enum
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import Enum
 from functools import wraps
-
-from openagent.core.config import get_settings
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 
 class MetricType(str, Enum):
@@ -361,7 +360,7 @@ class MetricsMiddleware:
             status_code = 500
             raise
         finally:
-            duration = time.perf_counter() - start
+            time.perf_counter() - start
             
             # Record metrics
             labels = {
@@ -417,5 +416,3 @@ def get_metrics() -> MetricsCollector:
 
 
 # Import needed modules
-import asyncio
-import time

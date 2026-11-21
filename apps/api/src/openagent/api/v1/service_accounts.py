@@ -1,19 +1,19 @@
 from datetime import datetime
-from typing import Optional, List
+from typing import List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, Request, HTTPException, status, Query
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openagent.db.session import get_db
-from openagent.db.models import ServiceAccount, ServiceAccountStatus
-from openagent.db.repositories import ServiceAccountRepository, PermissionRepository
-from openagent.schemas.base import ApiErrorResponse, PaginatedResponse
 from openagent.api.dependencies import (
     get_current_org_context,
     require_permission,
 )
-from openagent.core.security.tokens import create_token_pair
+from openagent.db.models import ServiceAccountStatus
+from openagent.db.repositories import PermissionRepository, ServiceAccountRepository
+from openagent.db.session import get_db
+from openagent.schemas.base import ApiErrorResponse, PaginatedResponse
 
 router = APIRouter(prefix="/organizations/{organization_id}/service-accounts", tags=["service-accounts"])
 

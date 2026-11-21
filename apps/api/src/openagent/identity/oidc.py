@@ -17,7 +17,10 @@ from typing import Any, Optional
 from urllib.parse import urlencode
 
 from openagent.identity.providers import (
-    AuthRequest, AuthResult, IdentityProvider, ProvisioningResult,
+    AuthRequest,
+    AuthResult,
+    IdentityProvider,
+    ProvisioningResult,
 )
 
 

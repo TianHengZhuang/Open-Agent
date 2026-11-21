@@ -1,28 +1,24 @@
 import hashlib
 import io
-import mimetypes
-import os
-import shutil
 import uuid
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, BinaryIO, Dict, List, Optional, AsyncGenerator
-from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import String, Text, ForeignKey, Index, Enum as SQLEnum, DateTime, JSON, Integer
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy import ForeignKey, Index, Integer, String, Text, select
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy.orm import Mapped, mapped_column
 
-from openagent.db.models.base import Base, TimestampMixin, UUIDMixin
+from openagent.core.storage import StorageProvider, StorageService
+from openagent.db.models.base import Base, TimestampMixin
 from openagent.db.session import get_db
-from openagent.core.config import get_settings
-from openagent.core.storage import StorageService, StoredFile, StorageProvider
 
 
 class FileUploadStatus(str, Enum):
@@ -219,7 +215,7 @@ class FileUploadService:
             await self.db.flush()
             
             # Store file
-            provider = storage_provider or StorageProvider(upload.storage_provider)
+            storage_provider or StorageProvider(upload.storage_provider)
             stored_file = await self.storage.upload(
                 key=upload.storage_key,
                 file=io.BytesIO(file_content),
@@ -331,7 +327,6 @@ async def get_file_upload_service(
 
 
 # FastAPI endpoints for file uploads
-from fastapi.responses import StreamingResponse
 
 router = APIRouter(prefix="/files", tags=["file-uploads"])
 

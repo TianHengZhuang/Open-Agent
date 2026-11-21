@@ -1,32 +1,32 @@
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, Request, HTTPException, status, Query
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func, or_
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from openagent.db.session import get_db
+from openagent.api.dependencies import (
+    get_current_org_context,
+    require_permission,
+)
 from openagent.db.models import (
     AuditLog,
     Workflow,
+    WorkflowExecution,
     WorkflowStatus,
     WorkflowVersion,
-    WorkflowExecution,
 )
 from openagent.db.repositories import (
     WorkflowRepository,
     WorkflowVersionRepository,
 )
+from openagent.db.session import get_db
 from openagent.schemas.base import ApiErrorResponse, PaginatedResponse
-from openagent.api.dependencies import (
-    get_current_org_context,
-    require_permission,
-)
 from openagent.services.workflow_definition import (
     build_envelope,
     empty_definition,
-    migrate_definition,
     parse_envelope,
     slugify,
     validate_definition,
@@ -201,6 +201,31 @@ async def _last_execution(db: AsyncSession, workflow_id: UUID) -> Optional[Workf
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+async def _slug_taken(db: AsyncSession, organization_id: UUID, slug: str) -> bool:
+    """Slug uniqueness includes soft-deleted rows (the DB constraint does)."""
+    result = await db.execute(
+        select(Workflow.id).where(
+            Workflow.organization_id == organization_id,
+            Workflow.slug == slug,
+        )
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def _unique_slug(db: AsyncSession, organization_id: UUID, base: str) -> str:
+    slug = base
+    suffix = 2
+    while await _slug_taken(db, organization_id, slug):
+        slug = f"{base}-{suffix}"
+        suffix += 1
+        if suffix > 1000:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"error": "Could not allocate a unique slug", "code": "WORKFLOW_SLUG_EXISTS"},
+            )
+    return slug
 
 
 def _tags_of(workflow: Workflow) -> List[str]:
@@ -392,19 +417,15 @@ async def create_workflow(
     """
     await require_permission("workflow:create")(request, db)
 
-    slug = data.slug or slugify(data.name)
-    existing = await db.execute(
-        select(Workflow).where(
-            Workflow.organization_id == organization_id,
-            Workflow.slug == slug,
-            Workflow.deleted_at.is_(None),
-        )
-    )
-    if existing.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"error": f"A workflow with slug '{slug}' already exists", "code": "WORKFLOW_SLUG_EXISTS"},
-        )
+    if data.slug:
+        slug = data.slug
+        if await _slug_taken(db, organization_id, slug):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"error": f"A workflow with slug '{slug}' already exists", "code": "WORKFLOW_SLUG_EXISTS"},
+            )
+    else:
+        slug = await _unique_slug(db, organization_id, slugify(data.name))
 
     repo = WorkflowRepository(db)
     workflow = await repo.create(
@@ -559,21 +580,7 @@ async def duplicate_workflow(
     source = await _get_workflow_or_404(db, organization_id, workflow_id)
     latest = await _latest_version(db, source.id)
 
-    base_slug = f"{source.slug}-copy"
-    slug = base_slug
-    suffix = 2
-    while True:
-        existing = await db.execute(
-            select(Workflow).where(
-                Workflow.organization_id == organization_id,
-                Workflow.slug == slug,
-                Workflow.deleted_at.is_(None),
-            )
-        )
-        if not existing.scalar_one_or_none():
-            break
-        slug = f"{base_slug}-{suffix}"
-        suffix += 1
+    slug = await _unique_slug(db, organization_id, f"{source.slug}-copy")
 
     repo = WorkflowRepository(db)
     copy = await repo.create(
@@ -813,19 +820,16 @@ async def import_workflow(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"error": "Import requires a workflow name", "code": "INVALID_IMPORT"},
         )
-    slug = data.slug or (meta.get("slug") if isinstance(meta.get("slug"), str) else None) or slugify(name)
-    existing = await db.execute(
-        select(Workflow).where(
-            Workflow.organization_id == organization_id,
-            Workflow.slug == slug,
-            Workflow.deleted_at.is_(None),
-        )
-    )
-    if existing.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"error": f"A workflow with slug '{slug}' already exists", "code": "WORKFLOW_SLUG_EXISTS"},
-        )
+    explicit_slug = data.slug or (meta.get("slug") if isinstance(meta.get("slug"), str) else None)
+    if explicit_slug:
+        slug = explicit_slug
+        if await _slug_taken(db, organization_id, slug):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"error": f"A workflow with slug '{slug}' already exists", "code": "WORKFLOW_SLUG_EXISTS"},
+            )
+    else:
+        slug = await _unique_slug(db, organization_id, slugify(name))
     description = data.description
     if description is None and isinstance(meta.get("description"), str):
         description = meta["description"]
@@ -1003,6 +1007,37 @@ async def execute_workflow(
     return result
 
 
+class ScheduleInfoResponse(BaseModel):
+    triggers: List[Dict[str, Any]] = []
+
+
+@router.get(
+    "/{workflow_id}/schedule",
+    response_model=ScheduleInfoResponse,
+    responses={401: {"model": ApiErrorResponse}, 403: {"model": ApiErrorResponse}, 404: {"model": ApiErrorResponse}},
+)
+async def get_workflow_schedule(
+    request: Request,
+    organization_id: UUID,
+    workflow_id: UUID,
+    auth_context=Depends(get_current_org_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cron schedules of the latest version plus their next fire times.
+
+    Makes the timetable visible in the builder the way n8n shows upcoming
+    executions for a Schedule Trigger.
+    """
+    await require_permission("workflow:read")(request, db)
+    workflow = await _get_workflow_or_404(db, organization_id, workflow_id)
+    latest = await _latest_version(db, workflow.id)
+    definition = (latest.definition if latest else None) or {}
+
+    from openagent.runtime.schedule_runner import workflow_schedule_summary
+
+    return ScheduleInfoResponse(triggers=workflow_schedule_summary(workflow.id, definition))
+
+
 class WorkflowNodeRunRequest(BaseModel):
     """Execute a single node (n8n's "Test step")."""
 
@@ -1045,7 +1080,13 @@ async def execute_workflow_node(
     from openagent.runtime.local_engine import run_single_node
 
     try:
-        return await run_single_node(definition, data.node_id, data.input or {})
+        return await run_single_node(
+            definition,
+            data.node_id,
+            data.input or {},
+            db=db,
+            organization_id=organization_id,
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

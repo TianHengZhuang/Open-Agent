@@ -3,9 +3,8 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from openagent.core.config import get_settings
-from openagent.db.sqlite_compat import dedupe_index_names
 from openagent.db.models.base import Base
-
+from openagent.db.sqlite_compat import dedupe_index_names
 
 engine = None
 async_session_maker = None

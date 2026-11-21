@@ -1,6 +1,7 @@
-from typing import TypeVar, Generic, List, Optional
-from pydantic import BaseModel, Field
 from math import ceil
+from typing import Generic, List, Optional, TypeVar
+
+from pydantic import BaseModel, Field
 
 from openagent.schemas.base import PaginationMeta
 

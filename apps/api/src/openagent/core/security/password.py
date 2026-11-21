@@ -1,8 +1,7 @@
-import os
 import secrets
-from argon2 import PasswordHasher
-from argon2.exceptions import VerifyMismatchError, HashingError
 
+from argon2 import PasswordHasher
+from argon2.exceptions import HashingError, VerifyMismatchError
 
 _ph = PasswordHasher(
     time_cost=3,
@@ -87,6 +86,6 @@ def constant_time_compare(a: str, b: str) -> bool:
     if len(a) != len(b):
         return False
     result = 0
-    for x, y in zip(a, b):
+    for x, y in zip(a, b, strict=False):
         result |= ord(x) ^ ord(y)
     return result == 0

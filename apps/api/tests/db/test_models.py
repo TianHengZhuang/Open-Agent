@@ -14,7 +14,7 @@ from openagent.db.models import (
     Task, TaskStatus, TaskPriority,
     AgentRun, AgentRunStatus,
     ExecutionEvent,
-    Tool, ToolType, ToolStatus,
+    Tool, ToolType,
     Credential, CredentialType, CredentialStatus,
     Integration, IntegrationProvider, IntegrationStatus,
     MCPServer, MCPTransport, MCPServerStatus,
@@ -51,15 +51,6 @@ from openagent.db.repositories import (
     WebhookRepository,
     ApiKeyRepository,
 )
-from openagent.db.session import get_db
-
-
-@pytest_asyncio.fixture
-async def db_session():
-    """Get a database session for testing."""
-    async for session in get_db():
-        yield session
-        await session.rollback()
 
 
 @pytest_asyncio.fixture
@@ -116,7 +107,7 @@ async def membership_a(db_session: AsyncSession, user_a: User, org_a: Organizati
     membership = await repo.create(
         user_id=user_a.id,
         organization_id=org_a.id,
-        role=MembershipRole.OWNER,
+        legacy_role=MembershipRole.OWNER,
         status=MembershipStatus.ACTIVE
     )
     await db_session.commit()
@@ -129,7 +120,7 @@ async def membership_b(db_session: AsyncSession, user_b: User, org_b: Organizati
     membership = await repo.create(
         user_id=user_b.id,
         organization_id=org_b.id,
-        role=MembershipRole.OWNER,
+        legacy_role=MembershipRole.OWNER,
         status=MembershipStatus.ACTIVE
     )
     await db_session.commit()
@@ -210,7 +201,7 @@ class TestMembershipModel:
         membership = await repo.create(
             user_id=user_a.id,
             organization_id=org_a.id,
-            role=MembershipRole.MEMBER,
+            legacy_role=MembershipRole.MEMBER,
             status=MembershipStatus.ACTIVE
         )
         await db_session.commit()
@@ -218,7 +209,7 @@ class TestMembershipModel:
         assert membership.id is not None
         assert membership.user_id == user_a.id
         assert membership.organization_id == org_a.id
-        assert membership.role == MembershipRole.MEMBER
+        assert membership.legacy_role == MembershipRole.MEMBER
 
     async def test_unique_user_org_constraint(self, db_session: AsyncSession, membership_a: Membership):
         repo = MembershipRepository(db_session)
@@ -226,7 +217,7 @@ class TestMembershipModel:
             await repo.create(
                 user_id=membership_a.user_id,
                 organization_id=membership_a.organization_id,
-                role=MembershipRole.ADMIN,
+                legacy_role=MembershipRole.ADMIN,
                 status=MembershipStatus.ACTIVE
             )
             await db_session.commit()
@@ -446,7 +437,7 @@ class TestAgentRunModel:
             organization_id=org_a.id,
             agent_id=agent.id,
             status=AgentRunStatus.QUEUED,
-            input={"prompt": "Hello"}
+            input_data={"prompt": "Hello"}
         )
         await db_session.commit()
         

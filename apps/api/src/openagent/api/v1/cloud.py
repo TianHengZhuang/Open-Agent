@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
@@ -18,22 +17,32 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openagent.api.dependencies import (
-    get_current_org_context, require_platform_owner,
+    get_current_org_context,
+    require_platform_owner,
 )
 from openagent.cloud.dispatcher import DispatchContext
 from openagent.cloud.errors import (
-    CloudDisabled, EntitlementDenied, IncidentBlocked, PlacementFailed,
+    CloudDisabled,
+    EntitlementDenied,
+    IncidentBlocked,
+    PlacementFailed,
     QuotaExceeded,
 )
-from openagent.cloud.ops import QuotaCheck
 from openagent.cloud.runtime import ExecutionRequest
 from openagent.cloud.service import get_cloud_service
 from openagent.cloud.types import (
-    DataResidency, ExecutionClass, ExecutionPriority,
+    DataResidency,
+    ExecutionClass,
+    ExecutionPriority,
 )
 from openagent.db.models.cloud import (
-    CloudArtifact, CloudQueueState, CloudRegion, CloudWorker,
-    DeadLetterMessage, ExecutionPlacement, RuntimePolicy,
+    CloudArtifact,
+    CloudQueueState,
+    CloudRegion,
+    CloudWorker,
+    DeadLetterMessage,
+    ExecutionPlacement,
+    RuntimePolicy,
 )
 from openagent.db.session import get_db
 from openagent.services.authorization import AuthorizationContext

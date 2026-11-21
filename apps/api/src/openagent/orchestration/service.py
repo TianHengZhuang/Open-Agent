@@ -296,7 +296,7 @@ class OrchestrationService:
         ]
         # Auto-assign unassigned tasks deterministically.
         await self._auto_assign(run, rows)
-        for s, r in zip(specs, rows):
+        for s, r in zip(specs, rows, strict=False):
             s.assigned_agent_id = r.assigned_agent_id
 
         # MP19: tasks requiring approval get a real persisted approval request
@@ -308,6 +308,8 @@ class OrchestrationService:
         try:
             from openagent.approvals.integrations import (
                 existing_pending as _existing_pending,
+            )
+            from openagent.approvals.integrations import (
                 park_for_approval as _park,
             )
             for s in specs:

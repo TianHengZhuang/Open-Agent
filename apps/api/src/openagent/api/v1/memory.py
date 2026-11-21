@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
@@ -9,30 +10,29 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openagent.api.dependencies import get_current_org_context, require_permission
 from openagent.db.models import Organization
 from openagent.db.models.memory import (
-    Memory, MemoryType, MemoryScope, MemoryVisibility, MemoryStatus,
-    MemoryEmbeddingStatus, MemorySourceType, MemoryVisibility,
-    MemoryAccessLog, MemoryEmbedding, MemoryLink, MemoryConflict,
-    MemoryConsolidationJob, MemoryPolicy, MemoryLink, MemoryConflict,
-    MemoryConsolidationJob, MemoryPolicy,
+    MemoryScope,
+    MemorySourceType,
+    MemoryType,
+    MemoryVisibility,
 )
 from openagent.db.session import get_db
-from openagent.management.memory_service import MemoryService
-from openagent.api.v1.management import TeamFormRequest
 from openagent.management.memory_jobs import (
+    run_consolidation_job,
+    run_embedding_cleanup_job,
     run_embedding_generation_job,
     run_embedding_retry_job,
-    run_memory_expiration_job,
     run_memory_decay_job,
-    run_consolidation_job,
-    run_embedding_retry_job,
-    run_embedding_cleanup_job,
+    run_memory_expiration_job,
 )
+from openagent.management.memory_service import MemoryService
+from openagent.management.teams import TeamFormationRequest
+from openagent.management.types import DynamicTeamType
 from openagent.orchestration.config import OrchestrationOrgSettings
 from openagent.schemas.base import ApiErrorResponse, PaginatedResponse
 
@@ -832,7 +832,7 @@ async def resolve_conflict(
     
     service = _service(db)
     try:
-        conflict = await service.resolve_conflict(
+        await service.resolve_conflict(
             conflict_id=conflict_id,
             organization_id=organization_id,
             resolution=resolution,
@@ -1245,7 +1245,7 @@ async def create_team(
 @router.post("/teams/form", status_code=status.HTTP_201_CREATED)
 async def form_team(
     organization_id: UUID,
-    payload: TeamFormRequest,
+    payload: TeamFormationRequest,
     request: Request,
     auth_context=Depends(get_current_org_context),
     db: AsyncSession = Depends(get_db),
@@ -1811,7 +1811,6 @@ async def run_event_stream(
         _fail(exc)
 
     async def generator():
-        last_id = None
         for _ in range(150):
             if await request.is_disconnected():
                 break

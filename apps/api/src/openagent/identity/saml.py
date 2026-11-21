@@ -13,7 +13,10 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
 from openagent.identity.providers import (
-    AuthRequest, AuthResult, IdentityProvider, ProvisioningResult,
+    AuthRequest,
+    AuthResult,
+    IdentityProvider,
+    ProvisioningResult,
 )
 
 NS = {"md": "urn:oasis:names:tc:SAML:2.0:metadata",
@@ -86,7 +89,7 @@ def sp_metadata(entity_id: str, acs_url: str) -> str:
 
 
 def _parse_time(value: str) -> float:
-    from datetime import datetime, timezone
+    from datetime import datetime
     text = value.replace("Z", "+00:00")
     try:
         return datetime.fromisoformat(text).timestamp()
