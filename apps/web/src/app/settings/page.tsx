@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import * as React from 'react';
 import { Suspense } from 'react';
+import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Layout } from '@/components/layout';
 import { Protected } from '@/components/protected';
@@ -21,7 +22,7 @@ import { toUserMessage } from '@/lib/api';
 import { PermissionGate } from '@/components/PermissionGate';
 import { useCredentialMutations, useCredentials } from '@/features/integrations/integrations-api';
 import { cn } from '@/lib/utils';
-import { User, ShieldCheck, Bell, Key, Plug, Users, Palette, Keyboard, Lock } from 'lucide-react';
+import { User, ShieldCheck, Bell, Key, Plug, Users, Palette, Keyboard, Lock, Cpu } from 'lucide-react';
 
 const tabs = [
   { id: 'profile', name: 'Profile', icon: User },
@@ -71,6 +72,13 @@ function SettingsContent() {
                       <t.icon className="h-4 w-4 shrink-0" aria-hidden />{t.name}
                     </button>
                   ))}
+                  <Link
+                    href="/settings/models"
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+                  >
+                    <Cpu className="h-4 w-4 shrink-0" aria-hidden />
+                    Local models
+                  </Link>
                 </nav>
               </CardContent>
             </Card>

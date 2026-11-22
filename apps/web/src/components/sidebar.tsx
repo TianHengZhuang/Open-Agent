@@ -29,6 +29,7 @@ import {
   Plus,
   Network,
   Users,
+  Cpu,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useFeature } from '@/lib/feature-flags';
@@ -90,6 +91,7 @@ const developerNav: NavItem[] = [
 const footerNav: NavItem[] = [
   { name: 'Publisher Studio', href: '/publisher/packages', icon: Building2 },
   { name: 'Documentation', href: '/docs', icon: BookOpen },
+  { name: 'Local models', href: '/settings/models', icon: Cpu },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 

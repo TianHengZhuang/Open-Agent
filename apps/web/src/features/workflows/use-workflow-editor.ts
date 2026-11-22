@@ -43,6 +43,7 @@ interface EditorState {
 
 type Action =
   | { type: 'load'; definition: WorkflowDefinition }
+  | { type: 'replace'; definition: WorkflowDefinition }
   | { type: 'add-trigger'; trigger: WorkflowTrigger }
   | { type: 'add-node'; node: WorkflowNode }
   | { type: 'move-item'; id: string; x: number; y: number }
@@ -87,6 +88,13 @@ export const editorReducer = reducer;
 function reducer(state: EditorState, action: Action): EditorState {  switch (action.type) {
     case 'load':
       return { definition: action.definition, selection: null, selectedIds: [], past: [], future: [] };
+    case 'replace':
+      // Used by the assistant: swapping in a generated definition is a normal
+      // edit, so it can be undone with Ctrl+Z like any other change.
+      return pushHistory(
+        { ...state, selection: null, selectedIds: [] },
+        action.definition,
+      );
     case 'add-trigger':
       return pushHistory(state, {
         ...state.definition,
@@ -526,6 +534,7 @@ export function useWorkflowEditor(options: {
     markSaved,
     clearDraft,
     load: (definition: WorkflowDefinition) => dispatch({ type: 'load', definition }),
+    replace: (definition: WorkflowDefinition) => dispatch({ type: 'replace', definition }),
   };
 }
 

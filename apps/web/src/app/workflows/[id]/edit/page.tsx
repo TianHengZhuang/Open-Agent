@@ -473,11 +473,11 @@ export default function WorkflowBuilderPage() {
                 size="sm"
                 variant="ghost"
                 onClick={() => setKoroOpen(true)}
-                title="Koro — local automation copilot"
+                title="AI Assistant — build and edit with a local model"
                 className="hidden sm:inline-flex"
               >
                 <Sparkles className="mr-1.5 h-3.5 w-3.5 text-primary" />
-                Koro
+                AI Assistant
               </Button>
 
               <button
@@ -748,10 +748,22 @@ export default function WorkflowBuilderPage() {
         onClose={() => setKoroOpen(false)}
         workflowId={workflow.id}
         workflowName={workflow.name}
+        currentDefinition={editor.definition}
+        onApply={(definition, generatedName) => {
+          editor.replace(definition);
+          if (generatedName) setName(generatedName);
+          setPanelOpen(true);
+          setRightTab("issues");
+          toast({
+            kind: "success",
+            title: "Applied to canvas",
+            description: "Review the changes, then save or test. Ctrl+Z undoes it.",
+          });
+        }}
         onResult={(result) => {
           const action = result.actions[0];
           if (action?.status === "ok" && action.type !== "none") {
-            toast({ kind: "success", title: "Koro", description: action.detail });
+            toast({ kind: "success", title: "Assistant", description: action.detail });
           }
           if (result.workflow_id && result.workflow_id !== workflow.id) {
             router.push(`/workflows/${result.workflow_id}/edit`);

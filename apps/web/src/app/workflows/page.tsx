@@ -13,18 +13,20 @@ import { DataTable, type Column } from '@/components/ui/table';
 import { StatusBadge } from '@/components/ui/status';
 import { ConfirmDialog } from '@/components/ui/dialog';
 import { CreateWorkflowDialog } from '@/components/workflows/CreateWorkflowDialog';
+import { GenerateWithAiDialog } from '@/components/workflows/GenerateWithAiDialog';
 import { PermissionGate } from '@/components/PermissionGate';
 import { useToast } from '@/components/ui/toast';
 import { toUserMessage } from '@/lib/api';
 import { useSearchParamsState } from '@/lib/queries';
 import { useWorkflows, useWorkflowMutations } from '@/features/workflows/workflows-api';
 import type { WorkflowRecord } from '@/features/workflows/types';
-import { Plus, Search, Pencil, Copy, Trash2, GitBranch } from 'lucide-react';
+import { Plus, Search, Pencil, Copy, Trash2, GitBranch, Sparkles } from 'lucide-react';
 
 export default function WorkflowsPage() {
   const [q, setQ] = React.useState('');
   const [status, setStatus] = React.useState('');
   const [createOpen, setCreateOpen] = React.useState(false);
+  const [generateOpen, setGenerateOpen] = React.useState(false);
   const [deleting, setDeleting] = React.useState<WorkflowRecord | null>(null);
   const debounced = useSearchParamsState(q);
   const { items, total, isLoading, error, refetch } = useWorkflows(
@@ -143,7 +145,13 @@ export default function WorkflowsPage() {
             breadcrumbs={[{ label: 'Home', href: '/' }, { label: 'Workflows' }]}
             actions={
               <PermissionGate permission="workflow:create">
-                <Button onClick={() => setCreateOpen(true)}><Plus className="mr-2 h-4 w-4" />New workflow</Button>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" onClick={() => setGenerateOpen(true)}>
+                    <Sparkles className="mr-2 h-4 w-4 text-primary" />
+                    Generate with AI
+                  </Button>
+                  <Button onClick={() => setCreateOpen(true)}><Plus className="mr-2 h-4 w-4" />New workflow</Button>
+                </div>
               </PermissionGate>
             }
           />
@@ -182,6 +190,7 @@ export default function WorkflowsPage() {
       </Layout>
 
       <CreateWorkflowDialog open={createOpen} onClose={() => setCreateOpen(false)} />
+      <GenerateWithAiDialog open={generateOpen} onClose={() => setGenerateOpen(false)} />
 
       <ConfirmDialog
         open={!!deleting}

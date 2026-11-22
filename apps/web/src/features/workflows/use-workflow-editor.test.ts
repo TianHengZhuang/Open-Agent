@@ -80,6 +80,21 @@ describe('editorReducer', () => {
     expect(s.selectedIds).toEqual([]);
   });
 
+  it('replaces the definition as an undoable edit', () => {
+    let s = createEditorState(withNode());
+    const generated: WorkflowDefinition = {
+      ...emptyDefinition(),
+      triggers: [{ id: 'trigger', type: 'schedule', name: 'Every morning', config: { cron: '0 9 * * *' } }],
+      nodes: [{ id: 'n1', type: 'set', name: 'Digest', config: { values: { ok: true } } }],
+      edges: [{ id: 'e1', from: 'trigger', to: 'n1' }],
+    };
+    s = editorReducer(s, { type: 'replace', definition: generated });
+    expect(s.definition.nodes[0].id).toBe('n1');
+    expect(s.past).toHaveLength(1);
+    s = editorReducer(s, { type: 'undo' });
+    expect(s.definition.nodes[0].id).toBe('n_1');
+  });
+
   it('deletes every selected id with incident edges', () => {
     let s = createEditorState(withNode());
     s = editorReducer(s, { type: 'box-select', ids: ['trg_1', 'n_1'] });
