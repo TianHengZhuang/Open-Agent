@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { validateWorkflowDefinition } from './validate';
+import { layoutWorkflow } from './auto-layout';
 import {
   makeEdge,
   makeNode,
@@ -10,8 +11,10 @@ import {
   stripSensitive,
   stripSensitiveTrigger,
 } from './serialize';
+import { edgeSourcePort, edgeTargetPort } from './factory';
 import type {
   Clipboard,
+  PinnedDatum,
   StickyNote,
   TriggerType,
   ValidationResult,
@@ -61,7 +64,11 @@ type Action =
   | { type: 'undo' }
   | { type: 'redo' }
   | { type: 'set-settings'; settings: WorkflowSettings }
-  | { type: 'move-sticky'; id: string; x: number; y: number };
+  | { type: 'move-sticky'; id: string; x: number; y: number }
+  | { type: 'apply-layout' }
+  | { type: 'set-disabled'; ids: string[]; disabled?: boolean }
+  | { type: 'pin-data'; nodeId: string; datum: PinnedDatum }
+  | { type: 'unpin-data'; nodeId: string };
 
 const HISTORY_LIMIT = 60;
 
@@ -149,7 +156,15 @@ function reducer(state: EditorState, action: Action): EditorState {  switch (act
         ),
       });
     case 'add-edge': {
-      const exists = state.definition.edges.some((e) => e.from === action.edge.from && e.to === action.edge.to);
+      const nextSource = edgeSourcePort(action.edge);
+      const nextTarget = edgeTargetPort(action.edge);
+      const exists = state.definition.edges.some(
+        (e) =>
+          e.from === action.edge.from &&
+          e.to === action.edge.to &&
+          edgeSourcePort(e) === nextSource &&
+          edgeTargetPort(e) === nextTarget,
+      );
       if (exists) return state;
       return pushHistory(state, {
         ...state.definition,
@@ -215,6 +230,62 @@ function reducer(state: EditorState, action: Action): EditorState {  switch (act
     }
     case 'set-settings':
       return pushHistory(state, { ...state.definition, settings: action.settings });
+    case 'apply-layout': {
+      const layout = layoutWorkflow(state.definition);
+      const moved =
+        layout.triggers.some(
+          (trigger, index) =>
+            trigger.position?.x !== state.definition.triggers[index]?.position?.x ||
+            trigger.position?.y !== state.definition.triggers[index]?.position?.y,
+        ) ||
+        layout.nodes.some(
+          (node, index) =>
+            node.position?.x !== state.definition.nodes[index]?.position?.x ||
+            node.position?.y !== state.definition.nodes[index]?.position?.y,
+        );
+      return moved ? pushHistory(state, layout) : state;
+    }
+    case 'set-disabled': {
+      const ids = new Set(action.ids);
+      const affected = state.definition.nodes.filter((node) => ids.has(node.id));
+      if (affected.length === 0) return state;
+      const disabled = action.disabled ?? !affected[0].disabled;
+      if (affected.every((node) => !!node.disabled === disabled)) return state;
+      return pushHistory(state, {
+        ...state.definition,
+        nodes: state.definition.nodes.map((node) =>
+          ids.has(node.id) ? { ...node, disabled: disabled || undefined } : node,
+        ),
+      });
+    }
+    case 'pin-data': {
+      const pinned = state.definition.settings.pinned_data ?? {};
+      const existing = pinned[action.nodeId];
+      // Re-pinning the same output is a no-op (no history entry).
+      if (
+        existing &&
+        JSON.stringify(existing.outputs) === JSON.stringify(action.datum.outputs)
+      ) {
+        return state;
+      }
+      return pushHistory(state, {
+        ...state.definition,
+        settings: {
+          ...state.definition.settings,
+          pinned_data: { ...pinned, [action.nodeId]: action.datum },
+        },
+      });
+    }
+    case 'unpin-data': {
+      const pinned = state.definition.settings.pinned_data;
+      if (!pinned || !(action.nodeId in pinned)) return state;
+      const rest = { ...pinned };
+      delete rest[action.nodeId];
+      const settings = { ...state.definition.settings };
+      if (Object.keys(rest).length === 0) delete settings.pinned_data;
+      else settings.pinned_data = rest;
+      return pushHistory(state, { ...state.definition, settings });
+    }
     case 'move-sticky': {
       const stickies = (state.definition.settings.sticky_notes ?? []).map((s) =>
         s.id === action.id ? { ...s, x: action.x, y: action.y } : s,
@@ -301,7 +372,7 @@ export function useWorkflowEditor(options: {
       const raw = window.localStorage.getItem(draftKey);
       if (raw) {
         const parsed = JSON.parse(raw) as WorkflowDefinition;
-        if (parsed && parsed.schema_version === '1.0') {
+        if (parsed && (parsed.schema_version === '1.0' || parsed.schema_version === '1.1')) {
           dispatch({ type: 'load', definition: parsed });
         }
       }
@@ -373,11 +444,17 @@ export function useWorkflowEditor(options: {
     return node.id;
   }, []);
 
-  const connect = useCallback((fromId: string, toId: string, port = 'out') => {
+  const connect = useCallback((fromId: string, toId: string, port = 'out', targetPort = 'in') => {
     if (fromId === toId) return false;
-    const already = stateRef.current.definition.edges.some((e) => e.from === fromId && e.to === toId);
+    const already = stateRef.current.definition.edges.some(
+      (e) =>
+        e.from === fromId &&
+        e.to === toId &&
+        edgeSourcePort(e) === port &&
+        edgeTargetPort(e) === targetPort,
+    );
     if (already) return false;
-    dispatch({ type: 'add-edge', edge: makeEdge(fromId, toId, port) });
+    dispatch({ type: 'add-edge', edge: makeEdge(fromId, toId, port, targetPort) });
     return true;
   }, []);
 
@@ -471,6 +548,36 @@ export function useWorkflowEditor(options: {
     return pasted;
   }, []);
 
+  /** Re-space every node in one undo step ("Tidy up"). */
+  const autoLayout = useCallback((): boolean => {
+    dispatch({ type: 'apply-layout' });
+    return true;
+  }, []);
+
+  /** Disable or re-enable every selected node in one undo step. */
+  const toggleDisabledSelection = useCallback((): boolean => {
+    const current = stateRef.current;
+    const ids =
+      current.selectedIds.length > 0
+        ? current.selectedIds
+        : current.selection
+          ? [current.selection.id]
+          : [];
+    if (ids.length === 0) return false;
+    dispatch({ type: 'set-disabled', ids });
+    return true;
+  }, []);
+
+  /** Pin a node's output (one undo step; re-pinning identical data is a no-op). */
+  const pinData = useCallback((nodeId: string, datum: PinnedDatum) => {
+    dispatch({ type: 'pin-data', nodeId, datum });
+  }, []);
+
+  /** Remove pinned output for a node (one undo step). */
+  const unpinData = useCallback((nodeId: string) => {
+    dispatch({ type: 'unpin-data', nodeId });
+  }, []);
+
   /** Duplicate the current selection in one undo step. */
   const duplicateSelection = useCallback((): boolean => {
     if (!copySelection()) return false;
@@ -517,6 +624,10 @@ export function useWorkflowEditor(options: {
     updateSticky,
     deleteSticky,
     duplicateSelection,
+    autoLayout,
+    toggleDisabledSelection,
+    pinData,
+    unpinData,
     hasClipboard: clipboard !== null && (clipboard.triggers.length > 0 || clipboard.nodes.length > 0),
     dispatch,
     canUndo: state.past.length > 0,

@@ -10,7 +10,9 @@ import {
   Trash2,
   StickyNote,
   Maximize,
+  Maximize2,
   Plus,
+  LayoutGrid,
 } from 'lucide-react';
 
 export interface MenuTarget {
@@ -32,6 +34,7 @@ export function actionsForTarget(target: MenuTarget, hasClipboard: boolean): Men
     return [
       { id: 'add', label: 'Add node', icon: <Plus className="h-4 w-4" /> },
       { id: 'paste', label: 'Paste', icon: <ClipboardPaste className="h-4 w-4" />, disabled: !hasClipboard },
+      { id: 'tidy', label: 'Tidy up', icon: <LayoutGrid className="h-4 w-4" /> },
       { id: 'fit', label: 'Fit to view', icon: <Maximize className="h-4 w-4" /> },
     ];
   }
@@ -43,6 +46,7 @@ export function actionsForTarget(target: MenuTarget, hasClipboard: boolean): Men
   }
   const items: MenuAction[] = [
     { id: 'configure', label: 'Configure', icon: <Settings2 className="h-4 w-4" /> },
+    { id: 'detail', label: 'Input / output data', icon: <Maximize2 className="h-4 w-4" /> },
     { id: 'duplicate', label: 'Duplicate', icon: <Copy className="h-4 w-4" /> },
     { id: 'copy', label: 'Copy', icon: <Copy className="h-4 w-4" /> },
   ];

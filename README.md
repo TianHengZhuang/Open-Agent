@@ -204,9 +204,32 @@ some features are PostgreSQL-only and are **not** available in this mode:
   faked, and human approvals park the run as `waiting`. Every node run is
   persisted with inputs, outputs, timing and errors, and the builder can
   test-run the unsaved canvas (`Test workflow`).
+- **Expressions follow n8n's language**: `{{ ... }}` accepts `$json`, `$node`, `$nodes`,
+  `$('Node')`, `$items()`, `$input`, `$vars`, `$parameter`, `$binary`, `$now`,
+  `$today`, `$workflow`, `$execution`, `$env`, `$itemIndex`/`$runIndex`, method
+  calls (`$json.name.toUpperCase()`, `split`, `join`, `map`, `filter`),
+  arithmetic, ternaries and optional chaining, evaluated by a closed-grammar
+  interpreter (`runtime/expressions.py`) with the legacy path resolver as a
+  fallback. Node data is readable through the n8n item envelope
+  (`runtime/items.py`). See `docs/architecture/chat-first-n8n-parity.md`.
+- **Item-based execution**: every node run records `items` (`{json, pairedItem}`)
+  next to the legacy `outputs`, and `execution.metadata.execution_data` stores
+  the n8n-shaped `{"nodes": {id: [...]}}` view. A node accepts
+  `run_mode: "each"` to run once per incoming item, `$json` reads the node's
+  first input item, branch conditions may be expressions, and a `delay` longer
+  than 10 s parks the run as `waiting`; the scheduler resumes it from the saved
+  state instead of truncating the wait.
 - **Node settings are enforced**: `retry_policy.max_attempts` retries a failed
   node, `timeout_seconds` bounds it, and `On error → Continue` records the
   failure as a warning while passing the input to the next node.
+- **Node detail view (NDV)**: double-click a node (or right-click → *Input / output data*)
+  to open a 3-pane view — the data it received on the left, the
+  parameter form in the middle, and its output on the right. **Pin output**
+  keeps that output in the workflow definition (undoable, autosaved, and shown
+  again on reload); pinned data feeds previews and step-test defaults but is
+  never read by executions. The canvas shows per-node run status, output item
+  counts, error tooltips and a live chip while a run is in flight, and the run
+  panel's **Debug in editor** opens the NDV on the failing step.
 - **Test step** runs a single node with JSON input from the inspector
   (`POST /workflows/{id}/execute-node`), and the workflow list has n8n's
   **Active** switch: publishing activates webhooks, unpublishing stops them.
@@ -600,6 +623,49 @@ Defaults come from `.env`: `OPENAGENT_KORO_BASE_URL` (default
 organisation and re-checked against the caller's workflow permissions; the
 model only sees workflow names, ids and statuses — never definitions or
 credentials.
+
+### Assistant — the full-page chat
+
+The same copilot is available outside the builder at **`/assistant`** (sidebar:
+*Assistant*), with a chat-history rail like n8n's assistant. Each conversation
+is saved per user and organisation in the `conversations` / `messages` tables,
+so transcripts survive reloads and can be renamed or deleted. From there it
+builds workflows as drafts, creates agents, runs and publishes automations, and
+links directly to the workflow, run or agent it changed.
+
+Koro is also docked on every page: the **Koro** button in the top bar or
+`Ctrl/Cmd + J` opens the same copilot and saved history as a right-hand drawer.
+On a workflow it knows the route, step outline, validation state and last run,
+so “explain this workflow” or “what could fail here?” is answered in context.
+Failed steps in the test-run panel get an **Ask Koro to fix** button that sends
+the error, code and payloads along with the question. Context is read-only
+(never parameters or credentials) and is not stored; graph edits still happen
+in the builder's Koro panel so they stay undoable on the canvas.
+
+### Workflow chat — talk to a workflow
+
+A **Chat Trigger** turns any workflow into a chatbot. Every message runs the
+real graph with the n8n-style item
+`{ json: { chatInput, sessionId, action: "sendMessage", files?, metadata? } }`,
+and the reply streams token by token from a `prompt` node. The model comes from
+the same per-organisation settings as Koro, so it can be a local Ollama or
+LM Studio endpoint, LocalAI, or any OpenAI-compatible API; the chat route never
+leaves your machine when the endpoint is local.
+
+Two surfaces use the same trigger and the same conversation state:
+
+- **Studio Chat tab** — in the workflow builder's right panel, next to the
+  node inspector and checks, against the canvas as currently saved/edited.
+- **Hosted page** — `/chat/<workflowId>` runs the published version and reads
+  the trigger's title, welcome message and starter prompts.
+
+Sessions, titles and transcripts live in this browser (`localStorage`, keyed
+per workflow) and survive reloads; each turn sends the trimmed transcript as
+replayed history, so no server-side session store is involved. Replies render
+markdown, tables and copyable code fences, attachments (text, CSV, JSON, PDF,
+images) are passed as data URLs, and every answer carries a steps pill and
+**Inspect in canvas** link back to the run's execution. Without a reachable
+model the chat still runs the graph and explains which step was skipped.
 
 ## Browser Setup
 

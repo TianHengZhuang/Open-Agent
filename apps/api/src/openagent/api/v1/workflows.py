@@ -1,8 +1,10 @@
+import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -75,6 +77,7 @@ class WorkflowVersionResponse(BaseModel):
     workflow_id: UUID
     version: str
     definition: Dict[str, Any]
+    schema_version: str = "1.0"
     status: str
     created_by: Optional[UUID] = None
     created_at: datetime
@@ -305,10 +308,12 @@ async def _create_version(
     version_status: str = "draft",
 ) -> WorkflowVersion:
     count = await _version_count(db, workflow.id)
+    raw_schema_version = definition.get("schema_version") if isinstance(definition, dict) else None
     version = WorkflowVersion(
         workflow_id=workflow.id,
         version=f"v{count + 1}",
         definition=definition,
+        schema_version=str(raw_schema_version or "1.0")[:20],
         status=version_status,
         created_by=created_by,
     )
@@ -1092,3 +1097,155 @@ async def execute_workflow_node(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"error": str(exc), "code": "NODE_NOT_FOUND"},
         )
+
+
+# ---------------------------------------------------------------------------
+# Chat
+# ---------------------------------------------------------------------------
+
+
+class WorkflowChatMessage(BaseModel):
+    role: str = Field(max_length=20)
+    content: str = Field(max_length=32000)
+
+
+class WorkflowChatFile(BaseModel):
+    name: str = Field(max_length=200)
+    mime_type: str = Field(default="application/octet-stream", max_length=120)
+    data_url: str = Field(max_length=5_000_000)
+
+
+class WorkflowChatRequest(BaseModel):
+    """One chat turn, the way n8n's hosted chat calls a Chat Trigger."""
+
+    message: str = Field(min_length=1, max_length=32000)
+    session_id: str = Field(min_length=1, max_length=120)
+    definition: Optional[Dict[str, Any]] = None
+    history: List[WorkflowChatMessage] = Field(default_factory=list)
+    files: List[WorkflowChatFile] = Field(default_factory=list)
+
+
+@router.post(
+    "/{workflow_id}/chat",
+    responses={
+        401: {"model": ApiErrorResponse},
+        403: {"model": ApiErrorResponse},
+        404: {"model": ApiErrorResponse},
+        409: {"model": ApiErrorResponse},
+    },
+)
+async def chat_with_workflow(
+    request: Request,
+    organization_id: UUID,
+    workflow_id: UUID,
+    data: WorkflowChatRequest,
+    auth_context=Depends(get_current_org_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Run the workflow for one chat turn and stream the reply (SSE).
+
+    Events: ``meta`` (session/model), ``token`` (model deltas), ``done``
+    (reply, status, per-step trace) and ``error``. The run is stored like any
+    other execution, so "Inspect in canvas" can open the real node data.
+    """
+    await require_permission("workflow:execute")(request, db)
+    workflow = await _get_workflow_or_404(db, organization_id, workflow_id)
+    if workflow.status == WorkflowStatus.ARCHIVED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error": "Archived workflows cannot be executed", "code": "WORKFLOW_ARCHIVED"},
+        )
+
+    from openagent.runtime.local_engine import run_workflow
+    from openagent.services.model_runtime import resolve_model_target
+    from openagent.services.workflow_chat import (
+        chat_trigger_input,
+        extract_reply,
+        sse,
+        summarize_runs,
+    )
+
+    target = await resolve_model_target(db, organization_id)
+    trigger_input = chat_trigger_input(
+        data.message,
+        data.session_id,
+        files=[item.model_dump() for item in data.files],
+        history=[item.model_dump() for item in data.history],
+        metadata={"surface": "chat"},
+    )
+    session_id = data.session_id
+    triggered_by = auth_context.user_id
+
+    async def events() -> Any:
+        yield sse(
+            "meta",
+            {
+                "session_id": session_id,
+                "model": target.model if target else "",
+                "provider": target.provider if target else "",
+                "local": target.local if target else True,
+            },
+        )
+        queue: "asyncio.Queue[str]" = asyncio.Queue()
+
+        async def _sink(delta: str) -> None:
+            await queue.put(delta)
+
+        task = asyncio.create_task(
+            run_workflow(
+                db,
+                workflow=workflow,
+                organization_id=organization_id,
+                triggered_by=triggered_by,
+                definition=data.definition,
+                trigger_input=trigger_input,
+                model=target,
+                token_sink=_sink if target else None,
+            )
+        )
+        try:
+            while not task.done():
+                try:
+                    delta = await asyncio.wait_for(queue.get(), timeout=0.15)
+                except asyncio.TimeoutError:
+                    continue
+                yield sse("token", {"text": delta})
+            while not queue.empty():
+                yield sse("token", {"text": queue.get_nowait()})
+            result = await task
+        except asyncio.CancelledError:
+            task.cancel()
+            raise
+        except Exception as exc:  # reported to the chat, never silently dropped
+            yield sse("error", {"message": f"{type(exc).__name__}: {exc}"[:500]})
+            return
+
+        reply, reply_node = extract_reply(result.get("node_runs") or [])
+        steps = summarize_runs(result.get("node_runs") or [])
+        model_skipped = any(step["reason"] == "SKIPPED_REQUIRES_PROMPT" for step in steps)
+        yield sse(
+            "done",
+            {
+                "session_id": session_id,
+                "status": result.get("status"),
+                "reply": reply,
+                "reply_node_id": reply_node,
+                "execution_id": result.get("execution_id"),
+                "workflow_id": str(workflow.id),
+                "steps": steps,
+                "summary": result.get("summary") or {},
+                "error": result.get("error_message"),
+                "model": target.model if target else "",
+                "model_skipped": model_skipped,
+            },
+        )
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

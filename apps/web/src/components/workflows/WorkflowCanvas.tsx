@@ -15,6 +15,12 @@ import {
   X,
   MousePointer2,
   HelpCircle,
+  Sparkles,
+  Search,
+  Braces,
+  Loader2,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react';
 
 // n8n-style canvas: a left-to-right flow of rounded node cards on a dotted
@@ -159,14 +165,50 @@ export function WorkflowCanvas({
   editor,
   readOnly = false,
   runStatus,
+  runItems,
+  runErrors,
+  activeNodeIds,
+  running = false,
+  lastRun,
+  onOpenRunPanel,
   onAddNode,
+  onBuildWithAi,
+  onSearchNodes,
+  onOpenVariables,
+  onOpenNodeDetail,
 }: {
   editor: WorkflowEditor;
   readOnly?: boolean;
   /** Node/trigger id → status of the most recent test run. */
   runStatus?: Record<string, string>;
+  /** Node/trigger id → number of output items from the last run. */
+  runItems?: Record<string, number>;
+  /** Node/trigger id → error message from the last run (tooltip on the badge). */
+  runErrors?: Record<string, string>;
+  /** Nodes currently executing (single-step tests); rendered with a pulse. */
+  activeNodeIds?: string[];
+  /** A run is in flight (whole workflow) — shows the canvas HUD chip. */
+  running?: boolean;
+  /** Outcome of the last test run, summarised on the canvas after the panel closes. */
+  lastRun?: {
+    status: string;
+    succeeded: number;
+    failed: number;
+    skipped: number;
+    waiting: number;
+  } | null;
+  /** Reopens the run panel from the canvas run chip. */
+  onOpenRunPanel?: () => void;
+  /** Opens the 3-pane node detail view (input · parameters · output). */
+  onOpenNodeDetail?: (id: string) => void;
   /** Opens the n8n-style node creator at a world/screen position. */
   onAddNode?: (request: AddNodeRequest) => void;
+  /** Opens the AI assistant to draft the workflow from a prompt. */
+  onBuildWithAi?: () => void;
+  /** Focuses the node palette search. */
+  onSearchNodes?: () => void;
+  /** Opens the workflow settings panel where variables live. */
+  onOpenVariables?: () => void;
 }) {
   const { definition, selection, selectedIds, select, validation } = editor;
   const svgRef = React.useRef<SVGSVGElement>(null);
@@ -523,6 +565,12 @@ export function WorkflowCanvas({
       case 'configure':
         if (target.id) select({ kind: target.kind as 'trigger' | 'node' | 'edge', id: target.id });
         break;
+      case 'detail':
+        if (target.id) {
+          select({ kind: target.kind as 'trigger' | 'node', id: target.id });
+          onOpenNodeDetail?.(target.id);
+        }
+        break;
       case 'duplicate':
         if (target.id) {
           editor.boxSelect([target.id]);
@@ -554,6 +602,9 @@ export function WorkflowCanvas({
       case 'delete':
         if (target.kind === 'sticky' && target.id) editor.deleteSticky(target.id);
         else if (target.id) editor.dispatch({ type: 'delete-ids', ids: [target.id] });
+        break;
+      case 'tidy':
+        editor.autoLayout();
         break;
       case 'fit':
         fitView();
@@ -593,6 +644,9 @@ export function WorkflowCanvas({
     } else if (mod && e.key.toLowerCase() === 'd' && selectedIds.length > 0) {
       e.preventDefault();
       editor.duplicateSelection();
+    } else if ((e.key === 'd' || e.key === 'D') && !mod && !e.shiftKey && selectedIds.length > 0) {
+      e.preventDefault();
+      editor.toggleDisabledSelection();
     } else if ((e.key === 'f' || e.key === 'F') && !mod) {
       e.preventDefault();
       fitView();
@@ -655,6 +709,20 @@ export function WorkflowCanvas({
         : { x: Math.max(0, Math.round(world.x - NODE_W / 2)), y: Math.max(0, Math.round(world.y - NODE_H / 2)) },
       screen: { x: e.clientX, y: e.clientY },
       connectFrom,
+    });
+  };
+
+  // The toolbar's "+" drops a step in the middle of what the user can see.
+  const openCreatorAtCenter = () => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    onAddNode?.({
+      world: {
+        x: Math.max(0, Math.round((size.w / 2 - view.x) / view.k - NODE_W / 2)),
+        y: Math.max(0, Math.round((size.h / 2 - view.y) / view.k - NODE_H / 2)),
+      },
+      screen: rect
+        ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+        : undefined,
     });
   };
 
@@ -783,9 +851,11 @@ export function WorkflowCanvas({
           {definition.edges.map((edge) => {
             const fromPos = posOf(edge.from);
             const { kind, outputs } = outputsOf(edge.from);
-            const port = edge.label && outputs.includes(edge.label) ? edge.label : outputs[0] ?? 'out';
+            const requested = edge.from_port ?? edge.label;
+            const port = requested && outputs.includes(requested) ? requested : outputs[0] ?? 'out';
+            const targetPort = edge.to_port ?? 'in';
             const a = portPosition(kind, fromPos, port, outputs);
-            const b = portPosition('node', posOf(edge.to), 'in', ['in']);
+            const b = portPosition('node', posOf(edge.to), targetPort, [targetPort]);
             const selected = isSelected(edge.id);
             return (
               <g key={edge.id} data-item-kind="edge" data-item-id={edge.id}>
@@ -850,6 +920,9 @@ export function WorkflowCanvas({
             const selected = isSelected(t.id);
             const hasError = errorIds.has(t.id);
             const status = runStatus?.[t.id];
+            const itemCountValue = runItems?.[t.id];
+            const errorMessage = runErrors?.[t.id];
+            const isActive = activeNodeIds?.includes(t.id) ?? false;
             const out = portPosition('trigger', p, 'out', ['out']);
             const accent = categoryColor('Triggers');
             return (
@@ -869,6 +942,7 @@ export function WorkflowCanvas({
                   }
                 }}
                 onPointerDown={(e) => onItemDown(e, t.id)}
+                onDoubleClick={() => onOpenNodeDetail?.(t.id)}
                 className={cn('group', readOnly ? '' : 'cursor-grab active:cursor-grabbing')}
               >
                 <rect
@@ -898,6 +972,35 @@ export function WorkflowCanvas({
                     <circle r={8} className="fill-destructive" />
                     <text textAnchor="middle" dy={3.5} fontSize={11} fontWeight={800} fill="white">!</text>
                   </g>
+                )}
+                {errorMessage !== undefined && status !== 'succeeded' && (
+                  <text x={NODE_W - 12} y={61} textAnchor="end" fontSize={9.5} className="fill-destructive">
+                    <title>{errorMessage || 'Trigger failed'}</title>
+                    failed
+                  </text>
+                )}
+                {itemCountValue !== undefined && (
+                  <text
+                    x={12}
+                    y={TRIGGER_H - 5}
+                    fontSize={9.5}
+                    fontWeight={600}
+                    className="fill-muted-foreground tabular-nums"
+                  >
+                    {itemCountValue} item{itemCountValue === 1 ? '' : 's'}
+                  </text>
+                )}
+                {isActive && (
+                  <rect
+                    width={NODE_W}
+                    height={TRIGGER_H}
+                    rx={12}
+                    fill="none"
+                    strokeWidth={2}
+                    strokeDasharray="7 5"
+                    className="oa-edge-dash stroke-primary"
+                    aria-label="Running this step"
+                  />
                 )}
                 <RunGlyph status={status} x={NODE_W - 18} y={NODE_H - 16} />
                 {!readOnly && (
@@ -944,6 +1047,9 @@ export function WorkflowCanvas({
             const selected = isSelected(n.id);
             const hasError = errorIds.has(n.id);
             const status = runStatus?.[n.id];
+            const itemCountValue = runItems?.[n.id];
+            const errorMessage = runErrors?.[n.id];
+            const isActive = activeNodeIds?.includes(n.id) ?? false;
             const inp = portPosition('node', p, 'in', ['in']);
             const ports = outputPortsFor(meta, n);
             const accent = categoryColor(meta.category);
@@ -965,6 +1071,7 @@ export function WorkflowCanvas({
                   }
                 }}
                 onPointerDown={(e) => onItemDown(e, n.id)}
+                onDoubleClick={() => onOpenNodeDetail?.(n.id)}
                 className={cn('group', readOnly ? '' : 'cursor-grab active:cursor-grabbing', n.disabled && 'opacity-50')}
               >
                 <rect
@@ -1005,11 +1112,48 @@ export function WorkflowCanvas({
                     <StickyNoteIcon width={13} height={13} className="text-muted-foreground/70" />
                   </g>
                 )}
+                {errorMessage !== undefined && status !== 'succeeded' && (
+                  <text
+                    x={NODE_W - 12}
+                    y={28}
+                    textAnchor="end"
+                    fontSize={9.5}
+                    className="fill-destructive"
+                    aria-label={`Run error: ${errorMessage}`}
+                  >
+                    <title>{errorMessage || 'Node failed'}</title>
+                    failed
+                  </text>
+                )}
+                {itemCountValue !== undefined && (
+                  <text
+                    x={12}
+                    y={NODE_H - 5}
+                    fontSize={9.5}
+                    fontWeight={600}
+                    className="fill-muted-foreground tabular-nums"
+                  >
+                    <title>{`${itemCountValue} output item${itemCountValue === 1 ? '' : 's'}`}</title>
+                    {itemCountValue} item{itemCountValue === 1 ? '' : 's'}
+                  </text>
+                )}
                 {hasError && (
                   <g transform={`translate(${NODE_W - 16},14)`}>
                     <circle r={8} className="fill-destructive" />
                     <text textAnchor="middle" dy={3.5} fontSize={11} fontWeight={800} fill="white">!</text>
                   </g>
+                )}
+                {isActive && (
+                  <rect
+                    width={NODE_W}
+                    height={NODE_H}
+                    rx={12}
+                    fill="none"
+                    strokeWidth={2}
+                    strokeDasharray="7 5"
+                    className="oa-edge-dash stroke-primary"
+                    aria-label="Running this step"
+                  />
                 )}
                 {!hasError && <RunGlyph status={status} x={NODE_W - 18} y={NODE_H - 16} />}
                 {meta.hasInput && (
@@ -1073,34 +1217,98 @@ export function WorkflowCanvas({
         </g>
       </svg>
 
-      {/* empty state — n8n's "Add first step" */}
+      {/* empty state — n8n's "Add first step… or Build with AI" */}
       {isEmpty && !readOnly && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
-          <div className="pointer-events-auto flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border bg-card/80 px-8 py-7 text-center shadow-sm backdrop-blur">
-            <span className="oa-brand flex h-12 w-12 items-center justify-center rounded-2xl text-white shadow-lg">
-              <Plus className="h-6 w-6" aria-hidden />
-            </span>
-            <div>
-              <p className="text-sm font-semibold">Add your first step</p>
-              <p className="mt-1 max-w-[240px] text-xs text-muted-foreground">
-                Start with a trigger, then drag or double-click to add the next node.
-              </p>
+          <div className="pointer-events-auto flex flex-col items-center gap-4">
+            <div className="flex items-center gap-4 sm:gap-6">
+              <button
+                type="button"
+                onClick={(e) =>
+                  onAddNode?.({
+                    world: { x: 320, y: 240 },
+                    screen: { x: e.clientX, y: e.clientY },
+                  })
+                }
+                className="group flex flex-col items-center gap-2"
+              >
+                <span className="flex h-[88px] w-[88px] items-center justify-center rounded-2xl border border-dashed border-border bg-card/70 text-muted-foreground shadow-sm backdrop-blur transition-colors group-hover:border-primary/60 group-hover:text-primary">
+                  <Plus className="h-9 w-9" strokeWidth={1.5} aria-hidden />
+                </span>
+                <span className="text-xs font-medium">Add first step…</span>
+              </button>
+
+              <span className="text-xs text-muted-foreground">or</span>
+
+              <button
+                type="button"
+                onClick={() => onBuildWithAi?.()}
+                disabled={!onBuildWithAi}
+                className="group flex flex-col items-center gap-2 disabled:pointer-events-none disabled:opacity-50"
+              >
+                <span className="flex h-[88px] w-[88px] items-center justify-center rounded-2xl border border-dashed border-border bg-card/70 text-muted-foreground shadow-sm backdrop-blur transition-colors group-hover:border-primary/60 group-hover:text-primary">
+                  <Sparkles className="h-9 w-9" strokeWidth={1.5} aria-hidden />
+                </span>
+                <span className="text-xs font-medium">Build with AI</span>
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={(e) =>
-                onAddNode?.({
-                  world: { x: 320, y: 240 },
-                  screen: { x: e.clientX, y: e.clientY },
-                })
-              }
-              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
-            >
-              <Plus className="h-3.5 w-3.5" aria-hidden /> Add first step
-            </button>
+            <p className="max-w-[300px] text-center text-[11px] text-muted-foreground">
+              Start with a trigger, or describe the automation and let the assistant
+              draft it.
+            </p>
           </div>
         </div>
       )}
+
+      {/* right-side toolbar — n8n's add / search / variables / AI rail */}
+      <div
+        role="toolbar"
+        aria-label="Canvas tools"
+        aria-orientation="vertical"
+        className="absolute right-3 top-1/2 z-20 flex -translate-y-1/2 flex-col items-center gap-0.5 rounded-full border border-border/70 bg-card/90 p-1 shadow-sm backdrop-blur"
+      >
+        <button
+          type="button"
+          onClick={openCreatorAtCenter}
+          disabled={readOnly}
+          aria-label="Add step"
+          title="Add step"
+          className="oa-icon-button rounded-full"
+        >
+          <Plus className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onSearchNodes?.()}
+          disabled={!onSearchNodes}
+          aria-label="Search nodes"
+          title="Search nodes"
+          className="oa-icon-button hidden rounded-full md:inline-flex"
+        >
+          <Search className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onOpenVariables?.()}
+          disabled={!onOpenVariables}
+          aria-label="Workflow variables"
+          title="Workflow variables"
+          className="oa-icon-button hidden rounded-full xl:inline-flex"
+        >
+          <Braces className="h-4 w-4" />
+        </button>
+        <span className="my-0.5 h-px w-5 bg-border" aria-hidden />
+        <button
+          type="button"
+          onClick={() => onBuildWithAi?.()}
+          disabled={!onBuildWithAi}
+          aria-label="AI assistant"
+          title="AI assistant"
+          className="oa-icon-button rounded-full"
+        >
+          <Sparkles className="h-4 w-4 text-primary" />
+        </button>
+      </div>
 
       {/* controls */}
       <div className="absolute bottom-3 left-3 flex items-center gap-0.5 rounded-full border border-border/70 bg-card/90 p-1 shadow-sm backdrop-blur">
@@ -1167,6 +1375,50 @@ export function WorkflowCanvas({
       </div>
 
       {/* help / shortcuts */}
+      {/* run HUD — the synchronous engine reports per-node statuses only when
+          the run returns, so this shows in-flight state without faking it. */}
+      {!running && lastRun && (
+        <button
+          type="button"
+          onClick={onOpenRunPanel}
+          disabled={!onOpenRunPanel}
+          className={cn(
+            'absolute left-3 top-3 z-20 flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] shadow-sm backdrop-blur transition-colors',
+            lastRun.failed > 0
+              ? 'border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/15'
+              : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-400',
+          )}
+          title="Open the test run results"
+          aria-label={
+            `Last run ${lastRun.status}: ${lastRun.succeeded} succeeded, ${lastRun.failed} failed` +
+            (onOpenRunPanel ? ' — open results' : '')
+          }
+        >
+          {lastRun.failed > 0 ? (
+            <XCircle className="h-3.5 w-3.5" aria-hidden />
+          ) : (
+            <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+          )}
+          <span className="font-medium capitalize">{lastRun.status}</span>
+          <span className="tabular-nums opacity-80">
+            {lastRun.succeeded} ok
+            {lastRun.failed > 0 ? ` · ${lastRun.failed} failed` : ''}
+            {lastRun.waiting > 0 ? ` · ${lastRun.waiting} waiting` : ''}
+            {lastRun.skipped > 0 ? ` · ${lastRun.skipped} skipped` : ''}
+          </span>
+        </button>
+      )}
+      {running && (
+        <div
+          className="absolute left-3 top-3 z-20 flex items-center gap-1.5 rounded-full border border-border/70 bg-card/95 px-2.5 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur"
+          role="status"
+          aria-live="polite"
+        >
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" aria-hidden />
+          Running…
+        </div>
+      )}
+
       <div className="absolute right-3 top-3 flex items-center gap-1.5">
         <button
           type="button"
@@ -1188,10 +1440,13 @@ export function WorkflowCanvas({
               ['Drag node', 'Move it'],
               ['Drag port → port', 'Connect nodes'],
               ['Double-click canvas', 'Add a node'],
+              ['Double-click node', 'Open input/output data'],
               ['Shift + drag', 'Box select'],
               ['Ctrl/⌘ + C / V / D', 'Copy, paste, duplicate'],
               ['Ctrl/⌘ + Z / Y', 'Undo / redo'],
+              ['D', 'Disable / enable selected'],
               ['Del', 'Delete selection'],
+              ['Right-click → Tidy up', 'Re-flow the graph'],
               ['F', 'Fit to view'],
               ['Arrows', 'Nudge selection'],
             ].map(([k, v]) => (

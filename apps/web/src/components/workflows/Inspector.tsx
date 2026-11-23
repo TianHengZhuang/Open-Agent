@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea, Select, Switch, Field } from '@/components/ui/form';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Trash2, Settings2, KeyRound, Play, X } from 'lucide-react';
+import { Trash2, Settings2, KeyRound, Play, X, Maximize2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const CATEGORY_VAR: Record<string, string> = {
@@ -35,6 +35,9 @@ export function Inspector({
   disabled = false,
   onTestStep,
   workflowId,
+  embedded = false,
+  onExpand,
+  testInput,
 }: {
   editor: WorkflowEditor;
   disabled?: boolean;
@@ -42,6 +45,12 @@ export function Inspector({
   onTestStep?: (nodeId: string, input: Record<string, unknown>) => Promise<WorkflowNodeRunResult>;
   /** Enables the live schedule preview for Schedule triggers. */
   workflowId?: string;
+  /** Rendered inside the node detail view: no close/expand chrome of its own. */
+  embedded?: boolean;
+  /** Opens the 3-pane node detail view for this item. */
+  onExpand?: () => void;
+  /** Prefills Test step with the data resolved from upstream (NDV). */
+  testInput?: Record<string, unknown>;
 }) {
   const { definition, selection, validation, dispatch } = editor;
   const [tab, setTab] = React.useState<'parameters' | 'settings'>('parameters');
@@ -146,7 +155,8 @@ export function Inspector({
         subtitle={isTrigger ? `Trigger · ${trigger!.type}` : `Node · ${node!.type}`}
         icon={<Icon className="h-4 w-4" aria-hidden />}
         tint={tint}
-        onClose={() => editor.select(null)}
+        onClose={embedded ? undefined : () => editor.select(null)}
+        onExpand={embedded ? undefined : onExpand}
         onDelete={disabled ? undefined : () => dispatch({ type: 'delete-selection' })}
       />
       <div className="flex items-center gap-1 border-b border-border px-2 py-1.5" role="tablist" aria-label="Node detail tabs">
@@ -206,7 +216,14 @@ export function Inspector({
             {isTrigger && trigger!.type === 'schedule' && workflowId && (
               <SchedulePreview workflowId={workflowId} triggerId={item.id} />
             )}
-            {onTestStep && <TestStep nodeId={item.id} disabled={disabled} onTestStep={onTestStep} />}
+            {onTestStep && (
+              <TestStep
+                nodeId={item.id}
+                disabled={disabled}
+                onTestStep={onTestStep}
+                defaultInput={testInput}
+              />
+            )}
             <p className="oa-caption">
               ID: <span className="oa-code">{item.id}</span>
             </p>
@@ -296,13 +313,15 @@ function TestStep({
   nodeId,
   disabled,
   onTestStep,
+  defaultInput,
 }: {
   nodeId: string;
   disabled?: boolean;
   onTestStep: (nodeId: string, input: Record<string, unknown>) => Promise<WorkflowNodeRunResult>;
+  defaultInput?: Record<string, unknown>;
 }) {
   const [open, setOpen] = React.useState(false);
-  const [text, setText] = React.useState('{}');
+  const [text, setText] = React.useState(() => JSON.stringify(defaultInput ?? {}, null, 2));
   const [running, setRunning] = React.useState(false);
   const [result, setResult] = React.useState<WorkflowNodeRunResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -346,9 +365,20 @@ function TestStep({
       </div>
       {open && (
         <div className="mt-2 space-y-2">
-          <label htmlFor="test-step-input" className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Input (JSON)
-          </label>
+          <div className="flex items-center justify-between gap-2">
+            <label htmlFor="test-step-input" className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Input (JSON)
+            </label>
+            {defaultInput !== undefined && (
+              <button
+                type="button"
+                onClick={() => setText(JSON.stringify(defaultInput, null, 2))}
+                className="text-[11px] text-primary hover:underline"
+              >
+                Use upstream data
+              </button>
+            )}
+          </div>
           <textarea
             id="test-step-input"
             value={text}
@@ -623,6 +653,7 @@ function InspectorHeader({
   tint,
   onDelete,
   onClose,
+  onExpand,
 }: {
   title: string;
   subtitle: string;
@@ -630,6 +661,7 @@ function InspectorHeader({
   tint?: string;
   onDelete?: () => void;
   onClose?: () => void;
+  onExpand?: () => void;
 }) {
   return (
     <div className="flex items-center justify-between gap-2 border-b border-border/70 px-3 py-2.5">
@@ -650,6 +682,16 @@ function InspectorHeader({
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-0.5">
+        {onExpand && (
+          <button
+            onClick={onExpand}
+            aria-label={`Open ${title} detail view`}
+            title="Open detail view (input · parameters · output)"
+            className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <Maximize2 className="h-4 w-4" />
+          </button>
+        )}
         {onDelete && (
           <button
             onClick={onDelete}

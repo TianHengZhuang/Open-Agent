@@ -18,8 +18,8 @@ import json
 import os
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime, timedelta, timezone
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from uuid import UUID
 
 import httpx
@@ -33,6 +33,21 @@ from openagent.db.models import (
     WorkflowExecutionStatus,
     WorkflowExecutionTriggerType,
     WorkflowVersion,
+)
+from openagent.runtime.expressions import (
+    ExpressionData,
+    evaluate_expression,
+    evaluate_template,
+)
+from openagent.runtime.expressions import (
+    ExpressionError as NativeExpressionError,
+)
+from openagent.runtime.items import as_items, is_item, item_json
+from openagent.services.model_runtime import (
+    ModelRuntimeError,
+    ModelTarget,
+    chat_stream,
+    with_model,
 )
 
 # ---------------------------------------------------------------------------
@@ -69,6 +84,8 @@ class RunContext:
     outputs: Dict[str, Any] = field(default_factory=dict)
     item: Any = None
     index: int = 0
+    # Every item that arrived at the node (``$input.all()``), when known.
+    input_items: List[Any] = field(default_factory=list)
     # Sub-workflow plumbing (n8n "Execute Workflow"): the DB session used to
     # resolve the child definition, the tenant it must belong to, the current
     # nesting depth and the call stack used to reject cycles.
@@ -76,6 +93,12 @@ class RunContext:
     organization_id: Optional[UUID] = None
     depth: int = 0
     stack: Tuple[str, ...] = ()
+    # The organization's chat endpoint, when one was resolved. Without it a
+    # ``prompt`` node is reported as skipped instead of being faked.
+    model: Optional[ModelTarget] = None
+    # Streaming sink for chat: deltas from a model node reach the open SSE
+    # response as they arrive. ``None`` means "buffer the whole reply".
+    token_sink: Optional[Callable[[str], Awaitable[None]]] = None
 
     def child(self, item: Any, index: int) -> "RunContext":
         return RunContext(
@@ -84,10 +107,13 @@ class RunContext:
             outputs=self.outputs,
             item=item,
             index=index,
+            input_items=self.input_items,
             db=self.db,
             organization_id=self.organization_id,
             depth=self.depth,
             stack=self.stack,
+            model=self.model,
+            token_sink=self.token_sink,
         )
 
 
@@ -253,8 +279,57 @@ def _resolve_body(body: str, ctx: RunContext) -> Any:
     return _deep_get(_lookup_root(namespace, ctx), rest) if rest else _lookup_root(namespace, ctx)
 
 
+def _current_item_json(ctx: RunContext) -> Any:
+    """The JSON an expression sees as ``$json`` for this item.
+
+    Node output is plain JSON in this engine; the chat trigger wraps its item
+    n8n-style (``{json: {...}, history: [...]}``), so a wrapped current item or
+    trigger is unwrapped to its payload.
+    """
+    item = ctx.item
+    if item is not None:
+        value = item["json"] if is_item(item) else item
+    else:
+        inner = ctx.trigger.get("json") if isinstance(ctx.trigger, dict) else None
+        value = inner if isinstance(inner, dict) else (ctx.trigger if ctx.trigger else {})
+    # A trigger payload may itself be an n8n wrapper (the chat trigger is
+    # `{json: {...}, history: [...]}`); expressions read its payload.
+    if isinstance(value, dict) and isinstance(value.get("json"), dict) and set(value) <= {
+        "json",
+        "binary",
+        "pairedItem",
+        "history",
+        "input",
+    }:
+        return value["json"]
+    return value
+
+
+def expression_data(ctx: RunContext) -> ExpressionData:
+    """Build the n8n data proxy for one evaluation."""
+    current = _current_item_json(ctx)
+    items = list(ctx.input_items) if ctx.input_items else (as_items(ctx.item) if ctx.item is not None else [])
+    return ExpressionData(
+        json=current,
+        legacy_json=current,
+        items=items,
+        node_outputs=ctx.outputs,
+        variables=ctx.variables,
+        workflow=ctx.trigger.get("_workflow") or {},
+        execution={"id": ctx.trigger.get("_execution_id")},
+        trigger=ctx.trigger,
+        item_index=ctx.index,
+        run_index=0,
+    )
+
+
 def resolve(value: Any, ctx: RunContext) -> Any:
-    """Resolve ``{{ ... }}`` expressions in any nested config value."""
+    """Resolve ``{{ ... }}`` expressions in any nested config value.
+
+    n8n's expression grammar is tried first (``$json``, ``$node``, method
+    calls, arithmetic, optional chaining); the original path-based resolver
+    stays as the fallback so stored workflows keep evaluating unchanged.
+    """
     if isinstance(value, dict):
         return {k: resolve(v, ctx) for k, v in value.items()}
     if isinstance(value, list):
@@ -262,6 +337,14 @@ def resolve(value: Any, ctx: RunContext) -> Any:
     if not isinstance(value, str):
         return value
 
+    try:
+        return evaluate_template(value, expression_data(ctx))
+    except NativeExpressionError:
+        return _legacy_resolve(value, ctx)
+
+
+def _legacy_resolve(value: Any, ctx: RunContext) -> Any:
+    """Original path-based resolver, kept for workflows n8n's grammar rejects."""
     single = _EXPR_RE.fullmatch(value.strip())
     if single and "}}" not in single.group(1) and "{{" not in single.group(1):
         # Exactly one expression covering the whole string keeps its type.
@@ -343,6 +426,15 @@ def evaluate(expr: Any, ctx: RunContext) -> bool:
     if not text:
         return False
 
+    # n8n's expression grammar first: {{ $json.total > 10 }}, {{ !$json.done }},
+    # {{ $json.status === "ok" }}. Operator words below stay as the fallback.
+    try:
+        native = evaluate_expression(text, expression_data(ctx))
+        if not isinstance(native, (dict, list)):
+            return _truthy(native)
+    except NativeExpressionError:
+        pass
+
     or_parts = _split_top(text, " or ")
     if len(or_parts) > 1:
         return any(evaluate(part, ctx) for part in or_parts)
@@ -422,6 +514,32 @@ class NodeOutcome:
     error_code: Optional[str] = None
     ports: List[str] = field(default_factory=lambda: ["out"])
     reason: Optional[str] = None
+    # Canonical n8n items for this node (`{json, pairedItem}`). Nodes that know
+    # their item lineage set this; otherwise it is derived from ``outputs``.
+    items: Optional[List[Dict[str, Any]]] = None
+
+
+def item_envelope(value: Any, source_index: Optional[int] = None) -> Dict[str, Any]:
+    """Wrap one node output value as an n8n item."""
+    from openagent.runtime.items import make_item
+
+    payload = value
+    if is_item(payload):
+        payload = payload["json"]
+    return make_item(payload, source_index)
+
+
+def _items_from_pairs(pairs: List[Tuple[int, Any]]) -> List[Dict[str, Any]]:
+    """Build items that remember which input item each one came from."""
+    return [item_envelope(value, source) for source, value in pairs]
+
+
+def _input_items(inputs: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Every item arriving at a node, in connection order."""
+    collected: List[Dict[str, Any]] = []
+    for value in inputs.values():
+        collected.extend(as_items(value))
+    return collected
 
 
 def _cfg(node: Dict[str, Any], key: str, default: Any = None) -> Any:
@@ -468,7 +586,10 @@ def _items_for(node: Dict[str, Any], inputs: Dict[str, Any], ctx: "RunContext") 
 
 
 async def _execute_with_policy(
-    node: Dict[str, Any], inputs: Dict[str, Any], ctx: "RunContext"
+    node: Dict[str, Any],
+    inputs: Dict[str, Any],
+    ctx: "RunContext",
+    items: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple["NodeOutcome", int, bool]:
     """Run a node honouring retries, timeout and "continue on error" settings.
 
@@ -491,15 +612,27 @@ async def _execute_with_policy(
 
     continue_on_error = str(_cfg(node, "on_error") or "").strip().lower() == "continue"
 
+    # n8n evaluates `$json` against the node's first incoming item, not the
+    # trigger payload; node-level configs and conditions read it that way.
+    working = ctx
+    arrived = list(items) if items else _input_items(inputs)
+    if arrived:
+        working.input_items = arrived
+        if ctx.item is None:
+            working = ctx.child(arrived[0], 0)
+            working.input_items = arrived
+
     outcome = NodeOutcome(status="failed", error="Node was not executed", error_code="UNKNOWN")
     attempts_used = 0
     for attempt in range(1, attempts_allowed + 1):
         attempts_used = attempt
         try:
             if timeout is not None:
-                outcome = await asyncio.wait_for(_exec_node(node, inputs, ctx), timeout=timeout)
+                outcome = await asyncio.wait_for(
+                    _exec_node(node, inputs, working, items=arrived), timeout=timeout
+                )
             else:
-                outcome = await _exec_node(node, inputs, ctx)
+                outcome = await _exec_node(node, inputs, working, items=arrived)
         except asyncio.TimeoutError:
             outcome = NodeOutcome(
                 status="failed",
@@ -551,6 +684,15 @@ async def _exec_trigger(trigger: Dict[str, Any], trigger_input: Dict[str, Any], 
         payload = {"fired_at": _now().isoformat(), "cron": config.get("cron"), **trigger_input}
     elif ttype == "event":
         payload = {"event": config.get("event"), "payload": trigger_input, **trigger_input}
+    elif ttype == "chat":
+        # n8n "Chat Trigger" item: ``{json: {chatInput, sessionId, action, files}}``
+        # plus the transcript the chat UI keeps locally, so a prompt node can
+        # answer multi-turn without any server-side session store.
+        item = trigger_input.get("json")
+        payload = {
+            "json": dict(item) if isinstance(item, dict) else dict(trigger_input),
+            "history": list(trigger_input.get("history") or []),
+        }
     else:
         payload = dict(trigger_input)
 
@@ -642,6 +784,8 @@ async def _exec_subworkflow(node: Dict[str, Any], inputs: Dict[str, Any], ctx: R
         organization_id=ctx.organization_id,
         depth=ctx.depth + 1,
         stack=ctx.stack + (str(target_id),),
+        model=ctx.model,
+        token_sink=ctx.token_sink,
     )
     runs, output, status = await execute_definition(
         version.definition or {}, payload, parent=parent
@@ -676,9 +820,151 @@ async def _exec_subworkflow(node: Dict[str, Any], inputs: Dict[str, Any], ctx: R
     return NodeOutcome(status="succeeded", outputs=outputs)
 
 
-async def _exec_node(node: Dict[str, Any], inputs: Dict[str, Any], ctx: RunContext) -> NodeOutcome:
+async def _exec_prompt_node(
+    node: Dict[str, Any], inputs: Dict[str, Any], ctx: "RunContext"
+) -> NodeOutcome:
+    """A single model call (n8n "AI Agent / LLM chain" minus tools).
+
+    The prompt is a normal expression, so ``{{json.chatInput}}`` and
+    ``{{nodes.classify.text}}`` both work. Chat history arrives on the chat
+    trigger, which is how a locally stored transcript reaches the model.
+    """
+    if ctx.model is None:
+        return NodeOutcome(
+            status="skipped",
+            outputs={
+                "skipped": True,
+                "reason": "SKIPPED_REQUIRES_PROMPT",
+                "requires": "a model provider",
+                "input": _merged_input(inputs),
+            },
+            reason="SKIPPED_REQUIRES_PROMPT",
+        )
+
+    system = str(resolve(_cfg(node, "system"), ctx) or "").strip()
+    raw_prompt = _cfg(node, "prompt")
+    prompt = str(resolve(raw_prompt, ctx) or "").strip() if raw_prompt else ""
+    if not prompt:
+        chat = ctx.trigger.get("json")
+        if isinstance(chat, dict):
+            prompt = str(chat.get("chatInput") or "").strip()
+    if not prompt:
+        return NodeOutcome(
+            status="failed",
+            error="Prompt node needs a prompt (or a chat input upstream)",
+            error_code="INVALID_CONFIG",
+        )
+
+    messages: List[Dict[str, Any]] = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    for message in ctx.trigger.get("history") or []:
+        if not isinstance(message, dict):
+            continue
+        role = str(message.get("role") or "")
+        content = message.get("content")
+        if role in {"user", "assistant", "system"} and isinstance(content, str) and content.strip():
+            messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": prompt})
+
+    model_name = str(resolve(_cfg(node, "model"), ctx) or "").strip()
+    target = with_model(ctx.model, model_name) if model_name else ctx.model
+    max_tokens_raw = _as_number(_cfg(node, "max_tokens"))
+    max_tokens = int(max_tokens_raw) if max_tokens_raw and max_tokens_raw > 0 else None
+    temperature_raw = _as_number(_cfg(node, "temperature"))
+    temperature = 0.2 if temperature_raw is None else max(0.0, min(temperature_raw, 2.0))
+
+    try:
+        reply = await chat_stream(
+            target,
+            messages,
+            on_delta=ctx.token_sink,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+    except ModelRuntimeError as exc:
+        return NodeOutcome(
+            status="failed",
+            outputs={"model": target.model, "messages": messages},
+            error=str(exc.message)[:1000],
+            error_code="MODEL_ERROR",
+        )
+
+    return NodeOutcome(
+        status="succeeded",
+        outputs={
+            "text": reply,
+            "model": target.model,
+            "provider": target.provider,
+            "messages": len(messages),
+        },
+    )
+
+
+def _run_mode(node: Dict[str, Any]) -> str:
+    """n8n-style run mode: one pass for all items, or one per item."""
+    raw = node.get("run_mode")
+    if raw is None:
+        raw = _cfg(node, "run_mode")
+    mode = str(raw or "all").strip().lower()
+    return "each" if mode in ("each", "per_item", "per-item") else "all"
+
+
+async def _exec_node(
+    node: Dict[str, Any],
+    inputs: Dict[str, Any],
+    ctx: RunContext,
+    items: Optional[List[Dict[str, Any]]] = None,
+) -> NodeOutcome:
+    """Run a node, honouring its run mode.
+
+    ``run_mode: "all"`` (the default, and what every stored workflow uses)
+    runs the body once with the merged input. ``run_mode: "each"`` runs the
+    body per input item, with ``$json`` bound to that item, and collects the
+    per-item results into an item list — n8n's "Run Once for Each Item".
+    """
+    if _run_mode(node) != "each":
+        return await _exec_node_once(node, inputs, ctx)
+
+    items = list(items) if items else _input_items(inputs)
+    if not items:
+        return await _exec_node_once(node, inputs, ctx)
+
+    collected: List[Tuple[int, Any]] = []
+    for index, item in enumerate(items[:MAX_LOOP_ITEMS]):
+        child = ctx.child(item, index)
+        child.input_items = items
+        outcome = await _exec_node_once(node, {"item": item}, child)
+        if outcome.status == "waiting":
+            return outcome
+        if outcome.status == "failed":
+            return NodeOutcome(
+                status="failed",
+                outputs={"items": [value for _, value in collected], "count": len(collected)},
+                error=outcome.error,
+                error_code=outcome.error_code,
+                items=_items_from_pairs(collected),
+            )
+        payload = outcome.outputs
+        if isinstance(payload, dict) and isinstance(payload.get("items"), list):
+            payload = payload["items"]
+            if len(payload) == 1:
+                payload = payload[0]
+        collected.append((index, payload))
+
+    return NodeOutcome(
+        status="succeeded",
+        outputs={"items": [value for _, value in collected], "count": len(collected)},
+        items=_items_from_pairs(collected),
+    )
+
+
+async def _exec_node_once(node: Dict[str, Any], inputs: Dict[str, Any], ctx: RunContext) -> NodeOutcome:
     node_type = str(node.get("type") or "")
     merged = _merged_input(inputs)
+
+    if node_type in ("prompt", "llm", "chat_model"):
+        return await _exec_prompt_node(node, inputs, ctx)
 
     if node_type == "set":
         values = parse_jsonish(_cfg(node, "values"), {})
@@ -709,18 +995,23 @@ async def _exec_node(node: Dict[str, Any], inputs: Dict[str, Any], ctx: RunConte
         expression = _cfg(node, "predicate") if node_type == "filter" else _cfg(node, "expression")
         if not expression:
             return NodeOutcome(status="failed", error=f"{node_type.title()} node needs an expression", error_code="INVALID_CONFIG")
-        out: List[Any] = []
+        pairs: List[Tuple[int, Any]] = []
         for index, item in enumerate(items[:MAX_LOOP_ITEMS]):
             item_ctx = ctx.child(item, index)
             if node_type == "filter":
                 if evaluate(expression, item_ctx):
-                    out.append(item)
+                    pairs.append((index, item))
             else:
-                out.append(resolve(expression, item_ctx))
-        return NodeOutcome(status="succeeded", outputs={"items": out, "count": len(out)})
+                pairs.append((index, resolve(expression, item_ctx)))
+        return NodeOutcome(
+            status="succeeded",
+            outputs={"items": [value for _, value in pairs], "count": len(pairs)},
+            items=_items_from_pairs(pairs),
+        )
 
     if node_type in ("sort", "limit", "remove_duplicates", "split_out"):
-        items = _as_list(_items_for(node, inputs, ctx))
+        source_items = as_items(_items_for(node, inputs, ctx))
+        items = [item_json(entry) for entry in source_items]
 
         if node_type == "sort":
             field = str(_cfg(node, "field") or "").strip()
@@ -738,8 +1029,14 @@ async def _exec_node(node: Dict[str, Any], inputs: Dict[str, Any], ctx: RunConte
                     return json.dumps(value, sort_keys=True, default=str)
                 return "" if value is None else str(value)
 
-            ordered = sorted(items[:MAX_LOOP_ITEMS], key=sort_key, reverse=descending)
-            return NodeOutcome(status="succeeded", outputs={"items": ordered, "count": len(ordered)})
+            indexed = list(enumerate(items))[:MAX_LOOP_ITEMS]
+            ordered = sorted(indexed, key=lambda pair: sort_key(pair[1]), reverse=descending)
+            pairs = [(index, value) for index, value in ordered]
+            return NodeOutcome(
+                status="succeeded",
+                outputs={"items": [value for _, value in pairs], "count": len(pairs)},
+                items=_items_from_pairs(pairs),
+            )
 
         if node_type == "limit":
             try:
@@ -748,27 +1045,34 @@ async def _exec_node(node: Dict[str, Any], inputs: Dict[str, Any], ctx: RunConte
                 maximum = 10
             maximum = max(0, min(maximum, MAX_LOOP_ITEMS))
             keep = str(_cfg(node, "keep") or "first").strip().lower()
-            kept = items[-maximum:] if keep == "last" and maximum else items[:maximum]
-            return NodeOutcome(status="succeeded", outputs={"items": kept, "count": len(kept)})
+            indexed = list(enumerate(items))
+            picked = indexed[-maximum:] if keep == "last" and maximum else indexed[:maximum]
+            pairs = [(index, value) for index, value in picked]
+            return NodeOutcome(
+                status="succeeded",
+                outputs={"items": [value for _, value in pairs], "count": len(pairs)},
+                items=_items_from_pairs(pairs),
+            )
 
         if node_type == "remove_duplicates":
             key = str(_cfg(node, "key") or "").strip()
             seen: set[str] = set()
-            unique: List[Any] = []
-            for item in items[:MAX_LOOP_ITEMS]:
+            pairs: List[Tuple[int, Any]] = []
+            for index, item in enumerate(items[:MAX_LOOP_ITEMS]):
                 value = _field_value(item, key) if key else item
                 marker = json.dumps(value, sort_keys=True, default=str)
                 if marker in seen:
                     continue
                 seen.add(marker)
-                unique.append(item)
+                pairs.append((index, item))
             return NodeOutcome(
                 status="succeeded",
                 outputs={
-                    "items": unique,
-                    "count": len(unique),
-                    "duplicates_removed": len(items) - len(unique),
+                    "items": [value for _, value in pairs],
+                    "count": len(pairs),
+                    "duplicates_removed": len(items) - len(pairs),
                 },
+                items=_items_from_pairs(pairs),
             )
 
         # split_out
@@ -779,16 +1083,20 @@ async def _exec_node(node: Dict[str, Any], inputs: Dict[str, Any], ctx: RunConte
                 error="Split out node needs a field to split on",
                 error_code="INVALID_CONFIG",
             )
-        split: List[Any] = []
-        for item in items[:MAX_LOOP_ITEMS]:
+        pairs: List[Tuple[int, Any]] = []
+        for index, item in enumerate(items[:MAX_LOOP_ITEMS]):
             value = _field_value(item, field)
             if isinstance(value, list):
-                split.extend(value)
+                pairs.extend((index, entry) for entry in value)
             elif value is None:
-                split.append(item)
+                pairs.append((index, item))
             else:
-                split.append(value)
-        return NodeOutcome(status="succeeded", outputs={"items": split, "count": len(split)})
+                pairs.append((index, value))
+        return NodeOutcome(
+            status="succeeded",
+            outputs={"items": [value for _, value in pairs], "count": len(pairs)},
+            items=_items_from_pairs(pairs),
+        )
 
     if node_type == "condition":
         result = evaluate(_cfg(node, "expression"), ctx)
@@ -838,6 +1146,20 @@ async def _exec_node(node: Dict[str, Any], inputs: Dict[str, Any], ctx: RunConte
     if node_type == "delay":
         seconds = _as_number(resolve(_cfg(node, "duration_seconds", 0), ctx)) or 0
         wait = max(0.0, min(float(seconds), MAX_SYNC_DELAY_SECONDS))
+        if float(seconds) > wait and ctx.db is not None and ctx.depth == 0:
+            # n8n's Wait node: the run parks and a scheduler resumes it, instead
+            # of capping the delay at the synchronous limit.
+            resume_at = _now() + timedelta(seconds=float(seconds))
+            return NodeOutcome(
+                status="waiting",
+                outputs={
+                    "waiting": True,
+                    "waited_seconds": 0.0,
+                    "requested_seconds": float(seconds),
+                    "resume_at": resume_at.isoformat(),
+                },
+                reason="WAITING_UNTIL",
+            )
         if wait:
             await asyncio.sleep(wait)
         return NodeOutcome(status="succeeded", outputs={"waited_seconds": wait, "capped": float(seconds) > wait})
@@ -891,7 +1213,6 @@ async def _exec_node(node: Dict[str, Any], inputs: Dict[str, Any], ctx: RunConte
 
     provider_nodes = {
         "agent": "an agent",
-        "prompt": "a model provider",
         "tool": "a registered tool",
         "connector_action": "a connector connection",
         "connector_trigger": "a connector connection",
@@ -935,7 +1256,8 @@ async def _exec_node(node: Dict[str, Any], inputs: Dict[str, Any], ctx: RunConte
 
 
 def _edge_active(edge: Dict[str, Any], source_status: str, source_ports: List[str]) -> bool:
-    label = str(edge.get("label") or "").strip().lower()
+    # Typed edges carry the output port explicitly; legacy edges use `label`.
+    label = str(edge.get("from_port") or edge.get("label") or "").strip().lower()
     if source_status == "failed":
         return label in ("failure", "error")
     if source_status == "waiting":
@@ -951,13 +1273,23 @@ async def execute_definition(
     definition: Dict[str, Any],
     trigger_input: Optional[Dict[str, Any]] = None,
     parent: Optional[RunContext] = None,
+    *,
+    model: Optional[ModelTarget] = None,
+    token_sink: Optional[Callable[[str], Awaitable[None]]] = None,
+    seed: Optional[Dict[str, Any]] = None,
+    state: Optional[Dict[str, Any]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any], str]:
     """Run a definition. Returns (node_runs, output, overall_status).
 
     ``parent`` carries the sub-workflow plumbing (session, tenant, depth,
     call stack) when this definition is executed as a sub-workflow.
+
+    ``seed`` resumes a parked run: its completed node runs, outputs, variables
+    and trigger are restored and those nodes are not executed again. ``state``
+    receives the final context so the caller can persist a resumable run.
     """
     trigger_input = trigger_input or {}
+    seed = seed or {}
     triggers: List[Dict[str, Any]] = list(definition.get("triggers") or [])
     nodes: List[Dict[str, Any]] = list(definition.get("nodes") or [])
     edges: List[Dict[str, Any]] = list(definition.get("edges") or [])
@@ -968,20 +1300,24 @@ async def execute_definition(
             variables[str(variable["name"])] = variable.get("default")
 
     ctx = RunContext(
-        trigger={},
-        variables=variables,
+        trigger=dict(seed.get("trigger") or {}),
+        variables={**variables, **(seed.get("variables") or {})},
+        outputs=dict(seed.get("outputs") or {}),
         db=parent.db if parent else None,
         organization_id=parent.organization_id if parent else None,
         depth=parent.depth if parent else 0,
         stack=parent.stack if parent else (),
+        model=model or (parent.model if parent else None),
+        token_sink=token_sink or (parent.token_sink if parent else None),
     )
-    runs: List[Dict[str, Any]] = []
-    results: Dict[str, Dict[str, Any]] = {}
+    runs: List[Dict[str, Any]] = [dict(run) for run in (seed.get("runs") or [])]
+    results: Dict[str, Dict[str, Any]] = {run["node_id"]: run for run in runs}
 
     def record(item: Dict[str, Any], status: str, outputs: Dict[str, Any], started: datetime,
                outcome_error: Optional[str] = None, error_code: Optional[str] = None,
                reason: Optional[str] = None, ports: Optional[List[str]] = None,
-               continued: bool = False, attempt: int = 1) -> None:
+               continued: bool = False, attempt: int = 1,
+               items: Optional[List[Dict[str, Any]]] = None) -> None:
         completed = _now()
         run = {
             "node_id": str(item["id"]),
@@ -990,6 +1326,7 @@ async def execute_definition(
             "status": status,
             "inputs": {},
             "outputs": outputs,
+            "items": items if items is not None else [item_envelope(outputs)],
             "error": outcome_error,
             "error_code": error_code,
             "reason": reason,
@@ -1021,7 +1358,7 @@ async def execute_definition(
             incoming[target].append(edge)
             outgoing[source].append(edge)
 
-    pending = [n for n in nodes]
+    pending = [n for n in nodes if str(n["id"]) not in results]
     guard = 0
     while pending and guard <= len(nodes) + 1:
         guard += 1
@@ -1049,7 +1386,23 @@ async def execute_definition(
                 if status == "failed" and upstream.get("continued"):
                     # "Continue on error" passes the input down the success path.
                     status, ports = "succeeded", ["out"]
-                return _edge_active(edge, status, ports)
+                if not _edge_active(edge, status, ports):
+                    return False
+                # n8n branch conditions: an edge may require success/failure
+                # and/or its own expression.
+                condition = edge.get("condition")
+                if isinstance(condition, dict):
+                    when = str(condition.get("when") or "always")
+                    if when == "success" and status != "succeeded":
+                        return False
+                    if when == "failure" and status != "failed":
+                        return False
+                    if condition.get("expression"):
+                        try:
+                            return evaluate(condition["expression"], ctx)
+                        except Exception:  # a broken condition must not crash the run
+                            return False
+                return True
 
             active = [edge for edge in deps if _edge_runs(edge)]
             started = _now()
@@ -1060,9 +1413,14 @@ async def execute_definition(
                 continue
 
             inputs: Dict[str, Any] = {}
+            incoming_items: List[Dict[str, Any]] = []
             for edge in active:
                 label = str(edge.get("label") or "input")
-                inputs[label] = results[str(edge["from"])]["outputs"]
+                upstream = results[str(edge["from"])]
+                inputs[label] = upstream["outputs"]
+                incoming_items.extend(upstream.get("items") or [])
+            if not incoming_items:
+                incoming_items = _input_items(inputs)
 
             if node.get("disabled"):
                 record(node, "skipped", {}, started, reason="DISABLED")
@@ -1070,10 +1428,12 @@ async def execute_definition(
                 progressed = True
                 continue
 
-            outcome, attempts, continued = await _execute_with_policy(node, inputs, ctx)
+            outcome, attempts, continued = await _execute_with_policy(
+                node, inputs, ctx, items=incoming_items
+            )
             record(node, outcome.status, outcome.outputs, started, outcome.error,
                    outcome.error_code, outcome.reason, outcome.ports,
-                   continued=continued, attempt=attempts)
+                   continued=continued, attempt=attempts, items=outcome.items)
             ctx.outputs[node_id] = {
                 **outcome.outputs,
                 "_status": outcome.status,
@@ -1109,6 +1469,14 @@ async def execute_definition(
         "nodes": {run["node_id"]: run["outputs"] for run in runs},
         "terminal": terminal_outputs,
     }
+    if state is not None:
+        state.update(
+            {
+                "trigger": ctx.trigger,
+                "variables": ctx.variables,
+                "outputs": ctx.outputs,
+            }
+        )
     return runs, final_output, overall
 
 
@@ -1124,6 +1492,7 @@ def _trigger_type_for(definition: Dict[str, Any]) -> WorkflowExecutionTriggerTyp
         "webhook": WorkflowExecutionTriggerType.WEBHOOK,
         "schedule": WorkflowExecutionTriggerType.SCHEDULED,
         "event": WorkflowExecutionTriggerType.EVENT,
+        "chat": WorkflowExecutionTriggerType.API,
         "manual": WorkflowExecutionTriggerType.MANUAL,
     }.get(ttype, WorkflowExecutionTriggerType.API)
 
@@ -1137,11 +1506,39 @@ async def run_workflow(
     definition: Optional[Dict[str, Any]] = None,
     trigger_input: Optional[Dict[str, Any]] = None,
     version_label: Optional[str] = None,
+    model: Optional[ModelTarget] = None,
+    token_sink: Optional[Callable[[str], Awaitable[None]]] = None,
+    resume_from: Optional[WorkflowExecution] = None,
 ) -> Dict[str, Any]:
-    """Create an execution row, run the definition, persist node runs."""
-    definition_override = definition is not None
+    """Create an execution row, run the definition, persist node runs.
+
+    ``resume_from`` continues a parked execution (n8n's Wait node) instead of
+    creating a new row: completed nodes are restored from the saved state and
+    the waiting node is retried.
+    """
+    seed: Dict[str, Any] = {}
+    state: Dict[str, Any] = {}
+    seeded_ids: set[str] = set()
+    if resume_from is not None:
+        saved = (resume_from.metadata or {}).get("wait") or {}
+        seed = {
+            "runs": saved.get("runs") or [],
+            "outputs": saved.get("outputs") or {},
+            "variables": saved.get("variables") or {},
+            "trigger": saved.get("trigger") or {},
+        }
+        seeded_ids = {str(run.get("node_id")) for run in seed["runs"]}
+        if definition is None:
+            definition = saved.get("definition")
+        if trigger_input is None:
+            trigger_input = saved.get("trigger_input") or {}
+
+    definition_override = definition is not None and resume_from is None
     version: Optional[WorkflowVersion] = None
-    if version_label:
+    if resume_from is not None:
+        # A resume keeps the version it started with; no lookup is needed.
+        version = None
+    elif version_label:
         result = await db.execute(
             select(WorkflowVersion).where(
                 WorkflowVersion.workflow_id == workflow.id,
@@ -1149,7 +1546,7 @@ async def run_workflow(
             )
         )
         version = result.scalar_one_or_none()
-    if version is None:
+    if version is None and resume_from is None:
         result = await db.execute(
             select(WorkflowVersion)
             .where(WorkflowVersion.workflow_id == workflow.id)
@@ -1164,24 +1561,34 @@ async def run_workflow(
         definition = version.definition or {}
 
     started_at = _now()
-    execution = WorkflowExecution(
-        organization_id=organization_id,
-        workflow_id=workflow.id,
-        workflow_version_id=version.id if version else None,
-        status=WorkflowExecutionStatus.RUNNING,
-        trigger_type=_trigger_type_for(definition),
-        started_at=started_at,
-        metadata={"run_source": "draft" if definition_override else "version"},
-    )
-    db.add(execution)
-    await db.flush()
-    execution_id = execution.id
+    if resume_from is not None:
+        execution = resume_from
+        execution.status = WorkflowExecutionStatus.RUNNING
+        execution.completed_at = None
+        execution_id = execution.id
+    else:
+        execution = WorkflowExecution(
+            organization_id=organization_id,
+            workflow_id=workflow.id,
+            workflow_version_id=version.id if version else None,
+            status=WorkflowExecutionStatus.RUNNING,
+            trigger_type=_trigger_type_for(definition),
+            started_at=started_at,
+            metadata={"run_source": "draft" if definition_override else "version"},
+        )
+        db.add(execution)
+        await db.flush()
+        execution_id = execution.id
 
     try:
         node_runs, output, overall = await execute_definition(
             definition,
             trigger_input or {},
             parent=RunContext(db=db, organization_id=organization_id),
+            model=model,
+            token_sink=token_sink,
+            seed=seed,
+            state=state,
         )
     except Exception as exc:  # engine failure is reported, never swallowed
         node_runs, output, overall = [], {"status": "failed", "error": str(exc)}, "failed"
@@ -1196,12 +1603,51 @@ async def run_workflow(
         "failed": WorkflowExecutionStatus.FAILED,
         "waiting": WorkflowExecutionStatus.WAITING,
     }
+    run_started = execution.started_at or started_at
+    wait_info: Optional[Dict[str, Any]] = None
+    if overall == "waiting":
+        wait_run = next((run for run in node_runs if run["status"] == "waiting"), None)
+        resume_at = (wait_run or {}).get("outputs", {}).get("resume_at")
+        if wait_run is not None and resume_at:
+            # The wait node is stored as completed: on resume the scheduler
+            # does not make the workflow wait for the same duration again.
+            waited = {
+                **wait_run,
+                "status": "succeeded",
+                "reason": None,
+                "outputs": {
+                    **(wait_run.get("outputs") or {}),
+                    "waiting": False,
+                    "waited_seconds": (wait_run.get("outputs") or {}).get("requested_seconds", 0.0),
+                },
+                "completed_at": _iso(completed_at),
+                "resumed": True,
+            }
+            wait_info = {
+                "node_id": wait_run["node_id"],
+                "resume_at": resume_at,
+                "definition": definition,
+                "trigger_input": trigger_input or {},
+                "trigger": state.get("trigger") or {},
+                "variables": state.get("variables") or {},
+                "outputs": state.get("outputs") or {},
+                "runs": [
+                run
+                for run in node_runs
+                if run["node_id"] != wait_run["node_id"] and run["status"] != "skipped"
+            ]
+                + [waited],
+            }
+
     execution.status = status_map[overall]
     execution.completed_at = completed_at
-    execution.metadata = {
+    metadata = {
         **(execution.metadata or {}),
         "node_runs": node_runs,
         "output": output,
+        "execution_data": {
+            "nodes": {run["node_id"]: run.get("items") or [] for run in node_runs},
+        },
         "summary": {
             "total": len(node_runs),
             "succeeded": sum(1 for run in node_runs if run["status"] == "succeeded"),
@@ -1209,9 +1655,13 @@ async def run_workflow(
             "skipped": sum(1 for run in node_runs if run["status"] == "skipped"),
             "waiting": sum(1 for run in node_runs if run["status"] == "waiting"),
             "warnings": len(continued_failures),
-            "duration_ms": int((completed_at - started_at).total_seconds() * 1000),
+            "duration_ms": int((completed_at - run_started).total_seconds() * 1000),
         },
     }
+    metadata.pop("wait", None)
+    if wait_info is not None:
+        metadata["wait"] = wait_info
+    execution.metadata = metadata
     if failed:
         execution.error_code = "NODE_FAILED"
         execution.error_message = "; ".join(
@@ -1229,6 +1679,8 @@ async def run_workflow(
         payload={"workflow_id": str(workflow.id), "run_source": execution.metadata.get("run_source")},
     ))
     for run in node_runs:
+        if run["node_id"] in seeded_ids:
+            continue  # already recorded by the run that parked
         sequence += 1
         events.append(ExecutionEvent(
             organization_id=organization_id,
@@ -1262,7 +1714,7 @@ async def run_workflow(
         "message": {
             "completed": "Workflow run completed",
             "failed": "Workflow run failed",
-            "waiting": "Workflow run is waiting for a human approval",
+            "waiting": "Workflow run is waiting (approval or scheduled resume)",
         }[overall],
         "node_runs": node_runs,
         "output": output,
@@ -1277,6 +1729,7 @@ async def run_single_node(
     trigger_input: Optional[Dict[str, Any]] = None,
     db: Optional[AsyncSession] = None,
     organization_id: Optional[UUID] = None,
+    model: Optional[ModelTarget] = None,
 ) -> Dict[str, Any]:
     """Execute one node (or trigger) of a definition — n8n's "Execute step".
 
@@ -1293,7 +1746,9 @@ async def run_single_node(
         if isinstance(variable, dict) and variable.get("name"):
             variables[str(variable["name"])] = variable.get("default")
 
-    ctx = RunContext(trigger={}, variables=variables, db=db, organization_id=organization_id)
+    ctx = RunContext(
+        trigger={}, variables=variables, db=db, organization_id=organization_id, model=model
+    )
     if triggers:
         await _exec_trigger(triggers[0], trigger_input, ctx)
     else:
@@ -1338,6 +1793,7 @@ async def run_single_node(
         "status": outcome.status,
         "inputs": inputs,
         "outputs": outcome.outputs,
+        "items": outcome.items if outcome.items is not None else as_items(outcome.outputs),
         "error": outcome.error,
         "error_code": outcome.error_code,
         "reason": outcome.reason,

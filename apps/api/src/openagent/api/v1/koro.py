@@ -14,17 +14,20 @@ keeps working fully offline.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import urlparse
 from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openagent.api.dependencies import get_current_org_context, require_permission
@@ -37,8 +40,11 @@ from openagent.connectors.crypto import decrypt_secret, encrypt_secret
 from openagent.core.config import get_settings
 from openagent.db.models import (
     Agent,
-    AgentVersion,
     AuditLog,
+    Conversation,
+    ConversationStatus,
+    Message,
+    MessageRole,
     Organization,
     Tool,
     Workflow,
@@ -60,6 +66,7 @@ router = APIRouter(prefix="/organizations/{organization_id}/copilot", tags=["kor
 ACTION_TYPES = ("run", "publish", "unpublish", "list", "inspect", "explain",
                 "diagnose", "create", "build", "edit", "create_agent", "none")
 MAX_GENERATED_NODES = 40
+MAX_CONTEXT_CHARS = 4000
 
 _SYSTEM_PROMPT = """You are Koro, the automation copilot inside OpenAgent.
 You can drive workflows, build complete automations and create agents. Reply with ONE JSON object and nothing else:
@@ -78,12 +85,21 @@ Workflow definition shape:
 Rules:
 - Triggers: manual config {}, schedule config {"cron": "0 9 * * *"}, webhook config {"path": "/hooks/name"}, event config {"event": "name"}.
 - Required configs: set {"values": {...}}; transform {"mapping": {...}} or {"expression": "..."}; condition {"expression": "..."}; switch {"routes": [{"name": "x", "expression": "..."}]}; filter {"items": "{{...}}", "predicate": "..."}; map {"items": "{{...}}", "expression": "..."}; sort {"field": "...", "direction": "asc"}; limit {"max_items": 10}; delay {"duration_seconds": 60}; webhook {"url": "https://...", "method": "POST"}; prompt {"model": "...", "prompt": "..."}; agent {"agent_id": "<id from the Agents list>"}; variable {"mode": "set", "name": "x"}; approval {"approvers": ["owner"]}.
-- Expressions use {{trigger.field}}, {{nodes.n1.field}} and {{variables.name}}.
+- Expressions use n8n syntax: {{ $json.field }} (current item), {{ $node["n1"].json.field }} or {{ $("Node name").first().json.field }} (another node), {{ $vars.name }} (variable), {{ $now.toISODate() }} (date). Method calls, arithmetic, ternaries and optional chaining work, e.g. {{ $json.email.toLowerCase() }}, {{ $json.total > 10 ? "big" : "small" }}, {{ $json.items.map(i => i.json.id).join(",") }}. The older {{trigger.field}}, {{nodes.n1.field}} and {{variables.name}} forms still evaluate and are accepted.
 - Every node must be reachable from a trigger. A node accepts one incoming edge; use merge for fan-in. Condition edges use label "true" or "false".
 - Only use agent nodes with an agent_id from the Agents list. Do not invent ids for tools, connectors, browser or code nodes; use prompt/set/webhook instead.
 - Never include secrets. Keep the workflow under 25 nodes.
 - For other requests: run, publish/unpublish, list, inspect (latest run), explain (describe the workflow structure), diagnose (explain why the latest run failed), or create (starter workflow).
 - Only reference workflows in the list. If the request is unclear, ask in "reply" and use type "none"."""
+
+# The canonical node registry is appended once so every planning turn sees the
+# same type/version surface the backend validates against.
+try:  # registry is generated; the API must still boot if it is absent.
+    from openagent.registry.node_registry import prompt_catalog as _registry_prompt_catalog
+
+    _SYSTEM_PROMPT = f"{_SYSTEM_PROMPT}\n\n{_registry_prompt_catalog()}"
+except Exception:  # pragma: no cover - missing generated registry only
+    pass
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +120,17 @@ class KoroChatRequest(BaseModel):
     # user actually sees, and ask for a preview instead of a saved version.
     definition: Optional[Dict[str, Any]] = None
     preview: bool = False
+    # The full-page assistant keeps a transcript per user: pass an existing
+    # conversation id, or persist=True to start a new one.
+    conversation_id: Optional[UUID] = None
+    persist: bool = False
+    # Small, app-supplied context (route, open workflow outline, validation,
+    # last-run summary). Appended to the system prompt, never persisted.
+    context: Optional[Dict[str, Any]] = None
+    # Per-chat model override. The organization default is untouched; a
+    # different endpoint is only honoured when it is local (see _chat_config).
+    model: Optional[str] = Field(default=None, max_length=200)
+    base_url: Optional[str] = Field(default=None, max_length=500)
 
 
 class KoroActionResponse(BaseModel):
@@ -119,6 +146,32 @@ class KoroChatResponse(BaseModel):
     source: Literal["model", "commands"]
     actions: List[KoroActionResponse] = Field(default_factory=list)
     workflow_id: Optional[str] = None
+    conversation_id: Optional[str] = None
+
+
+class ConversationSummary(BaseModel):
+    id: str
+    title: str
+    message_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConversationMessage(BaseModel):
+    id: str
+    role: str
+    content: str
+    created_at: datetime
+    source: Optional[str] = None
+    actions: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class ConversationDetail(ConversationSummary):
+    messages: List[ConversationMessage] = Field(default_factory=list)
+
+
+class ConversationRename(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
 
 
 class KoroStatusResponse(BaseModel):
@@ -162,6 +215,33 @@ class KoroSettingsUpdate(BaseModel):
                 "base_url must be an http(s) URL, e.g. http://127.0.0.1:11434/v1"
             )
         return cleaned
+
+
+class ProviderProbeRequest(BaseModel):
+    """Ask which models an endpoint serves before saving it as the copilot."""
+
+    base_url: str = Field(min_length=1, max_length=500)
+    api_key: Optional[str] = Field(default=None, max_length=500)
+
+    @field_validator("base_url")
+    @classmethod
+    def _http_url(cls, value: str) -> str:
+        cleaned = value.strip().rstrip("/")
+        parsed = urlparse(cleaned)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ValueError(
+                "base_url must be an http(s) URL, e.g. http://127.0.0.1:11434/v1"
+            )
+        return cleaned
+
+
+class ProviderProbeResponse(BaseModel):
+    ok: bool
+    provider: str
+    local: bool
+    base_url: str
+    models: List[str] = Field(default_factory=list)
+    error: Optional[str] = None
 
 
 class LocalModelInfo(BaseModel):
@@ -328,11 +408,53 @@ def _resolve_config(organization: Optional[Organization]) -> KoroConfig:
     )
 
 
+def _chat_config(
+    base: KoroConfig, model: Optional[str], base_url: Optional[str]
+) -> KoroConfig:
+    """Apply a per-chat model/endpoint override without touching saved defaults.
+
+    The stored API key belongs to the configured endpoint: it is never sent to
+    a different host, so a per-chat endpoint must be local. Switching cloud
+    providers stays a settings change (where the key is stored encrypted).
+    """
+    config = base
+    if base_url:
+        url = base_url.strip().rstrip("/")
+        if not url.startswith(("http://", "https://")):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"error": "base_url must be an http(s) URL", "code": "KORO_OVERRIDE_INVALID"},
+            )
+        if url != base.base_url:
+            provider, local = _describe_endpoint(url)
+            if not local:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={
+                        "error": (
+                            "A per-chat endpoint must be local. Change the default "
+                            "provider in Settings to use another hosted API."
+                        ),
+                        "code": "KORO_OVERRIDE_NOT_LOCAL",
+                    },
+                )
+            config = replace(
+                base, base_url=url, provider=provider, local=local,
+                api_key="", customized=True,
+            )
+    if model and model.strip():
+        config = replace(config, model=model.strip())
+    return config
+
+
 def _auth_headers(config: KoroConfig) -> Dict[str, str]:
     return {"Authorization": f"Bearer {config.api_key}"} if config.api_key else {}
 
 
-async def _list_models(config: KoroConfig, timeout: float = 3.0) -> List[str]:
+async def _probe_models(
+    config: KoroConfig, timeout: float = 4.0
+) -> tuple[List[str], Optional[str]]:
+    """List an endpoint's models, keeping the reason it failed."""
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.get(
@@ -340,16 +462,30 @@ async def _list_models(config: KoroConfig, timeout: float = 3.0) -> List[str]:
             )
             response.raise_for_status()
             payload = response.json()
+    except httpx.HTTPStatusError as exc:
+        status_code = exc.response.status_code
+        if status_code in (401, 403):
+            return [], "The endpoint rejected the API key."
+        return [], f"The endpoint answered {status_code}."
     except Exception:
-        return []
+        return [], "Could not reach the endpoint."
     models = payload.get("data") if isinstance(payload, dict) else None
     if not isinstance(models, list):
-        return []
+        return [], "The endpoint did not return a model list."
     names = []
     for item in models:
         if isinstance(item, dict) and item.get("id"):
             names.append(str(item["id"]))
-    return names
+        elif isinstance(item, str) and item:
+            names.append(item)
+    if not names:
+        return [], "The endpoint has no models installed."
+    return names, None
+
+
+async def _list_models(config: KoroConfig, timeout: float = 3.0) -> List[str]:
+    models, _ = await _probe_models(config, timeout=timeout)
+    return models
 
 
 async def _chat_completion(messages: List[Dict[str, str]], config: KoroConfig) -> str:
@@ -603,6 +739,30 @@ async def _repair_action(
             return action, attempt
         errors = _definition_errors(verdict)
     return action, 0
+
+
+def _context_block(context: Optional[Dict[str, Any]]) -> str:
+    """Describe the caller's screen for one turn (size-capped, never stored)."""
+    if not context:
+        return ""
+    try:
+        encoded = json.dumps(context, default=str)
+    except (TypeError, ValueError):
+        return ""
+    if len(encoded) > MAX_CONTEXT_CHARS:
+        encoded = encoded[:MAX_CONTEXT_CHARS] + "…"
+    mode = context.get("mode") if isinstance(context, dict) else None
+    text = (
+        "\nLive context from the app (read-only; it never contains credentials "
+        "or workflow parameters): " + encoded
+    )
+    if mode == "plan":
+        text += (
+            "\nThe composer is in PLAN mode: answer with a short, ordered plan "
+            "and use action type \"none\". Do not build, edit, run or publish "
+            "anything until the user switches to build mode."
+        )
+    return text
 
 
 def _extract_json(text: str) -> Optional[Dict[str, Any]]:
@@ -1424,6 +1584,78 @@ async def _load_organization(db: AsyncSession, organization_id: UUID) -> Organiz
     return organization
 
 
+def _conversation_title(message: str) -> str:
+    cleaned = re.sub(r"\s+", " ", message or "").strip()
+    if not cleaned:
+        return "New chat"
+    if len(cleaned) <= 80:
+        return cleaned
+    return cleaned[:77].rstrip(" .,:;") + "…"
+
+
+async def _load_conversation(
+    db: AsyncSession, organization_id: UUID, user_id: Optional[UUID], conversation_id: UUID,
+) -> Conversation:
+    """A user only ever reaches their own transcripts inside their organisation."""
+    result = await db.execute(
+        select(Conversation).where(
+            Conversation.id == conversation_id,
+            Conversation.organization_id == organization_id,
+            Conversation.user_id == user_id,
+            Conversation.deleted_at.is_(None),
+        )
+    )
+    conversation = result.scalar_one_or_none()
+    if conversation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "Conversation not found", "code": "NOT_FOUND"},
+        )
+    return conversation
+
+
+async def _persist_turn(
+    db: AsyncSession, conversation: Conversation, message: str, response: KoroChatResponse,
+) -> None:
+    """Append one user/assistant exchange to the transcript.
+
+    Generated workflow definitions are not copied into the transcript: the
+    workflow itself is saved, and definitions can be large.
+    """
+    # One transaction shares a single now() in PostgreSQL, so the two rows get
+    # explicit, ordered timestamps — transcripts replay in the right order.
+    now = datetime.now(timezone.utc)
+    conversation.updated_at = now
+    if not conversation.title:
+        conversation.title = _conversation_title(message)
+    db.add(Message(
+        conversation_id=conversation.id,
+        role=MessageRole.USER,
+        content=message[:4000],
+        metadata={},
+        created_at=now,
+    ))
+    db.add(Message(
+        conversation_id=conversation.id,
+        role=MessageRole.ASSISTANT,
+        content=response.reply[:8000],
+        created_at=now + timedelta(milliseconds=1),
+        metadata={
+            "source": response.source,
+            "actions": [
+                {
+                    "type": action.type,
+                    "status": action.status,
+                    "detail": action.detail[:1000],
+                    "workflow_id": action.workflow_id,
+                }
+                for action in response.actions
+            ],
+        },
+    ))
+    await db.commit()
+
+
 def _settings_response(config: KoroConfig, models: List[str]) -> KoroSettingsResponse:
     settings = get_settings()
     return KoroSettingsResponse(
@@ -1733,21 +1965,80 @@ async def koro_test_model(
     return TestModelResponse(**result)
 
 
-@router.post("/chat", response_model=KoroChatResponse)
-async def koro_chat(
+@router.post("/providers/models", response_model=ProviderProbeResponse)
+async def koro_provider_models(
     request: Request,
     organization_id: UUID,
-    data: KoroChatRequest,
+    data: ProviderProbeRequest,
     auth_context=Depends(get_current_org_context),
     db: AsyncSession = Depends(get_db),
 ):
-    """Ask Koro to operate a workflow, locally and offline-first."""
+    """List the models an endpoint serves so the chatbox can switch provider.
+
+    The key is used for this one request only — it is not stored here. Saving a
+    provider still goes through ``PUT /settings``, which encrypts the key.
+    """
     await require_permission("workflow:read")(request, db)
+    organization = await _load_organization(db, organization_id)
+    current = _resolve_config(organization)
+    base_url = data.base_url.strip().rstrip("/")
+    # Reuse the stored key when the user is probing the endpoint already saved.
+    api_key = (data.api_key or "").strip() or (
+        current.api_key if base_url == current.base_url else ""
+    )
+    provider, local = _describe_endpoint(base_url)
+    config = KoroConfig(
+        base_url=base_url,
+        model=current.model,
+        timeout=current.timeout,
+        api_key=api_key,
+        local=local,
+        provider=provider,
+    )
+    models, error = await _probe_models(config)
+    return ProviderProbeResponse(
+        ok=error is None,
+        provider=provider,
+        local=local,
+        base_url=base_url,
+        models=models[:60],
+        error=error,
+    )
+
+
+async def _chat_core(
+    request: Request,
+    organization_id: UUID,
+    data: KoroChatRequest,
+    auth_context: Any,
+    db: AsyncSession,
+) -> KoroChatResponse:
+    """Run one assistant turn (shared by the JSON and streaming routes)."""
+    await require_permission("workflow:read")(request, db)
+
+    # The full-page assistant keeps a transcript; the in-studio panel does not.
+    conversation: Optional[Conversation] = None
+    if data.conversation_id is not None:
+        conversation = await _load_conversation(
+            db, organization_id, auth_context.user_id, data.conversation_id,
+        )
+    elif data.persist:
+        conversation = Conversation(
+            organization_id=organization_id,
+            user_id=auth_context.user_id,
+            title=_conversation_title(data.message),
+            metadata={"kind": "assistant"},
+        )
+        db.add(conversation)
+        await db.flush()
+
     workflows = await _org_workflows(db, organization_id)
     agents = await _org_agents(db, organization_id)
     tools = await _org_tools(db, organization_id)
     organization = await _load_organization(db, organization_id)
-    config = _resolve_config(organization)
+    config = _chat_config(
+        _resolve_config(organization), data.model, data.base_url,
+    )
 
     models = await _list_models(config)
     source: Literal["model", "commands"] = "commands"
@@ -1808,6 +2099,7 @@ async def koro_chat(
             + "\nAgents: " + json.dumps(agent_context)
             + "\nTools: " + json.dumps(tool_context)
             + ("\nCurrent workflow: " + json.dumps(outline) if outline else "")
+            + _context_block(data.context)
         )
         messages = [
             {"role": "system", "content": system},
@@ -1868,7 +2160,13 @@ async def koro_chat(
                     "trigger it and what it should do."
                 )
             )
-            return KoroChatResponse(reply=reply, source=source if model_reply else "commands")
+            response = KoroChatResponse(
+                reply=reply, source=source if model_reply else "commands",
+            )
+            if conversation is not None:
+                await _persist_turn(db, conversation, data.message, response)
+                response.conversation_id = str(conversation.id)
+            return response
 
     action_payload = plan.get("action") or {}
     if not isinstance(action_payload, dict):
@@ -1961,9 +2259,194 @@ async def koro_chat(
     elif action.type in ("build", "edit", "create_agent", "explain", "diagnose"):
         # The action detail carries the concrete result (nodes, version, diagnosis).
         reply = action.detail
-    return KoroChatResponse(
+    response = KoroChatResponse(
         reply=reply,
         source=source,
         actions=[action],
         workflow_id=action.workflow_id,
+    )
+    if conversation is not None:
+        await _persist_turn(db, conversation, data.message, response)
+        response.conversation_id = str(conversation.id)
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Chat history (the full-page assistant)
+# ---------------------------------------------------------------------------
+
+@router.get("/conversations", response_model=List[ConversationSummary])
+async def koro_conversations(
+    request: Request,
+    organization_id: UUID,
+    auth_context=Depends(get_current_org_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """The caller's assistant transcripts, most recently active first."""
+    await require_permission("workflow:read")(request, db)
+    counts = (
+        select(Message.conversation_id, func.count(Message.id).label("message_count"))
+        .group_by(Message.conversation_id)
+        .subquery()
+    )
+    rows = await db.execute(
+        select(Conversation, func.coalesce(counts.c.message_count, 0))
+        .outerjoin(counts, counts.c.conversation_id == Conversation.id)
+        .where(
+            Conversation.organization_id == organization_id,
+            Conversation.user_id == auth_context.user_id,
+            Conversation.deleted_at.is_(None),
+            Conversation.status != ConversationStatus.DELETED,
+        )
+        .order_by(Conversation.updated_at.desc())
+        .limit(50)
+    )
+    return [
+        ConversationSummary(
+            id=str(conversation.id),
+            title=conversation.title or "New chat",
+            message_count=int(count or 0),
+            created_at=conversation.created_at,
+            updated_at=conversation.updated_at,
+        )
+        for conversation, count in rows.all()
+    ]
+
+
+@router.get("/conversations/{conversation_id}", response_model=ConversationDetail)
+async def koro_conversation(
+    request: Request,
+    organization_id: UUID,
+    conversation_id: UUID,
+    auth_context=Depends(get_current_org_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """One transcript with its messages, ready to replay in the assistant."""
+    await require_permission("workflow:read")(request, db)
+    conversation = await _load_conversation(
+        db, organization_id, auth_context.user_id, conversation_id,
+    )
+    result = await db.execute(
+        select(Message)
+        .where(Message.conversation_id == conversation.id)
+        .order_by(Message.created_at.asc())
+        .limit(200)
+    )
+    messages: List[ConversationMessage] = []
+    for message in result.scalars().all():
+        metadata = message.metadata if isinstance(message.metadata, dict) else {}
+        stored_actions = metadata.get("actions")
+        messages.append(ConversationMessage(
+            id=str(message.id),
+            role=message.role.value if hasattr(message.role, "value") else str(message.role),
+            content=message.content,
+            created_at=message.created_at,
+            source=str(metadata["source"]) if metadata.get("source") else None,
+            actions=[
+                item for item in stored_actions or [] if isinstance(item, dict)
+            ] if isinstance(stored_actions, list) else [],
+        ))
+
+    count = await db.execute(
+        select(func.count(Message.id)).where(Message.conversation_id == conversation.id)
+    )
+    return ConversationDetail(
+        id=str(conversation.id),
+        title=conversation.title or "New chat",
+        message_count=int(count.scalar_one() or 0),
+        created_at=conversation.created_at,
+        updated_at=conversation.updated_at,
+        messages=messages,
+    )
+
+
+@router.patch("/conversations/{conversation_id}", response_model=ConversationSummary)
+async def koro_rename_conversation(
+    request: Request,
+    organization_id: UUID,
+    conversation_id: UUID,
+    data: ConversationRename,
+    auth_context=Depends(get_current_org_context),
+    db: AsyncSession = Depends(get_db),
+):
+    await require_permission("workflow:read")(request, db)
+    conversation = await _load_conversation(
+        db, organization_id, auth_context.user_id, conversation_id,
+    )
+    conversation.title = re.sub(r"\s+", " ", data.title).strip()[:200]
+    await db.commit()
+    await db.refresh(conversation)
+    count = await db.execute(
+        select(func.count(Message.id)).where(Message.conversation_id == conversation.id)
+    )
+    return ConversationSummary(
+        id=str(conversation.id),
+        title=conversation.title or "New chat",
+        message_count=int(count.scalar_one() or 0),
+        created_at=conversation.created_at,
+        updated_at=conversation.updated_at,
+    )
+
+
+@router.delete("/conversations/{conversation_id}")
+async def koro_delete_conversation(
+    request: Request,
+    organization_id: UUID,
+    conversation_id: UUID,
+    auth_context=Depends(get_current_org_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Archive a transcript. Messages are kept (soft delete) for audit."""
+    await require_permission("workflow:read")(request, db)
+    conversation = await _load_conversation(
+        db, organization_id, auth_context.user_id, conversation_id,
+    )
+    conversation.deleted_at = datetime.now(timezone.utc)
+    conversation.status = ConversationStatus.DELETED
+    await db.commit()
+    return {"deleted": True, "conversation_id": str(conversation.id)}
+
+
+@router.post("/chat", response_model=KoroChatResponse)
+async def koro_chat(
+    request: Request,
+    organization_id: UUID,
+    data: KoroChatRequest,
+    auth_context=Depends(get_current_org_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Ask Koro to operate a workflow, locally and offline-first."""
+    return await _chat_core(request, organization_id, data, auth_context, db)
+
+
+@router.post("/chat/stream")
+async def koro_chat_stream(
+    request: Request,
+    organization_id: UUID,
+    data: KoroChatRequest,
+    auth_context=Depends(get_current_org_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Same turn as ``/chat``, streamed as SSE deltas for the chat thread.
+
+    The turn is computed once (actions, persistence) and the reply text is sent
+    in small deltas followed by the complete result, so the UI can render it
+    progressively and still receive actions and the conversation id.
+    """
+    result = await _chat_core(request, organization_id, data, auth_context, db)
+
+    async def events():
+        text = result.reply or ""
+        chunk = 28
+        for start in range(0, len(text), chunk):
+            payload = {"type": "delta", "text": text[start:start + chunk]}
+            yield f"data: {json.dumps(payload)}\n\n"
+            await asyncio.sleep(0.008)
+        final = {"type": "final", "result": result.model_dump(mode="json")}
+        yield f"data: {json.dumps(final)}\n\n"
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )

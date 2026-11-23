@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import {
+  Bug,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -9,6 +10,7 @@ import {
   Clock3,
   Loader2,
   Play,
+  Sparkles,
   X,
   XCircle,
 } from 'lucide-react';
@@ -54,9 +56,13 @@ function JsonBlock({ label, value }: { label: string; value: unknown }) {
 function RunRow({
   run,
   onSelectNode,
+  onDebugNode,
+  onAskKoro,
 }: {
   run: NodeRunView;
   onSelectNode?: (id: string) => void;
+  onDebugNode?: (id: string) => void;
+  onAskKoro?: (run: NodeRunView) => void;
 }) {
   const [open, setOpen] = React.useState(false);
   const meta = run.status === 'failed' && run.continued
@@ -99,15 +105,39 @@ function RunRow({
           )}
           <JsonBlock label="Input" value={run.inputs} />
           <JsonBlock label="Output" value={run.outputs} />
-          <div className="flex flex-wrap justify-between gap-2 text-[11px] text-muted-foreground">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
             <span className="oa-code">{run.node_id}</span>
-            <button
-              type="button"
-              onClick={() => onSelectNode?.(run.node_id)}
-              className="text-primary hover:underline"
-            >
-              Select on canvas
-            </button>
+            <span className="flex items-center gap-2">
+              {run.status === 'failed' && onAskKoro && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-[11px]"
+                  onClick={() => onAskKoro(run)}
+                >
+                  <Sparkles className="mr-1.5 h-3 w-3 text-primary" aria-hidden />
+                  Ask Koro to fix
+                </Button>
+              )}
+              {onDebugNode && (
+                <button
+                  type="button"
+                  onClick={() => onDebugNode(run.node_id)}
+                  className="inline-flex items-center gap-1 text-primary hover:underline"
+                >
+                  <Bug className="h-3 w-3" aria-hidden />
+                  {run.status === 'failed' ? 'Debug in editor' : 'Inspect data'}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => onSelectNode?.(run.node_id)}
+                className="text-primary hover:underline"
+              >
+                Select on canvas
+              </button>
+            </span>
           </div>
         </div>
       )}
@@ -144,14 +174,20 @@ export function RunPanel({
   error,
   onClose,
   onSelectNode,
+  onDebugNode,
   onRerun,
+  onAskKoro,
 }: {
   result: WorkflowRunResult | null;
   running: boolean;
   error: string | null;
   onClose: () => void;
   onSelectNode?: (id: string) => void;
+  /** Opens the node detail view on this run's input and output. */
+  onDebugNode?: (id: string) => void;
   onRerun: (input: Record<string, unknown>) => void;
+  /** Opens Koro with a debugging prompt for the failed step. */
+  onAskKoro?: (run: NodeRunView) => void;
 }) {
   const [inputText, setInputText] = React.useState('{}');
   const [inputError, setInputError] = React.useState<string | null>(null);
@@ -242,6 +278,8 @@ export function RunPanel({
                     key={`${run.node_id}:${run.started_at ?? ''}`}
                     run={run}
                     onSelectNode={onSelectNode}
+                    onDebugNode={onDebugNode}
+                    onAskKoro={onAskKoro}
                   />
                 ))}
               </ul>

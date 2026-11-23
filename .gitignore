@@ -75,3 +75,5 @@ dist
 
 # Generated repo-local dev launcher (created by setup.cmd / setup.ps1)
 openagent-dev.cmd
+# Read-only upstream reference checkout (n8n core study, not built or imported)
+reference/

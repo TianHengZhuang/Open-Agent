@@ -36,6 +36,7 @@ from openagent.core.logging import get_logger
 from openagent.db.models import (
     Workflow,
     WorkflowExecution,
+    WorkflowExecutionStatus,
     WorkflowExecutionTriggerType,
     WorkflowStatus,
     WorkflowVersion,
@@ -271,6 +272,79 @@ async def run_due_schedules(session: AsyncSession) -> List[Dict[str, Any]]:
     return fired
 
 
+async def resume_due_waits(session: AsyncSession) -> List[Dict[str, Any]]:
+    """Resume executions parked by a Wait node whose time has arrived.
+
+    Approvals have no ``wait.resume_at`` and are never touched here — a human
+    resumes those through the executions API.
+    """
+    now = datetime.now(timezone.utc)
+    rows = (
+        await session.execute(
+            select(WorkflowExecution).where(
+                WorkflowExecution.status == WorkflowExecutionStatus.WAITING
+            )
+        )
+    ).scalars().all()
+
+    resumed: List[Dict[str, Any]] = []
+    for execution in rows:
+        wait = (execution.metadata or {}).get("wait") or {}
+        resume_at = wait.get("resume_at")
+        if not resume_at:
+            continue
+        try:
+            due = datetime.fromisoformat(str(resume_at))
+        except ValueError:
+            logger.warning(
+                "Skipping execution with an unreadable resume time",
+                execution_id=str(execution.id),
+                resume_at=resume_at,
+            )
+            continue
+        if due.tzinfo is None:
+            due = due.replace(tzinfo=timezone.utc)
+        if due > now:
+            continue
+
+        workflow = (
+            await session.execute(
+                select(Workflow).where(
+                    Workflow.id == execution.workflow_id,
+                    Workflow.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one_or_none()
+        if workflow is None:
+            continue
+
+        try:
+            run = await run_workflow(
+                session,
+                workflow=workflow,
+                organization_id=execution.organization_id,
+                triggered_by=None,
+                definition=wait.get("definition"),
+                resume_from=execution,
+            )
+        except Exception as exc:  # one bad resume must not stop the sweep
+            logger.warning(
+                "Resuming a waiting workflow failed",
+                execution_id=str(execution.id),
+                error=str(exc),
+            )
+            continue
+
+        resumed.append(
+            {
+                "execution_id": run.get("execution_id"),
+                "workflow_id": str(workflow.id),
+                "status": run.get("status"),
+            }
+        )
+    return resumed
+
+
 async def start_schedule_loop(tick_seconds: float = SCHEDULE_TICK_SECONDS) -> None:
     """Long-running loop started from the API lifespan (cancelled on shutdown)."""
     if os.environ.get("OPENAGENT_WORKFLOW_SCHEDULER", "1").strip().lower() in (
@@ -291,8 +365,11 @@ async def start_schedule_loop(tick_seconds: float = SCHEDULE_TICK_SECONDS) -> No
             if maker is not None:
                 async with maker() as session:
                     fired = await run_due_schedules(session)
+                    resumed = await resume_due_waits(session)
                 if fired:
                     logger.info("Fired scheduled workflows", count=len(fired), fired=fired)
+                if resumed:
+                    logger.info("Resumed waiting workflows", count=len(resumed), resumed=resumed)
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # never let the loop die

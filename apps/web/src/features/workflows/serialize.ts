@@ -1,15 +1,19 @@
 import { workflowDefinitionSchema } from './schema';
-import { nodeMeta, sensitiveFields, triggerMeta } from './node-catalog';
+import { nodeMeta, sensitiveFields } from './node-catalog';
+import { fromN8nWorkflow, isN8nWorkflow } from './n8n-format';
+import { exportN8nJson } from './n8n-format';
+import { makeEdge, makeNode, makeTrigger, newId } from './factory';
 import {
   SCHEMA_VERSION,
+  SUPPORTED_SCHEMA_VERSIONS,
   emptyDefinition,
-  type TriggerType,
   type WorkflowDefinition,
-  type WorkflowEdge,
   type WorkflowNode,
   type WorkflowNodeType,
   type WorkflowTrigger,
 } from './types';
+
+export { makeEdge, makeNode, makeTrigger, newId };
 
 /** Hard cap for imported files (import security). */
 export const MAX_IMPORT_BYTES = 1024 * 1024;
@@ -26,42 +30,6 @@ export interface WorkflowEnvelope {
     description?: string;
     tags?: string[];
     definition: WorkflowDefinition;
-  };
-}
-
-let counter = 0;
-
-/** Deterministic-ish id factory (prefix + base36 time + counter). */
-export function newId(prefix: string): string {
-  counter += 1;
-  return `${prefix}_${Date.now().toString(36)}${counter.toString(36)}`;
-}
-
-export function makeTrigger(type: TriggerType, at?: { x: number; y: number }): WorkflowTrigger {
-  const meta = triggerMeta(type);
-  void meta;
-  return { id: newId('trg'), type, name: `New ${type} trigger`, config: {} };
-}
-
-export function makeNode(type: WorkflowNodeType, at?: { x: number; y: number }): WorkflowNode {
-  const meta = nodeMeta(type);
-  return {
-    id: newId('n'),
-    type,
-    type_version: meta.version,
-    name: `New ${meta.label}`,
-    position: at ?? { x: 120, y: 120 },
-    config: { ...meta.defaultConfig },
-  };
-}
-
-export function makeEdge(from: string, to: string, port?: string): WorkflowEdge {
-  return {
-    id: newId('e'),
-    from,
-    to,
-    label: port && port !== 'out' ? port : undefined,
-    condition: { when: 'always' },
   };
 }
 
@@ -92,6 +60,14 @@ export function importDefinition(raw: string): ImportResult {
   let candidate: unknown = parsed;
   let meta: ImportResult['meta'];
   let migrated = false;
+  if (!isEnvelope(parsed) && isN8nWorkflow(parsed)) {
+    const converted = fromN8nWorkflow(parsed);
+    if (!converted.ok || !converted.definition) {
+      return { ok: false, error: converted.error ?? 'Could not read that n8n workflow.' };
+    }
+    candidate = converted.definition;
+    meta = { name: converted.name, tags: converted.tags };
+  }
   if (isEnvelope(parsed)) {
     candidate = parsed.workflow.definition ?? parsed.workflow;
     meta = {
@@ -124,7 +100,7 @@ export function importDefinition(raw: string): ImportResult {
     })),
     nodes: d.nodes.map((n) => ({
       id: n.id,
-      type: n.type,
+      type: n.type as WorkflowNodeType,
       type_version: n.type_version,
       name: n.name,
       position: n.position,
@@ -140,6 +116,10 @@ export function importDefinition(raw: string): ImportResult {
       id: e.id,
       from: e.from,
       to: e.to,
+      from_port: e.from_port,
+      to_port: e.to_port,
+      connection_type: e.connection_type,
+      metadata: e.metadata,
       label: e.label,
       condition: e.condition ? { when: e.condition.when, expression: e.condition.expression } : undefined,
     })),
@@ -151,6 +131,9 @@ export function importDefinition(raw: string): ImportResult {
       description: v.description,
     })),
     settings: (d.settings ?? {}) as Record<string, unknown>,
+    error_workflow_id: d.error_workflow_id ?? undefined,
+    static_data: d.static_data,
+    metadata: d.metadata,
   };
   return { ok: true, definition, meta, migrated };
 }
@@ -169,18 +152,30 @@ function isEnvelope(v: unknown): v is {
 }
 
 /**
- * Schema migration gate. Only 1.0 exists: unknown versions are rejected
- * with a clear error so future 1.1/2.0 migrations plug in here.
+ * Additive schema migration. 1.0 files gain the 1.1 defaults without losing
+ * any author data; unknown versions are rejected with a clear error.
  */
 export function migrateDefinitionSchema(
   fromVersion: string,
   candidate: unknown,
 ): { ok: boolean; definition?: unknown; error?: string } {
   if (fromVersion === SCHEMA_VERSION) return { ok: true, definition: candidate };
-  return {
-    ok: false,
-    error: `Unsupported workflow schemaVersion '${fromVersion}'. This builder reads '${SCHEMA_VERSION}'.`,
+  if (!(SUPPORTED_SCHEMA_VERSIONS as readonly string[]).includes(fromVersion)) {
+    return {
+      ok: false,
+      error: `Unsupported workflow schemaVersion '${fromVersion}'. This builder reads ${SUPPORTED_SCHEMA_VERSIONS.join(' or ')}.`,
+    };
+  }
+  if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate)) {
+    return { ok: false, error: 'Workflow definition must be a JSON object.' };
+  }
+  const upgraded: Record<string, unknown> = {
+    ...(candidate as Record<string, unknown>),
+    schema_version: SCHEMA_VERSION,
   };
+  upgraded.static_data = upgraded.static_data ?? {};
+  upgraded.metadata = upgraded.metadata ?? {};
+  return { ok: true, definition: upgraded };
 }
 
 /** Portable export envelope. Definitions hold only references (validated). */
@@ -237,6 +232,16 @@ export function exportDefinition(definition: WorkflowDefinition): string {
 
 export function downloadDefinition(definition: WorkflowDefinition, slug: string): void {
   downloadText(exportDefinition(definition), `${slug || 'workflow'}.workflow.json`);
+}
+
+export function downloadN8n(
+  workflow: { name: string; slug: string; tags?: string[] },
+  definition: WorkflowDefinition,
+): void {
+  downloadText(
+    exportN8nJson(definition, { name: workflow.name, tags: workflow.tags }),
+    `${workflow.slug || 'workflow'}.n8n.json`,
+  );
 }
 
 export function downloadEnvelope(

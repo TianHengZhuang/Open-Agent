@@ -53,7 +53,16 @@ function writeList(key: string, list: string[]) {
   }
 }
 
-export function NodePalette({ editor, disabled = false }: { editor: WorkflowEditor; disabled?: boolean }) {
+export function NodePalette({
+  editor,
+  disabled = false,
+  searchRef,
+}: {
+  editor: WorkflowEditor;
+  disabled?: boolean;
+  /** Lets the canvas toolbar focus the node search from anywhere in the studio. */
+  searchRef?: React.RefObject<HTMLInputElement>;
+}) {
   const [q, setQ] = React.useState('');
   const [category, setCategory] = React.useState<string>('all');
   const [recent, setRecent] = React.useState<string[]>([]);
@@ -151,6 +160,7 @@ export function NodePalette({ editor, disabled = false }: { editor: WorkflowEdit
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
           <Input
+            ref={searchRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search nodes…"

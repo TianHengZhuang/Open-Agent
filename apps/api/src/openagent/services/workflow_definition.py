@@ -33,11 +33,17 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-SCHEMA_VERSION = "1.0"
-SUPPORTED_SCHEMA_VERSIONS = {"1.0"}
+from openagent.services.workflow_schema import (
+    SCHEMA_VERSION,
+    SUPPORTED_SCHEMA_VERSIONS,
+    normalize_definition,
+)
 
-TRIGGER_TYPES = {"manual", "webhook", "schedule", "event"}
-NODE_TYPES = {
+# Canonical registry: generated from the web authoring catalog. Fallback sets
+# keep the validator usable if the generated file is missing; a test asserts
+# every fallback type exists in the registry, so drift is caught in CI.
+_FALLBACK_TRIGGER_TYPES = {"manual", "webhook", "schedule", "event", "chat"}
+_FALLBACK_NODE_TYPES = {
     "agent",
     "prompt",
     "condition",
@@ -81,8 +87,73 @@ NODE_TYPES = {
     "retry",
     "correct",
 }
+
+try:  # pragma: no cover - exercised by the registry tests either way
+    from openagent.registry import node_registry as _registry
+
+    RegistryError = _registry.RegistryError
+    check_node_version = _registry.check_node_version
+    NODE_TYPES = set(_registry.node_types()) | _FALLBACK_NODE_TYPES
+    TRIGGER_TYPES = set(_registry.trigger_types()) | _FALLBACK_TRIGGER_TYPES
+except (ImportError, OSError, ValueError):  # pragma: no cover
+    RegistryError = RuntimeError  # type: ignore[assignment,misc]
+
+    def check_node_version(node_type: str, type_version: Any):  # type: ignore[misc]
+        return None, None
+
+    NODE_TYPES = set(_FALLBACK_NODE_TYPES)
+    TRIGGER_TYPES = set(_FALLBACK_TRIGGER_TYPES)
+
 EDGE_WHEN = {"always", "success", "failure"}
+# n8n's "Run Once for All Items" / "Run Once for Each Item".
+RUN_MODES = {"all", "each"}
 VARIABLE_TYPES = {"string", "number", "boolean", "json"}
+CONNECTION_TYPES = {"main", "error"}
+
+
+def _input_ports(node_type: Any, type_version: Optional[int] = None) -> list:
+    registry = globals().get("_registry")
+    if registry is None:
+        return []
+    try:
+        return registry.input_ports(str(node_type), type_version)
+    except Exception:
+        return []
+
+
+def _output_ports(node_type: Any, config: Any, type_version: Optional[int] = None) -> list:
+    registry = globals().get("_registry")
+    if registry is None:
+        return []
+    try:
+        return registry.output_ports(str(node_type), config if isinstance(config, dict) else {}, type_version)
+    except Exception:
+        return []
+
+
+def _trigger_ports(trigger_type: Any) -> list:
+    registry = globals().get("_registry")
+    if registry is None:
+        return []
+    try:
+        return registry.trigger_output_ports(str(trigger_type))
+    except Exception:
+        return []
+
+
+def _find_port(ports: list, name: str):
+    return next((p for p in ports if p.name == name), None)
+
+
+def _port_types(port: Any) -> list[str]:
+    return list(getattr(port, "data_types", ()) or [])
+
+
+def _ports_compatible(source: Any, target: Any) -> bool:
+    registry = globals().get("_registry")
+    if registry is None or source is None or target is None:
+        return True
+    return registry.are_port_types_compatible(_port_types(source), _port_types(target))
 
 # Node types that may terminate a branch without outgoing edges.
 TERMINAL_NODE_TYPES = {"approval"}
@@ -267,6 +338,19 @@ def validate_definition(definition: Any) -> ValidationResult:
             err("INVALID_NODE_FIELD",
                 f"Node {nid!r} 'type_version' must be a positive integer when present.",
                 node_id=nid, field=f"{where}.type_version")
+        elif tv is not None:
+            # Pinned-version compatibility: forward versions cannot run,
+            # older versions stay valid and warn about the available upgrade.
+            try:
+                version_error, version_warning = check_node_version(ntype, tv)
+            except RegistryError:
+                version_error, version_warning = None, None
+            if version_error:
+                err("NODE_VERSION_UNSUPPORTED", version_error,
+                    node_id=nid, field=f"{where}.type_version")
+            elif version_warning:
+                warn("NODE_VERSION_OUTDATED", version_warning,
+                     node_id=nid, field=f"{where}.type_version")
         pos = n.get("position")
         if pos is not None:
             if (not _is_dict(pos) or not isinstance(pos.get("x"), (int, float))
@@ -296,12 +380,19 @@ def validate_definition(definition: Any) -> ValidationResult:
                     err("INVALID_RETRY_POLICY",
                         f"Node {nid!r} 'retry_policy.max_attempts' must be an integer 0..10.",
                         node_id=nid, field=f"{where}.retry_policy.max_attempts")
+        run_mode = n.get("run_mode")
+        if run_mode is not None and run_mode not in RUN_MODES:
+            err("INVALID_RUN_MODE",
+                f"Node {nid!r} 'run_mode' must be one of {sorted(RUN_MODES)}.",
+                node_id=nid, field=f"{where}.run_mode")
 
     # ---- edges --------------------------------------------------------
     all_ids = trigger_ids | node_ids
-    seen_pairs: set[tuple[str, str]] = set()
+    seen_connections: set[tuple[str, str, str, str]] = set()
     outgoing: dict[str, list[str]] = {i: [] for i in all_ids}
     incoming: dict[str, list[str]] = {i: [] for i in all_ids}
+    inbound_ports: dict[tuple[str, str], list[str]] = {}
+    outbound_ports: dict[tuple[str, str], list[str]] = {}
     for i, e in enumerate(edges):
         where = f"edges[{i}]"
         if not _is_dict(e):
@@ -324,27 +415,121 @@ def validate_definition(definition: Any) -> ValidationResult:
             err("EDGE_INTO_TRIGGER", f"Triggers cannot have incoming edges ({src!r} -> {dst!r}).",
                 node_id=dst, field=where)
             continue
-        if (src, dst) in seen_pairs:
-            err("DUPLICATE_EDGE", f"Duplicate edge {src!r} -> {dst!r}.", field=where)
+
+        eid = e.get("id") if isinstance(e.get("id"), str) else None
+        src_node = nodes_by_id.get(src)
+        dst_node = nodes_by_id.get(dst)
+        src_type = src_node.get("type") if src_node else None
+        dst_type = dst_node.get("type") if dst_node else None
+        if dst_node is not None:
+            target_inputs = _input_ports(dst_type, dst_node.get("type_version"))
+        else:
+            target_inputs = []
+        if src_node is not None:
+            source_ports = _output_ports(
+                src_type, src_node.get("config"), src_node.get("type_version")
+            )
+        else:
+            trigger = next(
+                (t for t in triggers if isinstance(t, dict) and t.get("id") == src), {}
+            )
+            source_ports = _trigger_ports(trigger.get("type"))
+
+        connection_type = e.get("connection_type", "main")
+        if not isinstance(connection_type, str) or connection_type not in CONNECTION_TYPES:
+            err("UNSUPPORTED_CONNECTION_TYPE",
+                f"{where} 'connection_type' must be one of {sorted(CONNECTION_TYPES)}.",
+                node_id=src, edge_id=eid, field=f"{where}.connection_type")
+            connection_type = "main"
+        metadata = e.get("metadata")
+        if metadata is not None and not _is_dict(metadata):
+            err("INVALID_EDGE_METADATA", f"{where} 'metadata' must be an object.",
+                edge_id=eid, field=f"{where}.metadata")
+
+        from_port_name = e.get("from_port")
+        if from_port_name is not None and (
+                not isinstance(from_port_name, str) or not from_port_name.strip()):
+            err("INVALID_EDGE_PORT", f"{where} 'from_port' must be a non-empty string.",
+                node_id=src, edge_id=eid, field=f"{where}.from_port")
+            from_port_name = None
+        to_port_name = e.get("to_port")
+        if to_port_name is not None and (
+                not isinstance(to_port_name, str) or not to_port_name.strip()):
+            err("INVALID_EDGE_PORT", f"{where} 'to_port' must be a non-empty string.",
+                node_id=dst, edge_id=eid, field=f"{where}.to_port")
+            to_port_name = None
+
+        label = e.get("label")
+        source_port = None
+        if from_port_name is not None:
+            source_port = _find_port(source_ports, from_port_name)
+            if source_port is None and source_ports:
+                err("UNKNOWN_SOURCE_PORT",
+                    f"Node {src!r} has no output port {from_port_name!r}. "
+                    f"Available: {[p.name for p in source_ports]}.",
+                    node_id=src, edge_id=eid, field=f"{where}.from_port")
+        elif isinstance(label, str):
+            # Legacy branch label doubles as the port for condition/switch.
+            source_port = _find_port(source_ports, label)
+        if source_port is None and source_ports and from_port_name is None:
+            source_port = source_ports[0]
+
+        target_port = None
+        if to_port_name is not None:
+            target_port = _find_port(target_inputs, to_port_name)
+            if target_port is None and target_inputs:
+                err("UNKNOWN_TARGET_PORT",
+                    f"Node {dst!r} has no input port {to_port_name!r}. "
+                    f"Available: {[p.name for p in target_inputs]}.",
+                    node_id=dst, edge_id=eid, field=f"{where}.to_port")
+        elif target_inputs:
+            target_port = next((p for p in target_inputs if p.required), target_inputs[0])
+
+        if connection_type == "error":
+            error_port = _find_port(source_ports, "error")
+            if error_port is None:
+                err("CONNECTION_TYPE_UNAVAILABLE",
+                    f"Source {src!r} declares no 'error' output; error routing is not "
+                    "available for this node.",
+                    node_id=src, edge_id=eid, field=f"{where}.connection_type")
+            else:
+                source_port = error_port
+
+        if source_port is not None and target_port is not None and not _ports_compatible(
+                source_port, target_port):
+            err("INCOMPATIBLE_PORT_TYPES",
+                f"Edge {src!r}[{source_port.name} -> {dst!r}[{target_port.name}] cannot "
+                f"carry {_port_types(source_port)} into {_port_types(target_port)}.",
+                node_id=dst, edge_id=eid,
+                field=f"{where}.to_port")
+
+        source_name = source_port.name if source_port is not None else ""
+        target_name = target_port.name if target_port is not None else ""
+        key = (src, source_name, dst, target_name)
+        if key in seen_connections:
+            err("DUPLICATE_EDGE",
+                f"Duplicate connection {src!r}[{source_name or 'out'}] -> "
+                f"{dst!r}[{target_name or 'in'}].",
+                node_id=src, edge_id=eid, field=where)
             continue
-        seen_pairs.add((src, dst))
+        seen_connections.add(key)
         outgoing[src].append(dst)
         incoming[dst].append(src)
-        # Port / cardinality rules.
-        src_type = None
-        if src in nodes_by_id:
-            src_type = nodes_by_id[src].get("type")
-        label = e.get("label")
+        if target_name:
+            inbound_ports.setdefault((dst, target_name), []).append(eid or where)
+        if source_name:
+            outbound_ports.setdefault((src, source_name), []).append(eid or where)
+
         if src_type == "condition" and label is not None and label not in {"true", "false"}:
             warn("INVALID_EDGE_PORT",
                  f"Edge {src!r} -> {dst!r}: condition outputs are 'true'/'false', got label {label!r}.",
-                 edge_id=e.get("id") if isinstance(e.get("id"), str) else None, field=f"{where}.label")
+                 edge_id=eid, field=f"{where}.label")
         if src_type == "switch" and label is not None:
             routes = _switch_route_names(nodes_by_id[src])
             if routes and label not in routes and label != "default":
                 warn("INVALID_EDGE_PORT",
                      f"Edge {src!r} -> {dst!r}: label {label!r} matches no route {sorted(routes)}.",
-                     edge_id=e.get("id") if isinstance(e.get("id"), str) else None, field=f"{where}.label")
+                     edge_id=eid, field=f"{where}.label")
         cond = e.get("condition")
         if cond is not None:
             if not _is_dict(cond):
@@ -378,17 +563,49 @@ def validate_definition(definition: Any) -> ValidationResult:
             err("UNREACHABLE_NODE",
                 f"Node {nid!r} is not reachable from any trigger.",
                 node_id=nid)
-        # Input cardinality: one inbound edge per input, except fan-in nodes.
-        for nid in sorted(node_ids):
-            ntype = nodes_by_id[nid].get("type")
-            if ntype in FAN_IN_NODE_TYPES:
+        # Port cardinality: a port may accept multiple edges only when the
+        # canonical port definition says so (merge is the built-in fan-in).
+        for (nid, port_name), edge_refs in sorted(inbound_ports.items()):
+            node = nodes_by_id.get(nid)
+            if node is None:
                 continue
-            inbound = incoming.get(nid, [])
-            if len(inbound) > 1:
+            ports = _input_ports(node.get("type"), node.get("type_version"))
+            port = _find_port(ports, port_name)
+            if port is not None and not port.multiple and len(edge_refs) > 1:
                 err("MULTIPLE_INBOUND_EDGES",
-                    f"Node {nid!r} has {len(inbound)} incoming edges; "
-                    f"'{ntype}' accepts a single input. Use a merge node for fan-in.",
-                    node_id=nid)
+                    f"Node {nid!r} input {port_name!r} has {len(edge_refs)} incoming edges; "
+                    "this port accepts a single connection. Use a merge node for fan-in.",
+                    node_id=nid, field=f"input.{port_name}")
+        for (nid, port_name), edge_refs in sorted(outbound_ports.items()):
+            node = nodes_by_id.get(nid)
+            if node is None:
+                continue
+            ports = _output_ports(
+                node.get("type"), node.get("config"), node.get("type_version")
+            )
+            port = _find_port(ports, port_name)
+            if port is not None and not port.multiple and len(edge_refs) > 1:
+                err("PORT_FAN_OUT_EXCEEDED",
+                    f"Node {nid!r} output {port_name!r} allows one connection, got "
+                    f"{len(edge_refs)}.",
+                    node_id=nid, field=f"output.{port_name}")
+
+        # Required inputs: only checked for reachable nodes. An unreachable
+        # node already fails with UNREACHABLE_NODE, so this avoids duplicates.
+        for nid in sorted(node_ids):
+            node = nodes_by_id[nid]
+            ports = _input_ports(node.get("type"), node.get("type_version"))
+            required = [p for p in ports if p.required]
+            if not required:
+                continue
+            used = {name for (target, name) in inbound_ports if target == nid}
+            if not used:
+                continue
+            for port in required:
+                if port.name not in used:
+                    err("NODE_REQUIRED_INPUT_MISSING",
+                        f"Node {nid!r} requires a connection on input {port.name!r}.",
+                        node_id=nid, field=f"input.{port.name}")
 
     for tid in sorted(trigger_ids):
         if not outgoing.get(tid):
@@ -436,6 +653,17 @@ def validate_definition(definition: Any) -> ValidationResult:
     # ---- expressions: reference checks (advisory) -------------------------
     _check_expression_refs(warn, triggers, nodes_by_id, edges, var_names)
 
+    # ---- 1.1 definition metadata --------------------------------------
+    error_workflow_id = definition.get("error_workflow_id")
+    if error_workflow_id is not None and (
+            not isinstance(error_workflow_id, str) or not error_workflow_id.strip()):
+        err("INVALID_DEFINITION",
+            "'error_workflow_id' must be a non-empty string when present.",
+            field="error_workflow_id")
+    for key in ("static_data", "metadata"):
+        if key in definition and not _is_dict(definition.get(key)):
+            err("INVALID_DEFINITION", f"'{key}' must be a JSON object.", field=key)
+
     # ---- settings -----------------------------------------------------
     if isinstance(settings, dict) and settings:
         mc = settings.get("max_concurrency")
@@ -443,6 +671,18 @@ def validate_definition(definition: Any) -> ValidationResult:
             err("INVALID_SETTINGS",
                 "'settings.max_concurrency' must be an integer 1..32.",
                 field="settings.max_concurrency")
+        tz = settings.get("timezone")
+        if tz is not None and (not isinstance(tz, str) or not tz.strip()):
+            err("INVALID_SETTINGS",
+                "'settings.timezone' must be a non-empty IANA name.",
+                field="settings.timezone")
+        timeout = settings.get("execution_timeout_seconds")
+        if timeout is not None and (
+                not isinstance(timeout, int) or isinstance(timeout, bool)
+                or timeout < 1 or timeout > 86400):
+            err("INVALID_SETTINGS",
+                "'settings.execution_timeout_seconds' must be an integer 1..86400.",
+                field="settings.execution_timeout_seconds")
 
     return result
 
@@ -874,14 +1114,14 @@ def _check_cycles(err, all_ids: set[str], outgoing: dict[str, list[str]]) -> Non
 
 def empty_definition() -> dict[str, Any]:
     """Blank authoring starting point (matches frontend template)."""
-    return {
+    return normalize_definition({
         "schema_version": SCHEMA_VERSION,
         "triggers": [],
         "nodes": [],
         "edges": [],
         "variables": [],
         "settings": {},
-    }
+    })
 
 
 def slugify(name: str) -> str:
@@ -896,24 +1136,23 @@ ENVELOPE_FORMAT = "openagent-workflow"
 def migrate_definition(definition: Any) -> tuple[Any, bool, Optional[str]]:
     """Migrate a definition to the current schema version.
 
-    Returns (definition, migrated, error). Only ``1.0`` exists today, so
-    this is a compatibility gate with room for 1.1/2.0 migrations later.
-    Never raises on bad input.
+    Returns (definition, migrated, error). Supported versions are 1.0 and 1.1;
+    normalization only adds fields, preserving all author data. Never raises on
+    bad input.
     """
     if not _is_dict(definition):
         return definition, False, "Definition must be a JSON object."
     version = definition.get("schema_version")
-    if version == SCHEMA_VERSION:
+    if version not in SUPPORTED_SCHEMA_VERSIONS:
+        return (
+            definition,
+            False,
+            f"Unsupported schema_version {version!r}. Supported: {sorted(SUPPORTED_SCHEMA_VERSIONS)}.",
+        )
+    normalized = normalize_definition(definition)
+    if normalized == definition:
         return definition, False, None
-    if version in SUPPORTED_SCHEMA_VERSIONS:
-        migrated = dict(definition)
-        migrated["schema_version"] = SCHEMA_VERSION
-        return migrated, True, None
-    return (
-        definition,
-        False,
-        f"Unsupported schema_version {version!r}. Supported: {sorted(SUPPORTED_SCHEMA_VERSIONS)}.",
-    )
+    return normalized, True, None
 
 
 def build_envelope(workflow_name: str, slug: str, description: Optional[str],

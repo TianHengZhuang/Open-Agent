@@ -20,7 +20,13 @@ describe('node registry', () => {
     ]) {
       expect(types.has(t)).toBe(true);
     }
-    expect(TRIGGER_CATALOG.map((t) => t.type)).toEqual(['manual', 'webhook', 'schedule', 'event']);
+    expect(TRIGGER_CATALOG.map((t) => t.type)).toEqual([
+      'manual',
+      'webhook',
+      'schedule',
+      'event',
+      'chat',
+    ]);
   });
 
   it('groups definitions by extensible categories', () => {

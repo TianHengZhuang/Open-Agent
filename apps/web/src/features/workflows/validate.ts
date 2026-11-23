@@ -3,25 +3,31 @@ import type {
   ValidationResult,
   WorkflowDefinition,
 } from './types';
+import { SUPPORTED_SCHEMA_VERSIONS } from './types';
 import { checkExpressionRefs, extractExpressions } from './expressions';
+import {
+  WORKFLOW_REGISTRY,
+  arePortTypesCompatible,
+  checkNodeVersion,
+  defaultInputPort,
+  registryInputPorts,
+  registryOutputPorts,
+  triggerOutputPorts,
+  type RegistryPort,
+} from './registry';
 
 // Client-side validation mirroring the backend validator
 // (`openagent.services.workflow_definition`). Fast and synchronous so the
 // builder can validate on every edit; the server remains authoritative
 // (publish and dry-run call POST /validate).
 
-const TRIGGER_TYPES = new Set(['manual', 'webhook', 'schedule', 'event']);
-const NODE_TYPES = new Set([
-  'agent', 'prompt', 'condition', 'switch', 'merge', 'loop', 'set',
-  'transform', 'filter', 'map', 'variable', 'approval', 'webhook',
-  'tool', 'delay', 'subworkflow',
-  'code_agent', 'code_search', 'code_read', 'code_patch', 'code_test',
-  'code_lint', 'code_review', 'git_commit', 'create_pr',
-]);
+// Registry-derived so the editor accepts exactly what the API accepts.
+const TRIGGER_TYPES = new Set(WORKFLOW_REGISTRY.triggers.map((t) => t.type));
+const NODE_TYPES = new Set(WORKFLOW_REGISTRY.nodes.map((n) => n.type));
 const EDGE_WHEN = new Set(['always', 'success', 'failure']);
 const VARIABLE_TYPES = new Set(['string', 'number', 'boolean', 'json']);
 const TERMINAL = new Set(['approval']);
-const FAN_IN = new Set(['merge']);
+const CONNECTION_TYPES = new Set(['main', 'error']);
 const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 const SECRET_LIKE_KEYS = new Set([
@@ -62,8 +68,18 @@ export function validateWorkflowDefinition(def: WorkflowDefinition): ValidationR
     return { valid: false, errors, warnings };
   }
 
-  if (def.schema_version !== '1.0') {
-    err('UNSUPPORTED_SCHEMA_VERSION', `Unsupported schema_version '${def.schema_version}'. Expected '1.0'.`, undefined, 'schema_version');
+  if (!(SUPPORTED_SCHEMA_VERSIONS as readonly string[]).includes(def.schema_version)) {
+    err('UNSUPPORTED_SCHEMA_VERSION', `Unsupported schema_version '${def.schema_version}'. Expected one of ${SUPPORTED_SCHEMA_VERSIONS.join(', ')}.`, undefined, 'schema_version');
+  }
+  if (def.error_workflow_id !== undefined && def.error_workflow_id !== null
+      && (typeof def.error_workflow_id !== 'string' || !def.error_workflow_id.trim())) {
+    err('INVALID_DEFINITION', "'error_workflow_id' must be a non-empty string when present.", undefined, 'error_workflow_id');
+  }
+  for (const key of ['static_data', 'metadata'] as const) {
+    const value = def[key];
+    if (value !== undefined && !isObj(value)) {
+      err('INVALID_DEFINITION', `'${key}' must be a JSON object.`, undefined, key);
+    }
   }
 
   const triggers = Array.isArray(def.triggers) ? def.triggers : [];
@@ -94,6 +110,9 @@ export function validateWorkflowDefinition(def: WorkflowDefinition): ValidationR
     if (t.type === 'event' && !cfg.event) err('TRIGGER_CONFIG_REQUIRED', `Event trigger '${tid}' requires 'config.event'.`, tid, `${where}.config.event`);
   });
 
+  const triggerById = new Map(
+    triggers.filter(isObj).map((t) => [String((t as { id: unknown }).id), t]),
+  );
   const nodeIds = new Set<string>();
   const disabledIds = new Set<string>();
   const nodeById = new Map<string, (typeof nodes)[number]>();
@@ -108,8 +127,14 @@ export function validateWorkflowDefinition(def: WorkflowDefinition): ValidationR
     if (n.disabled === true) disabledIds.add(nid);
     if (!NODE_TYPES.has(n.type as string)) err('UNKNOWN_NODE_TYPE', `Node '${nid}' has unknown type '${n.type}'.`, nid, `${where}.type`);
     if (!n.name) err('NODE_MISSING_NAME', `Node '${nid}' requires a 'name'.`, nid, `${where}.name`);
-    if (n.type_version !== undefined && (typeof n.type_version !== 'number' || n.type_version < 1)) {
-      err('INVALID_NODE_FIELD', `Node '${nid}' 'type_version' must be a positive integer when present.`, nid, `${where}.type_version`);
+    if (n.type_version !== undefined) {
+      if (typeof n.type_version !== 'number' || n.type_version < 1) {
+        err('INVALID_NODE_FIELD', `Node '${nid}' 'type_version' must be a positive integer when present.`, nid, `${where}.type_version`);
+      } else {
+        const version = checkNodeVersion(String(n.type), n.type_version);
+        if (version.error) err('NODE_VERSION_UNSUPPORTED', version.error, nid, `${where}.type_version`);
+        else if (version.warning) warn('NODE_VERSION_OUTDATED', version.warning, nid, `${where}.type_version`);
+      }
     }
     const cfg = (isObj(n.config) ? n.config : {}) as Record<string, unknown>;
     if (!disabledIds.has(nid)) validateNodeConfig(err, nid, n.type as string, cfg, where);
@@ -128,7 +153,10 @@ export function validateWorkflowDefinition(def: WorkflowDefinition): ValidationR
   const outgoing = new Map<string, string[]>();
   const incoming = new Map<string, string[]>();
   allIds.forEach((id) => { outgoing.set(id, []); incoming.set(id, []); });
-  const pairs = new Set<string>();
+  const seenConnections = new Set<string>();
+  const inboundPorts = new Map<string, string[]>();
+  const outboundPorts = new Map<string, string[]>();
+  const findPort = (ports: RegistryPort[], name: string) => ports.find((p) => p.name === name);
   edges.forEach((e, i) => {
     const where = `edges[${i}]`;
     if (!isObj(e)) { err('INVALID_EDGE', `${where} must be an object.`, undefined, where); return; }
@@ -142,14 +170,79 @@ export function validateWorkflowDefinition(def: WorkflowDefinition): ValidationR
     if (!allIds.has(dst)) { err('UNKNOWN_EDGE_TARGET', `${where} references unknown target '${dst}'.`, undefined, `${where}.to`); return; }
     if (src === dst) { err('SELF_LOOP', `Node '${src}' cannot connect to itself.`, src, where); return; }
     if (triggerIds.has(dst)) { err('EDGE_INTO_TRIGGER', `Triggers cannot have incoming edges ('${src}' -> '${dst}').`, dst, where); return; }
-    if (pairs.has(`${src}→${dst}`)) { err('DUPLICATE_EDGE', `Duplicate edge '${src}' -> '${dst}'.`, undefined, where); return; }
-    pairs.add(`${src}→${dst}`);
-    outgoing.get(src)!.push(dst);
-    incoming.get(dst)!.push(src);
 
     const srcNode = nodeById.get(src);
+    const dstNode = nodeById.get(dst);
     const srcType = srcNode?.type as string | undefined;
+    const dstType = dstNode?.type as string | undefined;
     const eid = typeof e.id === 'string' ? e.id : undefined;
+    const sourcePorts: RegistryPort[] = srcNode
+      ? registryOutputPorts(String(srcType), srcNode.config, srcNode.type_version)
+      : triggerOutputPorts(String(triggerById.get(src)?.type ?? ''));
+    const targetPorts: RegistryPort[] = dstNode
+      ? registryInputPorts(String(dstType), dstNode.type_version)
+      : [];
+
+    const connectionType = e.connection_type ?? 'main';
+    if (typeof connectionType !== 'string' || !CONNECTION_TYPES.has(connectionType)) {
+      err('UNSUPPORTED_CONNECTION_TYPE', `${where} 'connection_type' must be main or error.`, src, `${where}.connection_type`, eid);
+    }
+    if (e.metadata !== undefined && !isObj(e.metadata)) {
+      err('INVALID_EDGE_METADATA', `${where} 'metadata' must be an object.`, undefined, `${where}.metadata`, eid);
+    }
+
+    let fromPortName = typeof e.from_port === 'string' ? e.from_port : undefined;
+    if (e.from_port !== undefined && !fromPortName?.trim()) {
+      err('INVALID_EDGE_PORT', `${where} 'from_port' must be a non-empty string.`, src, `${where}.from_port`, eid);
+      fromPortName = undefined;
+    }
+    let toPortName = typeof e.to_port === 'string' ? e.to_port : undefined;
+    if (e.to_port !== undefined && !toPortName?.trim()) {
+      err('INVALID_EDGE_PORT', `${where} 'to_port' must be a non-empty string.`, dst, `${where}.to_port`, eid);
+      toPortName = undefined;
+    }
+
+    let sourcePort = fromPortName ? findPort(sourcePorts, fromPortName) : undefined;
+    if (fromPortName && !sourcePort && sourcePorts.length > 0) {
+      err('UNKNOWN_SOURCE_PORT', `Node '${src}' has no output port '${fromPortName}'. Available: [${sourcePorts.map((p) => p.name).join(', ')}].`, src, `${where}.from_port`, eid);
+    }
+    if (!sourcePort && !fromPortName && typeof e.label === 'string') {
+      sourcePort = findPort(sourcePorts, e.label);
+    }
+    if (!sourcePort && !fromPortName && sourcePorts.length > 0) sourcePort = sourcePorts[0];
+
+    let targetPort = toPortName ? findPort(targetPorts, toPortName) : undefined;
+    if (toPortName && !targetPort && targetPorts.length > 0) {
+      err('UNKNOWN_TARGET_PORT', `Node '${dst}' has no input port '${toPortName}'. Available: [${targetPorts.map((p) => p.name).join(', ')}].`, dst, `${where}.to_port`, eid);
+    }
+    if (!targetPort && !toPortName) targetPort = defaultInputPort(targetPorts);
+
+    if (connectionType === 'error') {
+      const errorPort = findPort(sourcePorts, 'error');
+      if (!errorPort) {
+        err('CONNECTION_TYPE_UNAVAILABLE', `Source '${src}' declares no 'error' output; error routing is not available for this node.`, src, `${where}.connection_type`, eid);
+      } else {
+        sourcePort = errorPort;
+      }
+    }
+
+    if (sourcePort && targetPort && !arePortTypesCompatible(sourcePort.data_types, targetPort.data_types)) {
+      err('INCOMPATIBLE_PORT_TYPES', `Edge '${src}'[${sourcePort.name}] -> '${dst}'[${targetPort.name}] cannot carry ${sourcePort.data_types.join('|')} into ${targetPort.data_types.join('|')}.`, dst, `${where}.to_port`, eid);
+    }
+
+    const sourceName = sourcePort?.name ?? '';
+    const targetName = targetPort?.name ?? '';
+    const connectionKey = `${src}|${sourceName}|${dst}|${targetName}`;
+    if (seenConnections.has(connectionKey)) {
+      err('DUPLICATE_EDGE', `Duplicate connection '${src}'[${sourceName || 'out'}] -> '${dst}'[${targetName || 'in'}].`, src, where, eid);
+      return;
+    }
+    seenConnections.add(connectionKey);
+    outgoing.get(src)!.push(dst);
+    incoming.get(dst)!.push(src);
+    if (targetName) inboundPorts.set(`${dst}|${targetName}`, [...(inboundPorts.get(`${dst}|${targetName}`) ?? []), eid ?? where]);
+    if (sourceName) outboundPorts.set(`${src}|${sourceName}`, [...(outboundPorts.get(`${src}|${sourceName}`) ?? []), eid ?? where]);
+
     if (srcType === 'condition' && e.label !== undefined && e.label !== 'true' && e.label !== 'false') {
       warn('INVALID_EDGE_PORT', `Edge '${src}' -> '${dst}': condition outputs are 'true'/'false', got label '${e.label}'.`, undefined, `${where}.label`, eid);
     }
@@ -218,12 +311,38 @@ export function validateWorkflowDefinition(def: WorkflowDefinition): ValidationR
       err('UNREACHABLE_NODE', `Node '${nid}' is not reachable from any trigger.`, nid);
     }
   }
+  for (const [key, refs] of [...inboundPorts.entries()].sort()) {
+    const [nid, portName] = key.split('|');
+    const node = nodeById.get(nid);
+    if (!node) continue;
+    const port = findPort(registryInputPorts(String(node.type), node.type_version), portName);
+    if (port && !port.multiple && refs.length > 1) {
+      err('MULTIPLE_INBOUND_EDGES', `Node '${nid}' input '${portName}' has ${refs.length} incoming edges; this port accepts a single connection. Use a merge node for fan-in.`, nid, `input.${portName}`);
+    }
+  }
+  for (const [key, refs] of [...outboundPorts.entries()].sort()) {
+    const [nid, portName] = key.split('|');
+    const node = nodeById.get(nid);
+    if (!node) continue;
+    const port = findPort(registryOutputPorts(String(node.type), node.config, node.type_version), portName);
+    if (port && !port.multiple && refs.length > 1) {
+      err('PORT_FAN_OUT_EXCEEDED', `Node '${nid}' output '${portName}' allows one connection, got ${refs.length}.`, nid, `output.${portName}`);
+    }
+  }
+  // Required inputs are checked only for reachable nodes; unreachable nodes
+  // already fail with UNREACHABLE_NODE.
   for (const nid of [...nodeIds].sort()) {
-    const ntype = nodeById.get(nid)?.type as string;
-    if (FAN_IN.has(ntype)) continue;
-    const inbound = incoming.get(nid) ?? [];
-    if (inbound.length > 1) {
-      err('MULTIPLE_INBOUND_EDGES', `Node '${nid}' has ${inbound.length} incoming edges; '${ntype}' accepts a single input. Use a merge node for fan-in.`, nid);
+    const node = nodeById.get(nid)!;
+    const required = registryInputPorts(String(node.type), node.type_version).filter((p) => p.required);
+    if (required.length === 0) continue;
+    const used = new Set(
+      [...inboundPorts.keys()].filter((k) => k.startsWith(`${nid}|`)).map((k) => k.split('|')[1]),
+    );
+    if (used.size === 0) continue;
+    for (const port of required) {
+      if (!used.has(port.name)) {
+        err('NODE_REQUIRED_INPUT_MISSING', `Node '${nid}' requires a connection on input '${port.name}'.`, nid, `input.${port.name}`);
+      }
     }
   }
 
@@ -267,6 +386,28 @@ export function validateWorkflowDefinition(def: WorkflowDefinition): ValidationR
 
   // Expressions: advisory reference checks.
   checkExpressionRefsAll(warn, triggers, nodeById, edges, varNames);
+
+  // Settings (1.1 execution budget and timezone; max_concurrency in 1.0).
+  if (def.settings !== undefined && !isObj(def.settings)) {
+    err('INVALID_SETTINGS', "'settings' must be an object.", undefined, 'settings');
+  } else if (isObj(def.settings)) {
+    const maxConcurrency = def.settings.max_concurrency;
+    if (maxConcurrency !== undefined
+        && (typeof maxConcurrency !== 'number' || !Number.isInteger(maxConcurrency)
+            || maxConcurrency < 1 || maxConcurrency > 32)) {
+      err('INVALID_SETTINGS', "'settings.max_concurrency' must be an integer 1..32.", undefined, 'settings.max_concurrency');
+    }
+    const timezone = def.settings.timezone;
+    if (timezone !== undefined && (typeof timezone !== 'string' || !timezone.trim())) {
+      err('INVALID_SETTINGS', "'settings.timezone' must be a non-empty IANA name.", undefined, 'settings.timezone');
+    }
+    const timeout = def.settings.execution_timeout_seconds;
+    if (timeout !== undefined
+        && (typeof timeout !== 'number' || !Number.isInteger(timeout)
+            || timeout < 1 || timeout > 86400)) {
+      err('INVALID_SETTINGS', "'settings.execution_timeout_seconds' must be an integer 1..86400.", undefined, 'settings.execution_timeout_seconds');
+    }
+  }
 
   return { valid: errors.length === 0, errors, warnings };
 }

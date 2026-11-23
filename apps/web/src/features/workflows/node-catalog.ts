@@ -12,6 +12,7 @@ import {
   Clock,
   Play,
   Webhook,
+  MessagesSquare,
   CalendarClock,
   Zap,
   Database,
@@ -35,7 +36,12 @@ import {
   ScrollText,
   type LucideIcon,
 } from 'lucide-react';
-import type { TriggerType, WorkflowNode, WorkflowNodeType } from './types';
+import type {
+  PortDataType,
+  TriggerType,
+  WorkflowNode,
+  WorkflowNodeType,
+} from './types';
 
 // Central node-definition registry (§8). Definitions describe *authoring*
 // (palette, ports, config schema, docs); instances live in the definition.
@@ -81,6 +87,22 @@ export interface TriggerMeta {
   configFields: ConfigField[];
 }
 
+export interface PortDefinition {
+  /** Stable port name stored in edge.from_port / edge.to_port. */
+  name: string;
+  label: string;
+  direction: 'input' | 'output';
+  /** Port is compatible with a target port when any pair matches. */
+  dataTypes: PortDataType[];
+  /** A required input must receive at least one connection when reachable. */
+  required?: boolean;
+  /** Allow more than one connection on this port. */
+  multiple?: boolean;
+  description?: string;
+  /** Authoring default; execution semantics remain in the engine. */
+  defaultValue?: unknown;
+}
+
 export interface NodeMeta {
   type: WorkflowNodeType | string;
   /** Registry version of this definition (stored as node.type_version). */
@@ -93,6 +115,11 @@ export interface NodeMeta {
   /** Output port keys (geometry + edge labels). Single-port nodes use ['out']. */
   outputs: string[];
   hasInput: boolean;
+  /** Typed port definitions; inferred from outputs/hasInput when omitted. */
+  inputPorts?: PortDefinition[];
+  outputPorts?: PortDefinition[];
+  /** Switch ports are named by config.routes at runtime. */
+  dynamicOutputs?: boolean;
   /** Inputs beyond the first require a merge node upstream. */
   fanIn?: boolean;
   terminal?: boolean;
@@ -167,6 +194,44 @@ export const TRIGGER_CATALOG: TriggerMeta[] = [
       { key: 'event', label: 'Event name', type: 'text', placeholder: 'ticket.created', required: true },
     ],
   },
+  {
+    type: 'chat',
+    label: 'Chat Trigger',
+    description: 'Start runs from a chat message, inside the studio or on a hosted chat page.',
+    icon: MessagesSquare,
+    version: 1,
+    configFields: [
+      {
+        key: 'mode',
+        label: 'Mode',
+        type: 'select',
+        options: [
+          { value: 'embedded', label: 'Embedded (studio chat)' },
+          { value: 'hosted', label: 'Hosted page (/chat/…)' },
+        ],
+        help: 'Where people talk to this workflow. Both surfaces use the same Chat Trigger.',
+      },
+      { key: 'title', label: 'Title', type: 'text', placeholder: 'Support assistant' },
+      {
+        key: 'welcome_message',
+        label: 'Welcome message',
+        type: 'textarea',
+        placeholder: 'Hi! Ask me anything about your orders.',
+      },
+      {
+        key: 'starter_prompts',
+        label: 'Starter prompts',
+        type: 'stringlist',
+        help: 'One example message per line, shown before the first turn.',
+      },
+      {
+        key: 'memory',
+        label: 'Keep transcript locally',
+        type: 'boolean',
+        help: 'Sessions and messages stay in this browser (localStorage), keyed by session id.',
+      },
+    ],
+  },
 ];
 
 const BUILTIN_NODES: NodeMeta[] = [
@@ -217,6 +282,10 @@ const BUILTIN_NODES: NodeMeta[] = [
     source: 'builtin',
     outputs: ['true', 'false'],
     hasInput: true,
+    outputPorts: [
+      { name: 'true', label: 'True', direction: 'output', dataTypes: ['items'], multiple: true },
+      { name: 'false', label: 'False', direction: 'output', dataTypes: ['items'], multiple: true },
+    ],
     defaultConfig: { expression: '' },
     configFields: [
       { key: 'expression', label: 'Expression', type: 'expression', placeholder: "priority == 'high'", required: true, help: 'Evaluated against run variables by the execution engine.' },
@@ -232,6 +301,7 @@ const BUILTIN_NODES: NodeMeta[] = [
     source: 'builtin',
     outputs: ['out'],
     hasInput: true,
+    dynamicOutputs: true,
     defaultConfig: { routes: [{ name: 'default', expression: 'true' }] },
     configFields: [
       { key: 'routes', label: 'Routes (JSON)', type: 'json', help: '[{"name": "vip", "expression": "tier == \'vip\'"}]. Edges use the route name as label.', required: true },
@@ -248,6 +318,9 @@ const BUILTIN_NODES: NodeMeta[] = [
     outputs: ['out'],
     hasInput: true,
     fanIn: true,
+    inputPorts: [
+      { name: 'in', label: 'Input', direction: 'input', dataTypes: ['items'], required: true, multiple: true },
+    ],
     defaultConfig: {},
     configFields: [
       { key: 'mode', label: 'Mode', type: 'select', options: [{ value: 'first', label: 'First arrival wins' }, { value: 'all', label: 'Wait for all' }], help: 'Authoring hint for the future engine.' },
@@ -685,6 +758,70 @@ const BUILTIN_NODES: NodeMeta[] = [
       { key: 'workflow_id', label: 'Workflow ID', type: 'text', placeholder: 'Paste workflow id', required: true },
       { key: 'input', label: 'Input (JSON)', type: 'expression', placeholder: '{"ticket_id": "{{ticket_id}}"}' },
     ],
+  },
+  {
+    type: 'browser_agent',
+    version: 1,
+    label: 'Browser Agent',
+    description: 'Objective-driven browser session bounded by domain and risk policy.',
+    icon: Globe,
+    category: 'Agents',
+    source: 'builtin',
+    outputs: ['out'],
+    hasInput: true,
+    defaultConfig: { objective: '', max_steps: 100, allowed_domains: [], risk_policy: {} },
+    configFields: [
+      { key: 'objective', label: 'Objective', type: 'textarea', placeholder: 'Collect pricing from the plans page', required: true },
+      { key: 'max_steps', label: 'Max steps', type: 'number', min: 1, max: 500 },
+      { key: 'allowed_domains', label: 'Allowed domains (JSON)', type: 'json', placeholder: '["example.com"]' },
+      { key: 'risk_policy', label: 'Risk policy (JSON)', type: 'json', placeholder: '{"maxRiskLevel": "MEDIUM"}' },
+    ],
+    capabilities: ['browser'],
+  },
+  {
+    type: 'browser_action',
+    version: 1,
+    label: 'Browser Action',
+    description: 'One explicit browser interaction inside an existing browser session.',
+    icon: Wrench,
+    category: 'Tools',
+    source: 'builtin',
+    outputs: ['out'],
+    hasInput: true,
+    defaultConfig: { action_type: 'CLICK', selector: '' },
+    configFields: [
+      { key: 'action_type', label: 'Action', type: 'select', required: true, options: [
+        { value: 'NAVIGATE', label: 'Navigate' }, { value: 'CLICK', label: 'Click' },
+        { value: 'TYPE', label: 'Type' }, { value: 'FILL', label: 'Fill' },
+        { value: 'SELECT', label: 'Select' }, { value: 'EXTRACT', label: 'Extract' },
+        { value: 'SCREENSHOT', label: 'Screenshot' }, { value: 'WAIT', label: 'Wait' },
+        { value: 'PRESS_KEY', label: 'Press key' }, { value: 'SCROLL', label: 'Scroll' },
+      ] },
+      { key: 'selector', label: 'Selector', type: 'text', placeholder: '#pricing' },
+      { key: 'value', label: 'Value', type: 'expression', placeholder: '{{trigger.query}}' },
+      { key: 'url', label: 'URL', type: 'text', placeholder: 'https://example.com' },
+      { key: 'session_id', label: 'Browser session ID', type: 'text', placeholder: 'Reuse an existing session' },
+    ],
+    capabilities: ['browser'],
+  },
+  {
+    type: 'browser_extract',
+    version: 1,
+    label: 'Browser Extract',
+    description: 'Extract structured values from the current page with a CSS selector.',
+    icon: FileSearch,
+    category: 'Tools',
+    source: 'builtin',
+    outputs: ['out'],
+    hasInput: true,
+    defaultConfig: { selector: '', attribute: '', multiple: false },
+    configFields: [
+      { key: 'selector', label: 'CSS selector', type: 'text', placeholder: '.plan-price', required: true },
+      { key: 'attribute', label: 'Attribute', type: 'text', placeholder: 'href (defaults to text)' },
+      { key: 'multiple', label: 'All matches', type: 'boolean' },
+      { key: 'session_id', label: 'Browser session ID', type: 'text', placeholder: 'Reuse an existing session' },
+    ],
+    capabilities: ['browser', 'read'],
   },
   {
     type: 'code_agent',

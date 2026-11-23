@@ -18,8 +18,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [paletteOpen, setPaletteOpen] = React.useState(false);
   const pathname = usePathname();
-  // The workflow studio owns the full viewport below the global top bar.
+  // The workflow studio and the assistant own the full viewport below the
+  // global top bar (no page padding, their own scrolling regions).
   const isStudio = /^\/workflows\/[^/]+\/edit\/?$/.test(pathname ?? '');
+  const isChatPage = /^\/chat\/[^/]+\/?$/.test(pathname ?? '');
+  const isFullBleed = isStudio || isChatPage || pathname === '/assistant';
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -57,7 +60,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         tabIndex={-1}
         className={cn('min-h-screen pt-16 transition-all duration-200', collapsed ? 'lg:pl-16' : 'lg:pl-64')}
       >
-        {isStudio ? (
+        {isFullBleed ? (
           <div className="h-[calc(100dvh-4rem)] overflow-hidden">
             <ErrorBoundary label="page">{children}</ErrorBoundary>
           </div>

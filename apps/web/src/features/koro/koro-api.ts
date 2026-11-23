@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useOrganization } from '@/context/OrganizationContext';
+import type { KoroRequestContext } from './context';
 
 export interface KoroStatus {
   ready: boolean;
@@ -49,6 +50,37 @@ export interface KoroChatResult {
   source: 'model' | 'commands';
   actions: KoroAction[];
   workflow_id?: string | null;
+  conversation_id?: string | null;
+}
+
+/** One saved assistant transcript (the full-page chat history). */
+export interface AssistantConversation {
+  id: string;
+  title: string;
+  message_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** An action as stored on a transcript message (no generated definition). */
+export interface StoredAssistantAction {
+  type: string;
+  status: 'ok' | 'failed';
+  detail: string;
+  workflow_id?: string | null;
+}
+
+export interface AssistantConversationMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+  source?: string | null;
+  actions?: StoredAssistantAction[];
+}
+
+export interface AssistantConversationDetail extends AssistantConversation {
+  messages: AssistantConversationMessage[];
 }
 
 export interface KoroMessage {
@@ -142,6 +174,15 @@ export interface TestModelResult {
   error?: string | null;
 }
 
+export interface ProviderProbe {
+  ok: boolean;
+  provider: string;
+  local: boolean;
+  base_url: string;
+  models: string[];
+  error?: string | null;
+}
+
 function base(orgId: string | null): string {
   return `/organizations/${orgId}/copilot`;
 }
@@ -192,7 +233,79 @@ export function useKoroChat() {
       definition?: Record<string, unknown>;
       /** Return a validated definition instead of persisting a version. */
       preview?: boolean;
-    }) => api.post<KoroChatResult>(`${base(currentOrgId)}/chat`, input),
+      /** Continue an existing assistant transcript. */
+      conversation_id?: string;
+      /** Start and save a new transcript with this turn. */
+      persist?: boolean;
+      /** Route / open-workflow context for the system prompt. */
+      context?: KoroRequestContext;
+      /** Per-chat model override; the saved organization default is untouched. */
+      model?: string;
+      /** Local endpoint for the override (hosted providers stay in Settings). */
+      base_url?: string;
+      /** Cancel the in-flight reply (the composer's Stop button). */
+      signal?: AbortSignal;
+    }) => {
+      const { signal, ...body } = input;
+      return api.post<KoroChatResult>(`${base(currentOrgId)}/chat`, body, { signal });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Chat history (assistant transcripts)
+// ---------------------------------------------------------------------------
+
+export function useAssistantConversations(enabled = true) {
+  const { currentOrgId } = useOrganization();
+  return useQuery({
+    queryKey: ['koro', 'conversations', currentOrgId],
+    queryFn: () =>
+      api.get<AssistantConversation[]>(`${base(currentOrgId)}/conversations`),
+    enabled: enabled && !!currentOrgId,
+    staleTime: 10_000,
+    retry: false,
+  });
+}
+
+export function useAssistantConversation(id: string | null) {
+  const { currentOrgId } = useOrganization();
+  return useQuery({
+    queryKey: ['koro', 'conversation', currentOrgId, id],
+    queryFn: () =>
+      api.get<AssistantConversationDetail>(`${base(currentOrgId)}/conversations/${id}`),
+    enabled: !!currentOrgId && !!id,
+    staleTime: 0,
+    retry: false,
+  });
+}
+
+export function useRenameAssistantConversation() {
+  const { currentOrgId } = useOrganization();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; title: string }) =>
+      api.patch<AssistantConversation>(
+        `${base(currentOrgId)}/conversations/${input.id}`,
+        { title: input.title },
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['koro', 'conversations'] });
+    },
+  });
+}
+
+export function useDeleteAssistantConversation() {
+  const { currentOrgId } = useOrganization();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api.delete<{ deleted: boolean; conversation_id: string }>(
+        `${base(currentOrgId)}/conversations/${id}`,
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['koro', 'conversations'] });
+    },
   });
 }
 
@@ -279,5 +392,17 @@ export function useTestModel() {
   return useMutation({
     mutationFn: (input: { model: string; base_url?: string }) =>
       api.post<TestModelResult>(`${base(currentOrgId)}/models/test`, input),
+  });
+}
+
+/**
+ * Ask any OpenAI-compatible endpoint which models it serves before saving it.
+ * The key is only used for this probe; saving goes through `useUpdateKoroSettings`.
+ */
+export function useProviderModels() {
+  const { currentOrgId } = useOrganization();
+  return useMutation({
+    mutationFn: (input: { base_url: string; api_key?: string }) =>
+      api.post<ProviderProbe>(`${base(currentOrgId)}/providers/models`, input),
   });
 }

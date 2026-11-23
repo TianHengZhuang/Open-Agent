@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useTheme } from 'next-themes';
-import { Search, Plus, Play, Settings, Moon, Sun, Building2, LayoutDashboard, GitBranch } from 'lucide-react';
+import { Search, Plus, Play, Settings, Moon, Sun, Building2, LayoutDashboard, GitBranch, Sparkles } from 'lucide-react';
 
 interface Command {
   id: string;
@@ -44,6 +44,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
 
   const all: Command[] = [
     { id: 'dash', title: 'Go to Dashboard', icon: <LayoutDashboard className="h-4 w-4" />, run: () => go('/') },
+    { id: 'assistant', title: 'Open AI assistant', hint: 'Chat', icon: <Sparkles className="h-4 w-4" />, run: () => go('/assistant') },
     { id: 'agent', title: 'Create agent', hint: 'Agents', icon: <Plus className="h-4 w-4" />, run: () => go('/agents') },
     { id: 'wf', title: 'Create workflow', hint: 'Workflows', icon: <Plus className="h-4 w-4" />, run: () => go('/workflows/new') },
     { id: 'wflist', title: 'Open workflows', hint: 'Workflows', icon: <GitBranch className="h-4 w-4" />, run: () => go('/workflows') },

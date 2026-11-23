@@ -38,6 +38,65 @@ describe('editorReducer', () => {
     expect(s.past).toHaveLength(1);
   });
 
+  it('tidy layout is one undo step and a no-op once laid out', () => {
+    let s = createEditorState(withNode());
+    s = editorReducer(s, { type: 'apply-layout' });
+    expect(s.past).toHaveLength(1);
+    expect(s.definition.triggers[0].position).toEqual({ x: 80, y: 80 });
+    expect(s.definition.nodes[0].position!.x).toBeGreaterThan(80);
+    expect(s.definition.edges).toHaveLength(1);
+
+    s = editorReducer(s, { type: 'apply-layout' });
+    expect(s.past).toHaveLength(1);
+
+    s = editorReducer(s, { type: 'undo' });
+    expect(s.definition.nodes[0].position).toEqual({ x: 0, y: 0 });
+  });
+
+  it('disables selected nodes in one undo step and can re-enable them', () => {
+    let s = createEditorState(withNode());
+    s = editorReducer(s, { type: 'box-select', ids: ['n_1'] });
+    s = editorReducer(s, { type: 'set-disabled', ids: ['n_1'] });
+    expect(s.definition.nodes[0].disabled).toBe(true);
+    expect(s.past).toHaveLength(1);
+
+    // Flipping again restores the enabled state (no stale `disabled: false`).
+    s = editorReducer(s, { type: 'set-disabled', ids: ['n_1'] });
+    expect(s.definition.nodes[0].disabled).toBeUndefined();
+
+    s = editorReducer(s, { type: 'set-disabled', ids: ['n_1'], disabled: true });
+    expect(s.definition.nodes[0].disabled).toBe(true);
+
+    const unchanged = editorReducer(s, { type: 'set-disabled', ids: ['n_1'], disabled: true });
+    expect(unchanged).toBe(s);
+
+    s = editorReducer(s, { type: 'undo' });
+    expect(s.definition.nodes[0].disabled).toBeUndefined();
+  });
+
+  it('pins output in one undo step, skips identical re-pins, and unpins cleanly', () => {
+    let s = createEditorState(withNode());
+    const datum = { pinned_at: '2026-11-22T10:00:00Z', outputs: { items: [{ id: 1 }] }, status: 'succeeded' };
+    s = editorReducer(s, { type: 'pin-data', nodeId: 'n_1', datum });
+    expect(s.definition.settings.pinned_data?.n_1).toEqual(datum);
+    expect(s.past).toHaveLength(1);
+
+    // Identical output: no new history entry, same state object.
+    const unchanged = editorReducer(s, { type: 'pin-data', nodeId: 'n_1', datum: { ...datum, pinned_at: '2026-11-22T11:00:00Z' } });
+    expect(unchanged).toBe(s);
+
+    s = editorReducer(s, { type: 'unpin-data', nodeId: 'n_1' });
+    expect(s.definition.settings.pinned_data).toBeUndefined();
+    expect(s.past).toHaveLength(2);
+
+    // Unpinning a missing node is a no-op.
+    expect(editorReducer(s, { type: 'unpin-data', nodeId: 'n_1' })).toBe(s);
+
+    // Undo restores the pin and keeps other settings intact.
+    s = editorReducer(s, { type: 'undo' });
+    expect(s.definition.settings.pinned_data?.n_1.outputs).toEqual({ items: [{ id: 1 }] });
+  });
+
   it('supports undo/redo round-trip', () => {
     let s = createEditorState(withNode());
     s = editorReducer(s, { type: 'delete-selection' }); // nothing selected -> noop

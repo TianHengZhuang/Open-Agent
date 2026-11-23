@@ -16,6 +16,7 @@ import { ErrorState } from "@/components/ui/states";
 import {
   useWorkflow,
   useWorkflowMutations,
+  type WorkflowNodeRunResult,
   type WorkflowRunResult,
 } from "@/features/workflows/workflows-api";
 import { useWorkflowEditor } from "@/features/workflows/use-workflow-editor";
@@ -23,12 +24,19 @@ import { WorkflowCanvas, type AddNodeRequest } from "@/components/workflows/Work
 import { NodePalette } from "@/components/workflows/NodePalette";
 import { NodeCreator } from "@/components/workflows/NodeCreator";
 import { Inspector } from "@/components/workflows/Inspector";
+import { NodeDetailView } from "@/components/workflows/NodeDetailView";
+import { itemCount, type NodeRunLike } from "@/features/workflows/node-data";
 import { ValidationPanel } from "@/components/workflows/ValidationPanel";
 import { RunPanel } from "@/components/workflows/RunPanel";
 import { ExecutionLog } from "@/components/workflows/ExecutionLog";
+import { WorkflowEvaluations } from "@/components/workflows/WorkflowEvaluations";
 import { KoroPanel } from "@/components/workflows/KoroPanel";
+import { OpenAgentChatSystem } from "@/components/chat/OpenAgentChatSystem";
+import { useKoroChatbox } from "@/context/KoroContext";
+import { buildFixPrompt, type KoroScope } from "@/features/koro/context";
 import {
   downloadEnvelope,
+  downloadN8n,
   importDefinition,
 } from "@/features/workflows/serialize";
 import { emptyDefinition } from "@/features/workflows/types";
@@ -49,13 +57,14 @@ import {
   PanelRightClose,
   PanelRightOpen,
   ListChecks,
+  MessagesSquare,
   Workflow as WorkflowIcon,
   Settings,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type StudioView = "editor" | "executions";
+type StudioView = "editor" | "executions" | "evaluations";
 
 export default function WorkflowBuilderPage() {
   const params = useParams<{ id: string }>();
@@ -65,6 +74,7 @@ export default function WorkflowBuilderPage() {
   const { toast } = useToast();
   const router = useRouter();
   const fileRef = React.useRef<HTMLInputElement>(null);
+  const nodeSearchRef = React.useRef<HTMLInputElement>(null);
 
   const baseline = workflow?.latest_version?.definition ?? null;
   const editor = useWorkflowEditor({
@@ -78,19 +88,108 @@ export default function WorkflowBuilderPage() {
   const [runOpen, setRunOpen] = React.useState(false);
   const [runError, setRunError] = React.useState<string | null>(null);
   const [koroOpen, setKoroOpen] = React.useState(false);
+  const [ndvOpen, setNdvOpen] = React.useState(false);
+  // Single-step test results, keyed by node id (they take precedence over the
+  // last full run in the node detail view and canvas badges).
+  const [nodeResults, setNodeResults] = React.useState<
+    Record<string, WorkflowNodeRunResult>
+  >({});
+  const [testingNodeId, setTestingNodeId] = React.useState<string | null>(null);
 
   // Studio chrome state.
   const [view, setView] = React.useState<StudioView>("editor");
   const [paletteOpen, setPaletteOpen] = React.useState(true);
   const [panelOpen, setPanelOpen] = React.useState(true);
-  const [rightTab, setRightTab] = React.useState<"node" | "issues">("node");
+  const [rightTab, setRightTab] = React.useState<"node" | "issues" | "chat">("node");
   const [creator, setCreator] = React.useState<AddNodeRequest | null>(null);
+
+  const { openKoro } = useKoroChatbox();
+  // What the global chatbox may know about this canvas (no parameters or secrets).
+  const koroScope = React.useMemo<KoroScope>(
+    () => ({
+      route: workflow ? `/workflows/${workflow.id}/edit` : undefined,
+      workflowId: workflow?.id,
+      workflowName: workflow?.name,
+      nodeCount: editor.definition.nodes.length,
+      edgeCount: editor.definition.edges.length,
+      steps: editor.definition.nodes
+        .slice(0, 30)
+        .map((node) => ({ id: node.id, name: node.name, type: node.type })),
+      validation: {
+        errors: editor.validation.errors.length,
+        warnings: editor.validation.warnings.length,
+      },
+      lastRun: runResult
+        ? {
+            status: runResult.status,
+            failed_nodes: runResult.node_runs
+              .filter((run) => run.status === "failed")
+              .map((run) => run.node_name),
+          }
+        : undefined,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [workflow?.id, workflow?.name, editor.definition, editor.validation, runResult],
+  );
 
   const runStatus = React.useMemo(() => {
     const map: Record<string, string> = {};
     for (const run of runResult?.node_runs ?? []) map[run.node_id] = run.status;
+    for (const [id, run] of Object.entries(nodeResults)) map[id] = run.status;
     return map;
-  }, [runResult]);
+  }, [runResult, nodeResults]);
+
+  // Canvas badge data: item counts and error tooltips from the last data we saw.
+  const runItems = React.useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const run of runResult?.node_runs ?? []) {
+      if (run.outputs !== undefined) map[run.node_id] = itemCount(run.outputs);
+    }
+    for (const [id, run] of Object.entries(nodeResults)) {
+      if (run.outputs !== undefined) map[id] = itemCount(run.outputs);
+    }
+    return map;
+  }, [runResult, nodeResults]);
+  const runErrors = React.useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const run of runResult?.node_runs ?? []) {
+      if (run.error) map[run.node_id] = run.error;
+    }
+    for (const [id, run] of Object.entries(nodeResults)) {
+      if (run.error) map[id] = run.error;
+    }
+    return map;
+  }, [runResult, nodeResults]);
+
+  // Data for the node detail view: a step test wins over the last workflow run.
+  const selectedId = editor.selection?.id ?? null;
+  const ndvRun: NodeRunLike | null = React.useMemo(() => {
+    if (!selectedId) return null;
+    if (nodeResults[selectedId]) return nodeResults[selectedId];
+    return runResult?.node_runs.find((run) => run.node_id === selectedId) ?? null;
+  }, [selectedId, nodeResults, runResult]);
+
+  const openNodeDetail = React.useCallback(
+    (nodeId: string) => {
+      const kind = editor.definition.triggers.some((t) => t.id === nodeId)
+        ? "trigger"
+        : "node";
+      editor.select({ kind, id: nodeId });
+      setNdvOpen(true);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editor.definition],
+  );
+
+  // Deep link from a chat trace: /workflows/:id/edit?node=<id> opens that node
+  // once, even though the definition changes as the canvas is edited.
+  const deepLinked = React.useRef(false);
+  React.useEffect(() => {
+    if (deepLinked.current) return;
+    deepLinked.current = true;
+    const nodeId = new URLSearchParams(window.location.search).get("node");
+    if (nodeId) openNodeDetail(nodeId);
+  }, [openNodeDetail]);
 
   // Selecting something opens the node detail panel, like n8n's NDV.
   const selectionId = editor.selection?.id ?? null;
@@ -98,6 +197,11 @@ export default function WorkflowBuilderPage() {
     if (!selectionId) return;
     setPanelOpen(true);
     setRightTab("node");
+  }, [selectionId]);
+
+  // The detail view is bound to the selection; clearing it closes the overlay.
+  React.useEffect(() => {
+    if (!selectionId) setNdvOpen(false);
   }, [selectionId]);
 
   // Load saved definition when it arrives (once per version).
@@ -113,7 +217,7 @@ export default function WorkflowBuilderPage() {
         const draft = JSON.parse(raw);
         if (
           draft &&
-          draft.schema_version === "1.0" &&
+          (draft.schema_version === "1.0" || draft.schema_version === "1.1") &&
           JSON.stringify(draft) !== JSON.stringify(v.definition)
         ) {
           setDraftNotice(true);
@@ -296,9 +400,27 @@ export default function WorkflowBuilderPage() {
     }
   };
 
+  /** Test a single step and remember its result for the canvas + detail view. */
+  const runTestStep = async (nodeId: string, input: Record<string, unknown>) => {
+    setTestingNodeId(nodeId);
+    try {
+      const result = await mutations.executeNode.mutateAsync({
+        id: workflow.id,
+        node_id: nodeId,
+        definition: editor.definition,
+        input,
+      });
+      setNodeResults((prev) => ({ ...prev, [nodeId]: result }));
+      return result;
+    } finally {
+      setTestingNodeId(null);
+    }
+  };
+
   const doRun = async (input: Record<string, unknown> = {}) => {
     setRunOpen(true);
     setRunError(null);
+    setNodeResults({}); // the full run supersedes stale step results
     try {
       // Runs the canvas as-is — unsaved edits count, like n8n's test run.
       const result = await mutations.execute.mutateAsync({
@@ -348,6 +470,18 @@ export default function WorkflowBuilderPage() {
         ? "Migrated to the current schema version on import."
         : undefined,
     });
+  };
+
+  const focusNodeSearch = () => {
+    setPaletteOpen(true);
+    // The palette can mount on this tick; focus the search once it exists.
+    window.setTimeout(() => nodeSearchRef.current?.focus(), 40);
+  };
+
+  const openWorkflowVariables = () => {
+    editor.select(null);
+    setPanelOpen(true);
+    setRightTab("node");
   };
 
   const isActive = workflow.status === "active";
@@ -418,6 +552,15 @@ export default function WorkflowBuilderPage() {
               >
                 Executions
               </button>
+              <button
+                role="tab"
+                aria-selected={view === "evaluations"}
+                data-active={view === "evaluations"}
+                onClick={() => setView("evaluations")}
+                className="oa-studio-tab h-7"
+              >
+                Evaluations
+              </button>
             </div>
 
             <div className="ml-auto flex items-center gap-1">
@@ -438,11 +581,7 @@ export default function WorkflowBuilderPage() {
                 {panelOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
               </button>
               <button
-                onClick={() => {
-                  editor.select(null);
-                  setPanelOpen(true);
-                  setRightTab("node");
-                }}
+                onClick={openWorkflowVariables}
                 aria-label="Workflow settings"
                 title="Workflow settings and variables"
                 className="oa-icon-button hidden xl:inline-flex"
@@ -496,6 +635,20 @@ export default function WorkflowBuilderPage() {
                 className="oa-icon-button hidden sm:inline-flex"
               >
                 <Download className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() =>
+                  downloadN8n(
+                    { name: workflow.name, slug: workflow.slug, tags },
+                    editor.definition,
+                  )
+                }
+                aria-label="Export as n8n workflow JSON"
+                title="Export as n8n workflow JSON"
+                className="oa-icon-button hidden sm:inline-flex"
+              >
+                <Download className="h-4 w-4" />
+                <span className="ml-0.5 text-[9px] font-semibold uppercase">n8n</span>
               </button>
               <PermissionGate permission="workflow:update">
                 <button
@@ -596,6 +749,10 @@ export default function WorkflowBuilderPage() {
             <div className="min-h-0 flex-1">
               <ExecutionLog workflowId={workflow.id} />
             </div>
+          ) : view === "evaluations" ? (
+            <div className="min-h-0 flex-1">
+              <WorkflowEvaluations workflowId={workflow.id} />
+            </div>
           ) : (
             <div className="flex min-h-0 flex-1">
               {paletteOpen && (
@@ -603,7 +760,11 @@ export default function WorkflowBuilderPage() {
                   aria-label="Node library"
                   className="hidden w-[258px] shrink-0 border-r border-border md:block"
                 >
-                  <NodePalette editor={editor} disabled={!canEdit} />
+                  <NodePalette
+                    editor={editor}
+                    disabled={!canEdit}
+                    searchRef={nodeSearchRef}
+                  />
                 </aside>
               )}
 
@@ -612,7 +773,27 @@ export default function WorkflowBuilderPage() {
                   editor={editor}
                   readOnly={!canEdit}
                   runStatus={runStatus}
+                  runItems={runItems}
+                  runErrors={runErrors}
+                  activeNodeIds={testingNodeId ? [testingNodeId] : undefined}
+                  running={mutations.execute.isPending}
+                  lastRun={
+                    runResult
+                      ? {
+                          status: runResult.status,
+                          succeeded: runResult.summary?.succeeded ?? 0,
+                          failed: runResult.summary?.failed ?? 0,
+                          skipped: runResult.summary?.skipped ?? 0,
+                          waiting: runResult.summary?.waiting ?? 0,
+                        }
+                      : null
+                  }
+                  onOpenRunPanel={() => setRunOpen(true)}
+                  onOpenNodeDetail={openNodeDetail}
                   onAddNode={(request) => setCreator(request)}
+                  onBuildWithAi={() => setKoroOpen(true)}
+                  onSearchNodes={focusNodeSearch}
+                  onOpenVariables={openWorkflowVariables}
                 />
 
                 {runOpen && (
@@ -626,6 +807,16 @@ export default function WorkflowBuilderPage() {
                       onSelectNode={(nodeId) =>
                         editor.select({ kind: "node", id: nodeId })
                       }
+                      onDebugNode={openNodeDetail}
+                      onAskKoro={(run) =>
+                        openKoro(
+                          buildFixPrompt(run, {
+                            id: workflow.id,
+                            name: workflow.name,
+                          }),
+                          koroScope,
+                        )
+                      }
                     />
                   </div>
                 )}
@@ -634,7 +825,10 @@ export default function WorkflowBuilderPage() {
               {panelOpen && (
                 <aside
                   aria-label="Node detail"
-                  className="hidden w-[340px] shrink-0 flex-col border-l border-border bg-card xl:flex"
+                  className={cn(
+                    "hidden shrink-0 flex-col border-l border-border bg-card xl:flex",
+                    rightTab === "chat" ? "w-[420px]" : "w-[340px]",
+                  )}
                 >
                   <div
                     role="tablist"
@@ -671,6 +865,16 @@ export default function WorkflowBuilderPage() {
                       </span>
                     </button>
                     <button
+                      role="tab"
+                      aria-selected={rightTab === "chat"}
+                      data-active={rightTab === "chat"}
+                      onClick={() => setRightTab("chat")}
+                      className="oa-studio-tab h-7"
+                    >
+                      <MessagesSquare className="h-3.5 w-3.5" aria-hidden />
+                      Chat
+                    </button>
+                    <button
                       onClick={() => setPanelOpen(false)}
                       aria-label="Close node detail"
                       className="oa-icon-button ml-auto"
@@ -684,17 +888,23 @@ export default function WorkflowBuilderPage() {
                         editor={editor}
                         workflowId={workflow.id}
                         disabled={!canEdit}
-                        onTestStep={(nodeId, input) =>
-                          mutations.executeNode.mutateAsync({
-                            id: workflow.id,
-                            node_id: nodeId,
-                            definition: editor.definition,
-                            input,
-                          })
-                        }
+                        onTestStep={runTestStep}
+                        onExpand={() => setNdvOpen(true)}
+                        testInput={ndvRun?.inputs?.input as
+                          | Record<string, unknown>
+                          | undefined}
                       />
-                    ) : (
+                    ) : rightTab === "issues" ? (
                       <ValidationPanel editor={editor} />
+                    ) : (
+                      <OpenAgentChatSystem
+                        variant="panel"
+                        workflowId={workflow.id}
+                        workflowName={name || workflow.name}
+                        definition={editor.definition}
+                        disabled={!canEdit}
+                        onInspectNode={(nodeId) => openNodeDetail(nodeId)}
+                      />
                     )}
                   </div>
                 </aside>
@@ -734,6 +944,17 @@ export default function WorkflowBuilderPage() {
           </footer>
         </div>
       </Layout>
+
+      <NodeDetailView
+        open={ndvOpen}
+        onClose={() => setNdvOpen(false)}
+        editor={editor}
+        readOnly={!canEdit}
+        workflowId={workflow.id}
+        run={ndvRun}
+        runs={runResult?.node_runs}
+        onTestStep={runTestStep}
+      />
 
       <NodeCreator
         open={creator !== null}

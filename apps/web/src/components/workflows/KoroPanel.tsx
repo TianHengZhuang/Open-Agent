@@ -3,11 +3,8 @@
 import * as React from 'react';
 import Link from 'next/link';
 import {
-  ArrowUp,
   Bot,
   Check,
-  ChevronLeft,
-  Download,
   Loader2,
   Radio,
   SlidersHorizontal,
@@ -16,9 +13,18 @@ import {
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  AssistantComposer,
+  type ComposerMode,
+} from '@/components/assistant/AssistantComposer';
+import { useCredentials } from '@/features/integrations/integrations-api';
+import { withAttachments } from '@/features/assistant/attachments';
+import {
+  buildMentionResources,
+  loadSavedPrompts,
+} from '@/features/assistant/resources';
 import { toUserMessage } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { ModelManager } from '@/components/koro/ModelManager';
 import {
   useKoroChat,
   useKoroStatus,
@@ -26,7 +32,10 @@ import {
   type KoroAction,
   type KoroChatResult,
 } from '@/features/koro/koro-api';
-import type { WorkflowDefinition } from '@/features/workflows/types';
+import { emptyDefinition, type WorkflowDefinition } from '@/features/workflows/types';
+import { applyMutations, describeDiff, summarizeDiff } from '@/features/workflows/mutations';
+import { curlToMutation } from '@/features/workflows/curl';
+import { useChatModelOverride } from '@/features/koro/use-chat-model';
 
 type Entry = {
   role: 'user' | 'assistant';
@@ -35,7 +44,7 @@ type Entry = {
   source?: string;
 };
 
-type View = 'chat' | 'models' | 'settings';
+type View = 'chat' | 'settings';
 
 const QUICK_PROMPTS_EDITING = [
   'Add a step that sends a Slack message',
@@ -86,29 +95,52 @@ export function KoroPanel({
 }) {
   const [entries, setEntries] = React.useState<Entry[]>([]);
   const [text, setText] = React.useState('');
+  const [mode, setMode] = React.useState<ComposerMode>('build');
   const [view, setView] = React.useState<View>('chat');
   const [applied, setApplied] = React.useState<Set<number>>(new Set());
   const [baseUrl, setBaseUrl] = React.useState('');
   const [model, setModel] = React.useState('');
   const [apiKey, setApiKey] = React.useState('');
   const [clearKey, setClearKey] = React.useState(false);
-  const inputRef = React.useRef<HTMLInputElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const abortRef = React.useRef<AbortController | null>(null);
   const status = useKoroStatus(open);
   const chat = useKoroChat();
   const saveSettings = useUpdateKoroSettings();
+  const credentials = useCredentials();
+  const { override, setOverride } = useChatModelOverride(workflowId ?? null);
+
+  const resources = React.useMemo(
+    () =>
+      buildMentionResources({
+        nodes: (currentDefinition?.nodes ?? []).map((node) => ({
+          id: node.id,
+          name: node.name,
+          type: node.type,
+        })),
+        credentials: credentials.credentials.map((credential) => ({
+          id: credential.id,
+          name: credential.name,
+          provider: credential.provider,
+        })),
+        hasUpstream: (currentDefinition?.nodes.length ?? 0) > 0,
+        variables: (currentDefinition?.variables ?? []).map((variable) => ({
+          name: variable.name,
+          type: variable.type,
+        })),
+        prompts: workflowId ? QUICK_PROMPTS_EDITING : QUICK_PROMPTS_EMPTY,
+        savedPrompts: loadSavedPrompts(),
+      }),
+    [currentDefinition, credentials.credentials, workflowId],
+  );
 
   React.useEffect(() => {
     if (!open) return;
-    const timer = setTimeout(() => inputRef.current?.focus(), 80);
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', onKey);
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener('keydown', onKey);
-    };
+    return () => document.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
   React.useEffect(() => {
@@ -120,11 +152,45 @@ export function KoroPanel({
   const send = async (message: string) => {
     const trimmed = message.trim();
     if (!trimmed || chat.isPending) return;
+
+    // Pasted cURL is parsed locally into an HTTP Request node: no model needed.
+    if (/^curl\s/i.test(trimmed)) {
+      const mutation = curlToMutation(trimmed);
+      if (!mutation) {
+        setEntries((prev) => [
+          ...prev,
+          { role: 'user', content: trimmed },
+          {
+            role: 'assistant',
+            content:
+              "I couldn't read that cURL command. Paste the whole command, starting with `curl`.",
+          },
+        ]);
+        return;
+      }
+      const outcome = applyMutations(currentDefinition ?? emptyDefinition(), [mutation]);
+      setText('');
+      setEntries((prev) => [
+        ...prev,
+        { role: 'user', content: trimmed },
+        {
+          role: 'assistant',
+          content: `Added an HTTP Request node from your cURL (${String(
+            mutation.config?.method ?? 'GET',
+          )} ${String(mutation.config?.url ?? '')}). Connect it on the canvas, then save or test.`,
+        },
+      ]);
+      onApply?.(outcome.definition);
+      return;
+    }
+
     const history = entries
       .slice(-6)
       .map((entry) => ({ role: entry.role, content: entry.content }));
     setEntries((prev) => [...prev, { role: 'user', content: trimmed }]);
     setText('');
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
       const hasCanvas =
         !!currentDefinition &&
@@ -135,6 +201,9 @@ export function KoroPanel({
         history,
         definition: hasCanvas ? (currentDefinition as unknown as Record<string, unknown>) : undefined,
         preview: true,
+        model: override?.model,
+        base_url: override?.base_url,
+        signal: controller.signal,
       });
       setEntries((prev) => [
         ...prev,
@@ -147,10 +216,13 @@ export function KoroPanel({
       ]);
       onResult?.(result);
     } catch (error) {
+      if ((error as Error)?.name === 'AbortError') return;
       setEntries((prev) => [
         ...prev,
         { role: 'assistant', content: toUserMessage(error) },
       ]);
+    } finally {
+      abortRef.current = null;
     }
   };
 
@@ -232,18 +304,6 @@ export function KoroPanel({
             </p>
           </div>
           <button
-            onClick={() => (view === 'chat' ? setView('models') : setView('chat'))}
-            aria-label="Local models"
-            aria-pressed={view === 'models'}
-            title="Local models"
-            className={cn(
-              'rounded-lg p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground',
-              view === 'models' && 'bg-accent text-foreground',
-            )}
-          >
-            <Download className="h-4 w-4" />
-          </button>
-          <button
             onClick={openSettings}
             aria-label="Endpoint settings"
             aria-pressed={view === 'settings'}
@@ -265,27 +325,6 @@ export function KoroPanel({
         </header>
 
         <div ref={scrollRef} className="oa-scroll min-h-0 flex-1 overflow-y-auto">
-          {view === 'models' && (
-            <div>
-              <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
-                <button
-                  onClick={() => setView('chat')}
-                  className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                >
-                  <ChevronLeft className="h-3.5 w-3.5" /> Back to chat
-                </button>
-                <Link
-                  href="/settings/models"
-                  className="ml-auto text-[11px] font-medium text-primary hover:underline"
-                  onClick={onClose}
-                >
-                  Open full page
-                </Link>
-              </div>
-              <ModelManager compact onActivated={() => void status.refetch()} />
-            </div>
-          )}
-
           {view === 'settings' && (
             <form onSubmit={submitSettings} className="space-y-3 p-4">
               <div>
@@ -375,15 +414,6 @@ export function KoroPanel({
                 <Button
                   type="button"
                   size="sm"
-                  variant="outline"
-                  onClick={() => setView('models')}
-                >
-                  <Download className="mr-1.5 h-3.5 w-3.5" />
-                  Local models
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
                   variant="ghost"
                   onClick={() => setView('chat')}
                 >
@@ -409,10 +439,13 @@ export function KoroPanel({
                     {status.data.install_hint}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    <Button size="sm" onClick={() => setView('models')}>
-                      <Download className="mr-1.5 h-3.5 w-3.5" />
+                    <Link
+                      href="/settings/models"
+                      onClick={onClose}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                    >
                       Download a model
-                    </Button>
+                    </Link>
                     <Button size="sm" variant="outline" onClick={openSettings}>
                       <SlidersHorizontal className="mr-1.5 h-3.5 w-3.5" />
                       Use another endpoint
@@ -484,6 +517,14 @@ export function KoroPanel({
                       (action.type === 'build' || action.type === 'edit') &&
                       isWorkflowDefinition(payload?.definition);
                     const wasApplied = applied.has(index);
+                    const summary = canApply
+                      ? describeDiff(
+                          summarizeDiff(
+                            currentDefinition ?? emptyDefinition(),
+                            payload.definition as WorkflowDefinition,
+                          ),
+                        )
+                      : null;
                     return (
                       <div
                         key={i}
@@ -498,6 +539,11 @@ export function KoroPanel({
                           <Radio className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
                           <span>{action.detail}</span>
                         </p>
+                        {summary && (
+                          <p className="mt-1 pl-5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                            {summary}
+                          </p>
+                        )}
                         {(canApply || action.type === 'create_agent') && (
                           <div className="mt-2 flex flex-wrap items-center gap-1.5 pl-5">
                             {canApply && onApply && (
@@ -551,44 +597,37 @@ export function KoroPanel({
         </div>
 
         {view === 'chat' && (
-          <form
-            className="shrink-0 border-t border-border/70 bg-card p-2.5"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void send(text);
-            }}
-          >
-            <div className="flex items-end gap-2 rounded-xl border bg-background p-1.5 focus-within:border-primary">
-              <input
-                ref={inputRef}
-                value={text}
-                onChange={(event) => setText(event.target.value)}
-                placeholder="Describe what to build or change…"
-                aria-label="Message the AI assistant"
-                className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground"
-              />
-              <Button
-                type="submit"
-                size="sm"
-                disabled={!text.trim() || chat.isPending}
-                aria-label="Send message"
-              >
-                <ArrowUp className="h-4 w-4" />
-              </Button>
-            </div>
-            <p className="oa-caption mt-1.5 flex items-center gap-1.5 px-1">
-              <span
-                className={cn(
-                  'h-1.5 w-1.5 rounded-full',
-                  ready ? 'bg-emerald-500' : 'bg-amber-500',
-                )}
-                aria-hidden
-              />
-              {local
-                ? 'Runs on this machine · actions are permission-checked'
-                : 'Uses your configured endpoint · actions are permission-checked'}
-            </p>
-          </form>
+          <div className="shrink-0 border-t border-border/70 bg-card p-2.5">
+            <AssistantComposer
+              value={text}
+              onChange={setText}
+              onSend={(payload) => void send(withAttachments(payload.text, payload.attachments))}
+              onStop={() => abortRef.current?.abort()}
+              busy={chat.isPending}
+              resources={resources}
+              starters={prompts}
+              mode={mode}
+              onModeChange={setMode}
+              modelOverride={override}
+              onModelOverride={setOverride}
+              autoFocus
+              placeholder="Describe what to build or change…"
+              footer={
+                <p className="oa-caption mt-1.5 flex items-center gap-1.5 px-1">
+                  <span
+                    className={cn(
+                      'h-1.5 w-1.5 rounded-full',
+                      ready ? 'bg-emerald-500' : 'bg-amber-500',
+                    )}
+                    aria-hidden
+                  />
+                  {local
+                    ? 'Runs on this machine · actions are permission-checked'
+                    : 'Uses your configured endpoint · actions are permission-checked'}
+                </p>
+              }
+            />
+          </div>
         )}
       </aside>
     </div>

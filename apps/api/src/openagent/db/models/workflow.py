@@ -63,6 +63,10 @@ class WorkflowVersion(TimestampMixin, UUIDMixin, Base):
     )
     version: Mapped[str] = mapped_column(String(50), nullable=False)
     definition: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    # Schema version of the stored definition (1.0 legacy, 1.1 additive).
+    schema_version: Mapped[str] = mapped_column(
+        String(20), default="1.0", server_default="1.0", nullable=False
+    )
     status: Mapped[str] = mapped_column(String(50), default="draft", nullable=False)
     created_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True

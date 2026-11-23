@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { WORKFLOW_REGISTRY } from './registry';
+
 // Zod schemas for the workflow definition contract v1.
 // Used to type-check imported JSON before it enters the editor.
 // Graph rules (cycles, reachability, required config) live in validate.ts
@@ -7,18 +9,21 @@ import { z } from 'zod';
 
 const triggerSchema = z.object({
   id: z.string().min(1),
-  type: z.enum(['manual', 'webhook', 'schedule', 'event']),
+  type: z.enum(['manual', 'webhook', 'schedule', 'event', 'chat']),
   name: z.string().min(1),
   config: z.record(z.string(), z.unknown()).default({}),
 });
 
+const nodeTypeSchema = z
+  .string()
+  .min(1)
+  .refine((type) => WORKFLOW_REGISTRY.nodes.some((n) => n.type === type), {
+    message: 'Unknown node type in the canonical registry',
+  });
+
 const nodeSchema = z.object({
   id: z.string().min(1),
-  type: z.enum([
-    'agent', 'prompt', 'condition', 'switch', 'merge', 'loop', 'set',
-    'transform', 'filter', 'map', 'variable', 'approval', 'webhook',
-    'tool', 'delay', 'subworkflow',
-  ]),
+  type: nodeTypeSchema,
   type_version: z.number().int().min(1).optional(),
   name: z.string().min(1),
   position: z.object({ x: z.number(), y: z.number() }).optional(),
@@ -35,6 +40,10 @@ const edgeSchema = z.object({
   id: z.string().min(1),
   from: z.string().min(1),
   to: z.string().min(1),
+  from_port: z.string().min(1).optional(),
+  to_port: z.string().min(1).optional(),
+  connection_type: z.enum(['main', 'error']).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   label: z.string().optional(),
   condition: z
     .object({
@@ -59,6 +68,10 @@ export const workflowDefinitionSchema = z.object({
   edges: z.array(edgeSchema),
   variables: z.array(variableSchema).default([]),
   settings: z.record(z.string(), z.unknown()).default({}),
+  // Additive 1.1 fields; optional so 1.0 files still import.
+  error_workflow_id: z.string().min(1).nullish(),
+  static_data: z.record(z.string(), z.unknown()).default({}),
+  metadata: z.record(z.string(), z.unknown()).default({}),
 });
 
 export type WorkflowDefinitionInput = z.infer<typeof workflowDefinitionSchema>;

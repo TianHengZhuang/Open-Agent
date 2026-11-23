@@ -7,7 +7,8 @@ import { OrganizationSwitcher } from '@/components/org-switcher';
 import { Notifications } from '@/components/notifications';
 import { UserMenu } from '@/components/user-menu';
 import { useTheme } from 'next-themes';
-import { Sun, Moon } from 'lucide-react';
+import { Sun, Moon, Sparkles } from 'lucide-react';
+import { useKoroChatbox } from '@/context/KoroContext';
 
 interface TopNavProps {
   onMenuClick?: () => void;
@@ -17,6 +18,7 @@ interface TopNavProps {
 
 export function TopNav({ onMenuClick, sidebarCollapsed, onOpenPalette }: TopNavProps) {
   const { theme, setTheme } = useTheme();
+  const { openKoro } = useKoroChatbox();
 
   return (
     <header
@@ -56,6 +58,15 @@ export function TopNav({ onMenuClick, sidebarCollapsed, onOpenPalette }: TopNavP
         </button>
 
         <div className="ml-auto flex items-center gap-1 sm:gap-2">
+          <button
+            onClick={() => openKoro()}
+            aria-label="Open Koro assistant (Control J)"
+            title="Koro — AI assistant (Ctrl J)"
+            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <Sparkles className="h-5 w-5 text-primary" aria-hidden />
+            <span className="hidden text-xs font-medium sm:inline">Koro</span>
+          </button>
           <button
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             aria-label="Toggle color theme"

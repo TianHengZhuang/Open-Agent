@@ -158,8 +158,9 @@ def test_unsupported_schema_version_rejected():
 
 def test_empty_definition_helper_shape():
     d = empty_definition()
-    assert d["schema_version"] == "1.0"
+    assert d["schema_version"] == "1.1"
     assert d["triggers"] == [] and d["nodes"] == [] and d["edges"] == []
+    assert d["static_data"] == {} and d["metadata"] == {}
 
 
 def test_slugify():
@@ -277,6 +278,10 @@ def test_validation_issues_carry_severity():
 
 def test_migrate_current_version_passes_through():
     d = _valid_definition()
+    d["schema_version"] = "1.1"
+    d["static_data"] = {}
+    d["metadata"] = {}
+    d["settings"] = {"sticky_notes": [], "pinned_data": {}}
     out, migrated, error = migrate_definition(d)
     assert error is None and migrated is False and out is d
 
@@ -290,10 +295,12 @@ def test_envelope_round_trip():
     d = _valid_definition()
     env = build_envelope("Triage", "triage", "desc", ["support"], d)
     assert env["format"] == "openagent-workflow"
-    assert env["schemaVersion"] == "1.0"
+    assert env["schemaVersion"] == "1.1"
     parsed, error = parse_envelope(env)
     assert error is None
-    assert parsed["definition"] == d
+    assert parsed["definition"]["schema_version"] == "1.1"
+    assert parsed["definition"]["nodes"] == d["nodes"]
+    assert parsed["definition"]["edges"] == d["edges"]
     assert parsed["meta"]["name"] == "Triage"
     assert parsed["meta"]["tags"] == ["support"]
 
@@ -301,7 +308,7 @@ def test_envelope_round_trip():
 def test_parse_envelope_accepts_raw_definition():
     parsed, error = parse_envelope(_valid_definition())
     assert error is None
-    assert parsed["definition"]["schema_version"] == "1.0"
+    assert parsed["definition"]["schema_version"] == "1.1"
 
 
 def test_parse_envelope_rejects_garbage():

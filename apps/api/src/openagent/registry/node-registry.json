@@ -1,0 +1,2917 @@
+{
+  "registry_version": "1.0",
+  "generated_from": "apps/web/src/features/workflows/node-catalog.ts",
+  "nodes": [
+    {
+      "type": "agent",
+      "version": 1,
+      "label": "Agent",
+      "description": "Delegate reasoning and action to an agent.",
+      "category": "Agents",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "capabilities": [
+        "reasoning",
+        "tools"
+      ],
+      "default_config": {
+        "agent_id": ""
+      },
+      "config_fields": [
+        {
+          "key": "agent_id",
+          "label": "Agent ID",
+          "type": "text",
+          "required": true,
+          "placeholder": "Select or paste agent ID"
+        },
+        {
+          "key": "task",
+          "label": "Task",
+          "type": "expression",
+          "placeholder": "What should the agent do with {{ticket}}?"
+        },
+        {
+          "key": "max_steps",
+          "label": "Max steps",
+          "type": "number",
+          "min": 1,
+          "max": 100
+        }
+      ]
+    },
+    {
+      "type": "approval",
+      "version": 1,
+      "label": "Approval",
+      "description": "Pause for human sign-off.",
+      "category": "Human",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "terminal": true,
+      "default_config": {
+        "approvers": []
+      },
+      "config_fields": [
+        {
+          "key": "approvers",
+          "label": "Approvers",
+          "type": "stringlist",
+          "required": true,
+          "help": "One email or role per line."
+        },
+        {
+          "key": "message",
+          "label": "Message",
+          "type": "textarea",
+          "placeholder": "What needs review?"
+        }
+      ]
+    },
+    {
+      "type": "assert",
+      "version": 1,
+      "label": "Assert",
+      "description": "Hard success/failure condition. Fails the branch when unmet.",
+      "category": "AI",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "conditions": []
+      },
+      "config_fields": [
+        {
+          "key": "conditions",
+          "label": "Conditions (JSON)",
+          "type": "json",
+          "required": true,
+          "placeholder": "[{\"kind\": \"json_schema\", \"params\": {\"schema\": {}}}]"
+        }
+      ]
+    },
+    {
+      "type": "browser_action",
+      "version": 1,
+      "label": "Browser Action",
+      "description": "One explicit browser interaction inside an existing browser session.",
+      "category": "Tools",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "capabilities": [
+        "browser"
+      ],
+      "default_config": {
+        "action_type": "CLICK",
+        "selector": ""
+      },
+      "config_fields": [
+        {
+          "key": "action_type",
+          "label": "Action",
+          "type": "select",
+          "required": true,
+          "options": [
+            {
+              "value": "NAVIGATE",
+              "label": "Navigate"
+            },
+            {
+              "value": "CLICK",
+              "label": "Click"
+            },
+            {
+              "value": "TYPE",
+              "label": "Type"
+            },
+            {
+              "value": "FILL",
+              "label": "Fill"
+            },
+            {
+              "value": "SELECT",
+              "label": "Select"
+            },
+            {
+              "value": "EXTRACT",
+              "label": "Extract"
+            },
+            {
+              "value": "SCREENSHOT",
+              "label": "Screenshot"
+            },
+            {
+              "value": "WAIT",
+              "label": "Wait"
+            },
+            {
+              "value": "PRESS_KEY",
+              "label": "Press key"
+            },
+            {
+              "value": "SCROLL",
+              "label": "Scroll"
+            }
+          ]
+        },
+        {
+          "key": "selector",
+          "label": "Selector",
+          "type": "text",
+          "placeholder": "#pricing"
+        },
+        {
+          "key": "value",
+          "label": "Value",
+          "type": "expression",
+          "placeholder": "{{trigger.query}}"
+        },
+        {
+          "key": "url",
+          "label": "URL",
+          "type": "text",
+          "placeholder": "https://example.com"
+        },
+        {
+          "key": "session_id",
+          "label": "Browser session ID",
+          "type": "text",
+          "placeholder": "Reuse an existing session"
+        }
+      ]
+    },
+    {
+      "type": "browser_agent",
+      "version": 1,
+      "label": "Browser Agent",
+      "description": "Objective-driven browser session bounded by domain and risk policy.",
+      "category": "Agents",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "capabilities": [
+        "browser"
+      ],
+      "default_config": {
+        "objective": "",
+        "max_steps": 100,
+        "allowed_domains": [],
+        "risk_policy": {}
+      },
+      "config_fields": [
+        {
+          "key": "objective",
+          "label": "Objective",
+          "type": "textarea",
+          "required": true,
+          "placeholder": "Collect pricing from the plans page"
+        },
+        {
+          "key": "max_steps",
+          "label": "Max steps",
+          "type": "number",
+          "min": 1,
+          "max": 500
+        },
+        {
+          "key": "allowed_domains",
+          "label": "Allowed domains (JSON)",
+          "type": "json",
+          "placeholder": "[\"example.com\"]"
+        },
+        {
+          "key": "risk_policy",
+          "label": "Risk policy (JSON)",
+          "type": "json",
+          "placeholder": "{\"maxRiskLevel\": \"MEDIUM\"}"
+        }
+      ]
+    },
+    {
+      "type": "browser_extract",
+      "version": 1,
+      "label": "Browser Extract",
+      "description": "Extract structured values from the current page with a CSS selector.",
+      "category": "Tools",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "capabilities": [
+        "browser",
+        "read"
+      ],
+      "default_config": {
+        "selector": "",
+        "attribute": "",
+        "multiple": false
+      },
+      "config_fields": [
+        {
+          "key": "selector",
+          "label": "CSS selector",
+          "type": "text",
+          "required": true,
+          "placeholder": ".plan-price"
+        },
+        {
+          "key": "attribute",
+          "label": "Attribute",
+          "type": "text",
+          "placeholder": "href (defaults to text)"
+        },
+        {
+          "key": "multiple",
+          "label": "All matches",
+          "type": "boolean"
+        },
+        {
+          "key": "session_id",
+          "label": "Browser session ID",
+          "type": "text",
+          "placeholder": "Reuse an existing session"
+        }
+      ]
+    },
+    {
+      "type": "code_agent",
+      "version": 1,
+      "label": "Code Agent",
+      "description": "Objective-driven coding task on an isolated workspace branch. Bounded steps; push stays approval-gated.",
+      "category": "Agents",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "capabilities": [
+        "code_execution",
+        "tool_execution"
+      ],
+      "documentation_url": "/docs/code-agent/overview",
+      "default_config": {
+        "objective": "",
+        "repository_id": "",
+        "max_steps": 50
+      },
+      "config_fields": [
+        {
+          "key": "objective",
+          "label": "Objective",
+          "type": "expression",
+          "required": true,
+          "placeholder": "Fix failing auth tests and open a PR",
+          "help": "Coding goal, e.g. \"Fix failing tests in the authentication module and create a PR.\""
+        },
+        {
+          "key": "repository_id",
+          "label": "Repository ID",
+          "type": "text",
+          "required": true,
+          "placeholder": "Paste repository id"
+        },
+        {
+          "key": "branch_strategy",
+          "label": "Branch strategy",
+          "type": "text",
+          "placeholder": "openagent/task/<task-id>"
+        },
+        {
+          "key": "max_steps",
+          "label": "Max steps",
+          "type": "number",
+          "min": 1,
+          "max": 200
+        },
+        {
+          "key": "max_duration",
+          "label": "Max duration (seconds)",
+          "type": "number",
+          "min": 60
+        },
+        {
+          "key": "execution_policy",
+          "label": "Execution policy (JSON)",
+          "type": "json",
+          "placeholder": "{\"profiles\": [\"TEST\", \"LINT\"]}"
+        },
+        {
+          "key": "review_policy",
+          "label": "Review policy (JSON)",
+          "type": "json"
+        },
+        {
+          "key": "approval_policy",
+          "label": "Approval policy (JSON)",
+          "type": "json"
+        }
+      ]
+    },
+    {
+      "type": "code_lint",
+      "version": 1,
+      "label": "Code Lint",
+      "description": "Run linters / type checks through gated execution profiles.",
+      "category": "Tools",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "capabilities": [
+        "code_execution",
+        "test"
+      ],
+      "documentation_url": "/docs/code-agent/testing",
+      "default_config": {
+        "command": "",
+        "profile": "LINT"
+      },
+      "config_fields": [
+        {
+          "key": "command",
+          "label": "Command",
+          "type": "expression",
+          "required": true,
+          "placeholder": "ruff check src/ && mypy src/"
+        },
+        {
+          "key": "profile",
+          "label": "Profile",
+          "type": "select",
+          "options": [
+            {
+              "value": "LINT",
+              "label": "LINT"
+            },
+            {
+              "value": "TYPECHECK",
+              "label": "TYPECHECK"
+            },
+            {
+              "value": "TEST",
+              "label": "TEST"
+            },
+            {
+              "value": "BUILD",
+              "label": "BUILD"
+            }
+          ]
+        },
+        {
+          "key": "task_id",
+          "label": "Coding task ID",
+          "type": "text",
+          "placeholder": "Paste coding task id"
+        },
+        {
+          "key": "workspace_id",
+          "label": "Workspace ID",
+          "type": "text",
+          "placeholder": "Paste workspace id"
+        }
+      ]
+    },
+    {
+      "type": "code_patch",
+      "version": 1,
+      "label": "Code Patch",
+      "description": "Validate and apply a unified diff to a coding task workspace.",
+      "category": "Tools",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "capabilities": [
+        "code_execution",
+        "write"
+      ],
+      "documentation_url": "/docs/code-agent/editing",
+      "default_config": {
+        "task_id": "",
+        "diff": ""
+      },
+      "config_fields": [
+        {
+          "key": "task_id",
+          "label": "Coding task ID",
+          "type": "text",
+          "required": true,
+          "placeholder": "Paste coding task id"
+        },
+        {
+          "key": "diff",
+          "label": "Unified diff",
+          "type": "textarea",
+          "required": true,
+          "placeholder": "--- a/src/auth.py\n+++ b/src/auth.py"
+        },
+        {
+          "key": "approved",
+          "label": "Approved",
+          "type": "boolean",
+          "help": "Required for sensitive paths or high-risk changes."
+        }
+      ]
+    },
+    {
+      "type": "code_read",
+      "version": 1,
+      "label": "Code Read",
+      "description": "Read a jailed workspace file or line range (content is untrusted data).",
+      "category": "Tools",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "capabilities": [
+        "code_execution",
+        "read"
+      ],
+      "documentation_url": "/docs/code-agent/editing",
+      "default_config": {
+        "path": "",
+        "workspace_id": ""
+      },
+      "config_fields": [
+        {
+          "key": "path",
+          "label": "Path (workspace-relative)",
+          "type": "text",
+          "required": true,
+          "placeholder": "src/auth.py"
+        },
+        {
+          "key": "workspace_id",
+          "label": "Workspace ID",
+          "type": "text",
+          "placeholder": "Paste workspace id"
+        },
+        {
+          "key": "start",
+          "label": "Start line",
+          "type": "number",
+          "min": 1
+        },
+        {
+          "key": "end",
+          "label": "End line",
+          "type": "number",
+          "min": 1
+        }
+      ]
+    },
+    {
+      "type": "code_review",
+      "version": 1,
+      "label": "Code Review",
+      "description": "Structured static review (correctness, security, tests) with severities.",
+      "category": "Tools",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "capabilities": [
+        "code_execution",
+        "read"
+      ],
+      "documentation_url": "/docs/code-agent/code-review",
+      "default_config": {
+        "task_id": ""
+      },
+      "config_fields": [
+        {
+          "key": "task_id",
+          "label": "Coding task ID",
+          "type": "text",
+          "placeholder": "Paste coding task id"
+        },
+        {
+          "key": "diff",
+          "label": "Unified diff (alternative)",
+          "type": "textarea",
+          "placeholder": "Review this diff instead of a task"
+        }
+      ]
+    },
+    {
+      "type": "code_search",
+      "version": 1,
+      "label": "Code Search",
+      "description": "Bounded text / regex / symbol / semantic search across a workspace.",
+      "category": "Tools",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "capabilities": [
+        "code_execution",
+        "read"
+      ],
+      "documentation_url": "/docs/code-agent/search",
+      "default_config": {
+        "query": "",
+        "workspace_id": ""
+      },
+      "config_fields": [
+        {
+          "key": "query",
+          "label": "Query",
+          "type": "expression",
+          "required": true,
+          "placeholder": "session validation"
+        },
+        {
+          "key": "workspace_id",
+          "label": "Workspace ID",
+          "type": "text",
+          "placeholder": "Paste workspace id"
+        },
+        {
+          "key": "repository_id",
+          "label": "Repository ID",
+          "type": "text",
+          "placeholder": "Alternative to workspace id"
+        },
+        {
+          "key": "regex",
+          "label": "Regex mode",
+          "type": "boolean"
+        },
+        {
+          "key": "symbol",
+          "label": "Symbol name",
+          "type": "text",
+          "placeholder": "validate_session"
+        }
+      ]
+    },
+    {
+      "type": "code_test",
+      "version": 1,
+      "label": "Code Test",
+      "description": "Run tests through the TEST execution profile inside the sandbox boundary.",
+      "category": "Tools",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "capabilities": [
+        "code_execution",
+        "test"
+      ],
+      "documentation_url": "/docs/code-agent/testing",
+      "default_config": {
+        "command": "",
+        "profile": "TEST"
+      },
+      "config_fields": [
+        {
+          "key": "command",
+          "label": "Command",
+          "type": "expression",
+          "required": true,
+          "placeholder": "pytest tests/unit -x -q"
+        },
+        {
+          "key": "profile",
+          "label": "Profile",
+          "type": "select",
+          "options": [
+            {
+              "value": "TEST",
+              "label": "TEST"
+            },
+            {
+              "value": "LINT",
+              "label": "LINT"
+            },
+            {
+              "value": "TYPECHECK",
+              "label": "TYPECHECK"
+            },
+            {
+              "value": "BUILD",
+              "label": "BUILD"
+            },
+            {
+              "value": "PACKAGE",
+              "label": "PACKAGE"
+            },
+            {
+              "value": "MIGRATION",
+              "label": "MIGRATION"
+            }
+          ]
+        },
+        {
+          "key": "task_id",
+          "label": "Coding task ID",
+          "type": "text",
+          "placeholder": "Paste coding task id"
+        },
+        {
+          "key": "workspace_id",
+          "label": "Workspace ID",
+          "type": "text",
+          "placeholder": "Paste workspace id"
+        }
+      ]
+    },
+    {
+      "type": "condition",
+      "version": 1,
+      "label": "If / Condition",
+      "description": "Branch on a boolean expression.",
+      "category": "Logic",
+      "source": "builtin",
+      "outputs": [
+        "true",
+        "false"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "true",
+          "label": "True",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        },
+        {
+          "name": "false",
+          "label": "False",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "expression": ""
+      },
+      "config_fields": [
+        {
+          "key": "expression",
+          "label": "Expression",
+          "type": "expression",
+          "required": true,
+          "placeholder": "priority == 'high'",
+          "help": "Evaluated against run variables by the execution engine."
+        }
+      ]
+    },
+    {
+      "type": "connector_action",
+      "version": 1,
+      "label": "Connector Action",
+      "description": "Invoke a connector action (policy → approval → execute → verify).",
+      "category": "Tools",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "action_id": "",
+        "connection_id": "",
+        "input": {}
+      },
+      "config_fields": [
+        {
+          "key": "action_id",
+          "label": "Action",
+          "type": "text",
+          "required": true,
+          "placeholder": "github.create_issue",
+          "help": "Search actions in Integrations → Catalog."
+        },
+        {
+          "key": "connection_id",
+          "label": "Connection ID",
+          "type": "text",
+          "placeholder": "Paste connection ID (sharing-checked at runtime)"
+        },
+        {
+          "key": "credential_id",
+          "label": "Credential",
+          "type": "credential",
+          "help": "Reference id of a stored credential. Never paste secrets here."
+        },
+        {
+          "key": "input",
+          "label": "Input (JSON)",
+          "type": "expression",
+          "placeholder": "{\"title\": \"{{ticket.subject}}\"}"
+        },
+        {
+          "key": "timeout_seconds",
+          "label": "Timeout (s)",
+          "type": "number",
+          "placeholder": "30"
+        },
+        {
+          "key": "approval_id",
+          "label": "Approval ID",
+          "type": "text",
+          "placeholder": "For pre-approved high-risk actions"
+        }
+      ]
+    },
+    {
+      "type": "connector_resource",
+      "version": 1,
+      "label": "Connector Resource",
+      "description": "Look up a normalized external resource.",
+      "category": "Tools",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "kind": "issue"
+      },
+      "config_fields": [
+        {
+          "key": "kind",
+          "label": "Resource kind",
+          "type": "text",
+          "required": true,
+          "placeholder": "issue",
+          "help": "user, message, file, repository, issue, pull_request, task, ticket, customer, invoice, order, calendar_event, document, database_row."
+        },
+        {
+          "key": "connector",
+          "label": "Connector",
+          "type": "text",
+          "placeholder": "github"
+        },
+        {
+          "key": "connection_id",
+          "label": "Connection ID",
+          "type": "text"
+        },
+        {
+          "key": "lookup",
+          "label": "Lookup (JSON)",
+          "type": "json",
+          "placeholder": "{\"id\": \"123\"}"
+        }
+      ]
+    },
+    {
+      "type": "connector_search",
+      "version": 1,
+      "label": "Connector Search",
+      "description": "Discover connector actions by keyword (compact results for agents).",
+      "category": "Tools",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "query": ""
+      },
+      "config_fields": [
+        {
+          "key": "query",
+          "label": "Query",
+          "type": "text",
+          "required": true,
+          "placeholder": "send Slack message"
+        },
+        {
+          "key": "limit",
+          "label": "Limit",
+          "type": "number",
+          "placeholder": "10"
+        }
+      ]
+    },
+    {
+      "type": "connector_trigger",
+      "version": 1,
+      "label": "Connector Trigger",
+      "description": "Start a run from a connector event (webhook/polling).",
+      "category": "Tools",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": false,
+      "input_ports": [],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "trigger_id": ""
+      },
+      "config_fields": [
+        {
+          "key": "trigger_id",
+          "label": "Trigger",
+          "type": "text",
+          "required": true,
+          "placeholder": "github.pull_request.opened"
+        },
+        {
+          "key": "connection_id",
+          "label": "Connection ID",
+          "type": "text",
+          "placeholder": "Paste connection ID"
+        },
+        {
+          "key": "filter",
+          "label": "Filter (JSON)",
+          "type": "json",
+          "placeholder": "{\"repository\": \"acme/api\"}"
+        }
+      ]
+    },
+    {
+      "type": "correct",
+      "version": 1,
+      "label": "Correct",
+      "description": "Emit a bounded correction-plan descriptor for the API loop.",
+      "category": "AI",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "strategy": "RETRY_SAME",
+        "max_correction_cycles": 3
+      },
+      "config_fields": [
+        {
+          "key": "strategy",
+          "label": "Strategy",
+          "type": "select",
+          "options": [
+            {
+              "value": "RETRY_SAME",
+              "label": "Retry same"
+            },
+            {
+              "value": "RETRY_WITH_BACKOFF",
+              "label": "Retry with backoff"
+            },
+            {
+              "value": "RETRY_WITH_NEW_MODEL",
+              "label": "Retry with new model"
+            },
+            {
+              "value": "RETRY_WITH_NEW_TOOL",
+              "label": "Retry with new tool"
+            },
+            {
+              "value": "MODIFY_PARAMETERS",
+              "label": "Modify parameters"
+            },
+            {
+              "value": "REFINE_PROMPT",
+              "label": "Refine prompt"
+            },
+            {
+              "value": "EXPAND_CONTEXT",
+              "label": "Expand context"
+            },
+            {
+              "value": "REPLAN",
+              "label": "Replan"
+            },
+            {
+              "value": "ROLLBACK",
+              "label": "Rollback"
+            },
+            {
+              "value": "ASK_ANOTHER_AGENT",
+              "label": "Ask another agent"
+            },
+            {
+              "value": "REQUEST_HUMAN",
+              "label": "Request human"
+            },
+            {
+              "value": "STOP",
+              "label": "Stop"
+            }
+          ]
+        },
+        {
+          "key": "max_correction_cycles",
+          "label": "Max cycles (1..10)",
+          "type": "text",
+          "placeholder": "3"
+        }
+      ]
+    },
+    {
+      "type": "create_pr",
+      "version": 1,
+      "label": "Create PR",
+      "description": "Prepare (and optionally open) a pull-request draft. Never merges.",
+      "category": "Tools",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "capabilities": [
+        "code_execution",
+        "write"
+      ],
+      "documentation_url": "/docs/code-agent/git",
+      "default_config": {
+        "task_id": "",
+        "title": ""
+      },
+      "config_fields": [
+        {
+          "key": "task_id",
+          "label": "Coding task ID",
+          "type": "text",
+          "required": true,
+          "placeholder": "Paste coding task id"
+        },
+        {
+          "key": "title",
+          "label": "PR title",
+          "type": "text",
+          "required": true,
+          "placeholder": "Fix session validation expiry"
+        },
+        {
+          "key": "summary",
+          "label": "Summary",
+          "type": "textarea",
+          "placeholder": "What changed, tests, risks"
+        },
+        {
+          "key": "open",
+          "label": "Open on forge",
+          "type": "boolean",
+          "help": "Opens the PR remotely; never merges."
+        },
+        {
+          "key": "branch",
+          "label": "Branch",
+          "type": "text",
+          "placeholder": "Defaults to the task branch"
+        }
+      ]
+    },
+    {
+      "type": "delay",
+      "version": 1,
+      "label": "Delay",
+      "description": "Wait before continuing.",
+      "category": "Utilities",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "duration_seconds": 60
+      },
+      "config_fields": [
+        {
+          "key": "duration_seconds",
+          "label": "Duration (seconds)",
+          "type": "number",
+          "required": true,
+          "min": 1
+        }
+      ]
+    },
+    {
+      "type": "evaluate",
+      "version": 1,
+      "label": "Evaluate",
+      "description": "Threshold quality decision over a score plus checks.",
+      "category": "AI",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "quality_threshold": 0.7
+      },
+      "config_fields": [
+        {
+          "key": "score",
+          "label": "Score",
+          "type": "expression",
+          "placeholder": "{{nodes.agent.score}}",
+          "help": "Numeric 0..1 or 0..100."
+        },
+        {
+          "key": "quality_threshold",
+          "label": "Quality threshold",
+          "type": "text",
+          "placeholder": "0.7"
+        },
+        {
+          "key": "checks",
+          "label": "Checks (JSON)",
+          "type": "json",
+          "placeholder": "[]"
+        }
+      ]
+    },
+    {
+      "type": "filter",
+      "version": 1,
+      "label": "Filter",
+      "description": "Keep collection items matching a predicate.",
+      "category": "Data",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "items": "",
+        "predicate": ""
+      },
+      "config_fields": [
+        {
+          "key": "items",
+          "label": "Collection expression",
+          "type": "expression",
+          "required": true,
+          "placeholder": "{{tickets}}"
+        },
+        {
+          "key": "predicate",
+          "label": "Predicate",
+          "type": "expression",
+          "required": true,
+          "placeholder": "priority == 'high'"
+        }
+      ]
+    },
+    {
+      "type": "git_commit",
+      "version": 1,
+      "label": "Git Commit",
+      "description": "Secret-scanned, policy-gated commit on the task branch.",
+      "category": "Tools",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "capabilities": [
+        "code_execution",
+        "write"
+      ],
+      "documentation_url": "/docs/code-agent/git",
+      "default_config": {
+        "task_id": "",
+        "message": ""
+      },
+      "config_fields": [
+        {
+          "key": "task_id",
+          "label": "Coding task ID",
+          "type": "text",
+          "required": true,
+          "placeholder": "Paste coding task id"
+        },
+        {
+          "key": "message",
+          "label": "Commit message",
+          "type": "textarea",
+          "required": true,
+          "placeholder": "fix(auth): validate session expiry"
+        }
+      ]
+    },
+    {
+      "type": "limit",
+      "version": 1,
+      "label": "Limit",
+      "description": "Keep only the first or last N items.",
+      "category": "Data",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "items": "",
+        "max_items": 10,
+        "keep": "first"
+      },
+      "config_fields": [
+        {
+          "key": "items",
+          "label": "Collection expression",
+          "type": "expression",
+          "placeholder": "{{nodes.source.items}}",
+          "help": "Empty = use the incoming item collection."
+        },
+        {
+          "key": "max_items",
+          "label": "Max items",
+          "type": "number",
+          "min": 0,
+          "max": 10000
+        },
+        {
+          "key": "keep",
+          "label": "Keep",
+          "type": "select",
+          "options": [
+            {
+              "value": "first",
+              "label": "First N"
+            },
+            {
+              "value": "last",
+              "label": "Last N"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "loop",
+      "version": 1,
+      "label": "Loop",
+      "description": "Iterate over a collection.",
+      "category": "Logic",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "items": "",
+        "max_iterations": 100
+      },
+      "config_fields": [
+        {
+          "key": "items",
+          "label": "Collection expression",
+          "type": "expression",
+          "required": true,
+          "placeholder": "{{tickets}}"
+        },
+        {
+          "key": "max_iterations",
+          "label": "Max iterations",
+          "type": "number",
+          "min": 1,
+          "max": 10000
+        }
+      ]
+    },
+    {
+      "type": "map",
+      "version": 1,
+      "label": "Map",
+      "description": "Transform each collection item.",
+      "category": "Data",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "items": "",
+        "expression": ""
+      },
+      "config_fields": [
+        {
+          "key": "items",
+          "label": "Collection expression",
+          "type": "expression",
+          "required": true,
+          "placeholder": "{{tickets}}"
+        },
+        {
+          "key": "expression",
+          "label": "Per-item expression",
+          "type": "expression",
+          "required": true,
+          "placeholder": "{{item.subject}}"
+        }
+      ]
+    },
+    {
+      "type": "merge",
+      "version": 1,
+      "label": "Merge",
+      "description": "Fan-in: join multiple branches.",
+      "category": "Logic",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true,
+          "multiple": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "fan_in": true,
+      "default_config": {},
+      "config_fields": [
+        {
+          "key": "mode",
+          "label": "Mode",
+          "type": "select",
+          "help": "Authoring hint for the future engine.",
+          "options": [
+            {
+              "value": "first",
+              "label": "First arrival wins"
+            },
+            {
+              "value": "all",
+              "label": "Wait for all"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "prompt",
+      "version": 1,
+      "label": "AI Prompt",
+      "description": "Single model call with system prompt.",
+      "category": "AI",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "capabilities": [
+        "llm"
+      ],
+      "default_config": {
+        "model": "",
+        "prompt": ""
+      },
+      "config_fields": [
+        {
+          "key": "model",
+          "label": "Model",
+          "type": "text",
+          "required": true,
+          "placeholder": "Model id or router profile"
+        },
+        {
+          "key": "system",
+          "label": "System prompt",
+          "type": "textarea",
+          "placeholder": "You are a helpful triage assistant."
+        },
+        {
+          "key": "prompt",
+          "label": "Prompt",
+          "type": "expression",
+          "required": true,
+          "placeholder": "Summarize {{ticket}}"
+        },
+        {
+          "key": "max_tokens",
+          "label": "Max tokens",
+          "type": "number",
+          "min": 1,
+          "max": 128000
+        }
+      ]
+    },
+    {
+      "type": "quality_gate",
+      "version": 1,
+      "label": "Quality Gate",
+      "description": "Built-in or literal gate: required checks plus thresholds.",
+      "category": "AI",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "gate": "workflow_success_gate"
+      },
+      "config_fields": [
+        {
+          "key": "gate",
+          "label": "Built-in gate",
+          "type": "select",
+          "options": [
+            {
+              "value": "code_build_gate",
+              "label": "Code Build Gate"
+            },
+            {
+              "value": "security_gate",
+              "label": "Security Gate"
+            },
+            {
+              "value": "research_quality_gate",
+              "label": "Research Quality Gate"
+            },
+            {
+              "value": "workflow_success_gate",
+              "label": "Workflow Success Gate"
+            },
+            {
+              "value": "browser_completion_gate",
+              "label": "Browser Completion Gate"
+            },
+            {
+              "value": "data_validation_gate",
+              "label": "Data Validation Gate"
+            },
+            {
+              "value": "production_deployment_gate",
+              "label": "Production Deployment Gate"
+            }
+          ]
+        },
+        {
+          "key": "check_targets",
+          "label": "Check targets (JSON)",
+          "type": "json",
+          "placeholder": "{\"nodes_ok\": {\"agent\": \"succeeded\"}}"
+        },
+        {
+          "key": "score",
+          "label": "Score",
+          "type": "expression",
+          "placeholder": "{{nodes.evaluate.score}}"
+        }
+      ]
+    },
+    {
+      "type": "remove_duplicates",
+      "version": 1,
+      "label": "Remove duplicates",
+      "description": "Drop repeated items, optionally keyed by a field.",
+      "category": "Data",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "items": "",
+        "key": ""
+      },
+      "config_fields": [
+        {
+          "key": "items",
+          "label": "Collection expression",
+          "type": "expression",
+          "placeholder": "{{nodes.source.items}}",
+          "help": "Empty = use the incoming item collection."
+        },
+        {
+          "key": "key",
+          "label": "Compare field",
+          "type": "text",
+          "placeholder": "email",
+          "help": "Optional dotted path. Empty compares whole items."
+        }
+      ]
+    },
+    {
+      "type": "retry",
+      "version": 1,
+      "label": "Retry Until",
+      "description": "Bounded retry counter. Fails safely when exhausted.",
+      "category": "AI",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "max_attempts": 3
+      },
+      "config_fields": [
+        {
+          "key": "max_attempts",
+          "label": "Max attempts (1..10)",
+          "type": "text",
+          "required": true,
+          "placeholder": "3"
+        }
+      ]
+    },
+    {
+      "type": "set",
+      "version": 1,
+      "label": "Set",
+      "description": "Assign static values to variables.",
+      "category": "Data",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "values": {}
+      },
+      "config_fields": [
+        {
+          "key": "values",
+          "label": "Values (JSON)",
+          "type": "json",
+          "required": true,
+          "placeholder": "{\"region\": \"eu\"}"
+        }
+      ]
+    },
+    {
+      "type": "sort",
+      "version": 1,
+      "label": "Sort",
+      "description": "Order items by a field.",
+      "category": "Data",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "items": "",
+        "field": "",
+        "direction": "asc",
+        "numeric": false
+      },
+      "config_fields": [
+        {
+          "key": "items",
+          "label": "Collection expression",
+          "type": "expression",
+          "placeholder": "{{nodes.source.items}}",
+          "help": "Empty = use the incoming item collection."
+        },
+        {
+          "key": "field",
+          "label": "Field",
+          "type": "text",
+          "placeholder": "created_at",
+          "help": "Dotted path inside each item. Empty sorts by the item value."
+        },
+        {
+          "key": "direction",
+          "label": "Direction",
+          "type": "select",
+          "options": [
+            {
+              "value": "asc",
+              "label": "Ascending"
+            },
+            {
+              "value": "desc",
+              "label": "Descending"
+            }
+          ]
+        },
+        {
+          "key": "numeric",
+          "label": "Numeric compare",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "type": "split_out",
+      "version": 1,
+      "label": "Split out",
+      "description": "Turn one list field into many items.",
+      "category": "Data",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "items": "",
+        "field": ""
+      },
+      "config_fields": [
+        {
+          "key": "items",
+          "label": "Collection expression",
+          "type": "expression",
+          "placeholder": "{{nodes.source.items}}",
+          "help": "Empty = use the incoming item collection."
+        },
+        {
+          "key": "field",
+          "label": "List field",
+          "type": "text",
+          "required": true,
+          "placeholder": "tags",
+          "help": "Dotted path to the list inside each item."
+        }
+      ]
+    },
+    {
+      "type": "subworkflow",
+      "version": 1,
+      "label": "Subworkflow",
+      "description": "Run another workflow in-process (same organization, cycle-safe).",
+      "category": "Advanced",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "workflow_id": ""
+      },
+      "config_fields": [
+        {
+          "key": "workflow_id",
+          "label": "Workflow ID",
+          "type": "text",
+          "required": true,
+          "placeholder": "Paste workflow id"
+        },
+        {
+          "key": "input",
+          "label": "Input (JSON)",
+          "type": "expression",
+          "placeholder": "{\"ticket_id\": \"{{ticket_id}}\"}"
+        }
+      ]
+    },
+    {
+      "type": "switch",
+      "version": 1,
+      "label": "Switch / Router",
+      "description": "Route to named branches by expression.",
+      "category": "Logic",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true,
+          "dynamic": true
+        }
+      ],
+      "default_config": {
+        "routes": [
+          {
+            "name": "default",
+            "expression": "true"
+          }
+        ]
+      },
+      "config_fields": [
+        {
+          "key": "routes",
+          "label": "Routes (JSON)",
+          "type": "json",
+          "required": true,
+          "help": "[{\"name\": \"vip\", \"expression\": \"tier == 'vip'\"}]. Edges use the route name as label."
+        }
+      ]
+    },
+    {
+      "type": "tool",
+      "version": 1,
+      "label": "Tool",
+      "description": "Invoke a registered tool.",
+      "category": "Tools",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "tool_id": ""
+      },
+      "config_fields": [
+        {
+          "key": "tool_id",
+          "label": "Tool ID",
+          "type": "text",
+          "required": true,
+          "placeholder": "Select or paste tool ID"
+        },
+        {
+          "key": "arguments",
+          "label": "Arguments (JSON)",
+          "type": "expression",
+          "placeholder": "{\"query\": \"{{ticket.subject}}\"}"
+        },
+        {
+          "key": "credential_id",
+          "label": "Credential",
+          "type": "credential",
+          "help": "Reference id of a stored credential."
+        }
+      ]
+    },
+    {
+      "type": "transform",
+      "version": 1,
+      "label": "Transform",
+      "description": "Map data without calling a model.",
+      "category": "Data",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "mapping": ""
+      },
+      "config_fields": [
+        {
+          "key": "mapping",
+          "label": "Mapping (JSON)",
+          "type": "expression",
+          "required": true,
+          "placeholder": "{\"summary\": \"{{ticket.subject}}\"}"
+        }
+      ]
+    },
+    {
+      "type": "variable",
+      "version": 1,
+      "label": "Variable",
+      "description": "Read or write a workflow variable.",
+      "category": "Utilities",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "mode": "set",
+        "name": ""
+      },
+      "config_fields": [
+        {
+          "key": "mode",
+          "label": "Mode",
+          "type": "select",
+          "required": true,
+          "options": [
+            {
+              "value": "set",
+              "label": "Set"
+            },
+            {
+              "value": "get",
+              "label": "Get"
+            }
+          ]
+        },
+        {
+          "key": "name",
+          "label": "Variable name",
+          "type": "text",
+          "required": true,
+          "placeholder": "ticket_id"
+        },
+        {
+          "key": "value",
+          "label": "Value",
+          "type": "expression",
+          "placeholder": "{{trigger.output.id}}",
+          "help": "Required in set mode."
+        }
+      ]
+    },
+    {
+      "type": "verify",
+      "version": 1,
+      "label": "Verify",
+      "description": "Deterministic checks over inputs (status, files, schema, tests).",
+      "category": "AI",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "checks": []
+      },
+      "config_fields": [
+        {
+          "key": "checks",
+          "label": "Checks (JSON)",
+          "type": "json",
+          "required": true,
+          "placeholder": "[{\"kind\": \"http_response\", \"params\": {\"expected_status\": 200}}]",
+          "help": "Each check: kind, target, params, required."
+        }
+      ]
+    },
+    {
+      "type": "webhook",
+      "version": 1,
+      "label": "HTTP Request",
+      "description": "Call an external HTTP endpoint.",
+      "category": "HTTP",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "url": "",
+        "method": "POST"
+      },
+      "config_fields": [
+        {
+          "key": "url",
+          "label": "URL",
+          "type": "expression",
+          "required": true,
+          "placeholder": "https://api.example.com/notify"
+        },
+        {
+          "key": "method",
+          "label": "Method",
+          "type": "select",
+          "options": [
+            {
+              "value": "GET",
+              "label": "GET"
+            },
+            {
+              "value": "POST",
+              "label": "POST"
+            },
+            {
+              "value": "PUT",
+              "label": "PUT"
+            },
+            {
+              "value": "PATCH",
+              "label": "PATCH"
+            },
+            {
+              "value": "DELETE",
+              "label": "DELETE"
+            }
+          ]
+        },
+        {
+          "key": "headers",
+          "label": "Headers (JSON)",
+          "type": "json",
+          "placeholder": "{\"X-Team\": \"support\"}"
+        },
+        {
+          "key": "body",
+          "label": "Body (JSON)",
+          "type": "expression",
+          "placeholder": "{\"ticket_id\": \"{{ticket_id}}\"}"
+        },
+        {
+          "key": "credential_id",
+          "label": "Credential",
+          "type": "credential",
+          "help": "Reference id of a stored credential. Never paste secrets here."
+        }
+      ]
+    }
+  ],
+  "triggers": [
+    {
+      "type": "chat",
+      "version": 1,
+      "label": "Chat Trigger",
+      "description": "Start runs from a chat message, inside the studio or on a hosted chat page.",
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "config_fields": [
+        {
+          "key": "mode",
+          "label": "Mode",
+          "type": "select",
+          "help": "Where people talk to this workflow. Both surfaces use the same Chat Trigger.",
+          "options": [
+            {
+              "value": "embedded",
+              "label": "Embedded (studio chat)"
+            },
+            {
+              "value": "hosted",
+              "label": "Hosted page (/chat/…)"
+            }
+          ]
+        },
+        {
+          "key": "title",
+          "label": "Title",
+          "type": "text",
+          "placeholder": "Support assistant"
+        },
+        {
+          "key": "welcome_message",
+          "label": "Welcome message",
+          "type": "textarea",
+          "placeholder": "Hi! Ask me anything about your orders."
+        },
+        {
+          "key": "starter_prompts",
+          "label": "Starter prompts",
+          "type": "stringlist",
+          "help": "One example message per line, shown before the first turn."
+        },
+        {
+          "key": "memory",
+          "label": "Keep transcript locally",
+          "type": "boolean",
+          "help": "Sessions and messages stay in this browser (localStorage), keyed by session id."
+        }
+      ]
+    },
+    {
+      "type": "event",
+      "version": 1,
+      "label": "Event",
+      "description": "Start runs when a platform event fires.",
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "config_fields": [
+        {
+          "key": "event",
+          "label": "Event name",
+          "type": "text",
+          "required": true,
+          "placeholder": "ticket.created"
+        }
+      ]
+    },
+    {
+      "type": "manual",
+      "version": 1,
+      "label": "Manual",
+      "description": "Start runs by hand from the dashboard.",
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "config_fields": []
+    },
+    {
+      "type": "schedule",
+      "version": 1,
+      "label": "Schedule",
+      "description": "Start runs on a cron timetable.",
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "config_fields": [
+        {
+          "key": "cron",
+          "label": "Cron expression",
+          "type": "text",
+          "required": true,
+          "placeholder": "0 9 * * MON-FRI"
+        },
+        {
+          "key": "timezone",
+          "label": "Timezone",
+          "type": "text",
+          "placeholder": "UTC"
+        }
+      ]
+    },
+    {
+      "type": "webhook",
+      "version": 1,
+      "label": "Webhook",
+      "description": "Start runs on incoming HTTP requests.",
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "config_fields": [
+        {
+          "key": "path",
+          "label": "Path",
+          "type": "text",
+          "required": true,
+          "placeholder": "/hooks/support-triage",
+          "help": "Path suffix the caller POSTs to."
+        },
+        {
+          "key": "secret",
+          "label": "Shared secret",
+          "type": "credential",
+          "sensitive": true,
+          "placeholder": "credential_id or {{secrets.hook}}",
+          "help": "Reference only — literal secrets are rejected by validation."
+        }
+      ]
+    }
+  ]
+}

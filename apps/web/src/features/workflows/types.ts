@@ -2,9 +2,11 @@
 // `openagent.services.workflow_definition` validator and the versioned
 // `definition` JSON stored on workflow versions.
 
-export const SCHEMA_VERSION = '1.0' as const;
+export const SCHEMA_VERSION = '1.1' as const;
+/** 1.0 documents remain readable and are upgraded additively on import. */
+export const SUPPORTED_SCHEMA_VERSIONS = ['1.0', '1.1'] as const;
 
-export type TriggerType = 'manual' | 'webhook' | 'schedule' | 'event';
+export type TriggerType = 'manual' | 'webhook' | 'schedule' | 'event' | 'chat';
 
 export type WorkflowNodeType =
   | 'agent'
@@ -48,6 +50,19 @@ export type WorkflowNodeType =
   | 'correct';
 
 export type EdgeWhen = 'always' | 'success' | 'failure';
+
+/** Payload kinds a port can carry. `items` is the item stream (n8n main). */
+export type PortDataType =
+  | 'any'
+  | 'items'
+  | 'json'
+  | 'text'
+  | 'number'
+  | 'boolean'
+  | 'binary';
+
+/** Connection class. Error routing is a contract; no node exposes it yet. */
+export type ConnectionType = 'main' | 'error';
 
 export type VariableType = 'string' | 'number' | 'boolean' | 'json';
 
@@ -99,8 +114,19 @@ export interface WorkflowEdge {
   id: string;
   from: string;
   to: string;
+  /**
+   * 1.1 typed endpoints. Optional forever: a legacy edge resolves its source
+   * port from `label` (condition/switch) or the node's first output, and its
+   * target port from the node's first required input.
+   */
+  from_port?: string;
+  to_port?: string;
+  connection_type?: ConnectionType;
+  /** Legacy branch/port label kept for the execution engine and n8n export. */
   label?: string;
   condition?: EdgeCondition;
+  /** Free-form, non-executed connection metadata (UI/analytics). */
+  metadata?: Record<string, unknown>;
 }
 
 export interface WorkflowVariable {
@@ -123,10 +149,30 @@ export interface StickyNote {
   text: string;
 }
 
+/**
+ * Output captured by "Pin output" in the node detail view. Pinned data is a
+ * canvas-authoring aid: it feeds previews and step tests, while workflow
+ * executions ignore it (the backend never reads `settings.pinned_data`).
+ */
+export interface PinnedDatum {
+  /** ISO timestamp of when the data was pinned. */
+  pinned_at: string;
+  /** Node output object exactly as the engine returned it. */
+  outputs: Record<string, unknown>;
+  /** Input the node received when the data was captured (reference only). */
+  inputs?: Record<string, unknown> | null;
+  /** Run status the data came from. */
+  status?: string;
+}
+
 export interface WorkflowSettings {
   timezone?: string;
   max_concurrency?: number;
+  /** Workflow-level execution budget (1..86400s); absent means no limit. */
+  execution_timeout_seconds?: number;
   sticky_notes?: StickyNote[];
+  /** Node id → pinned output. Canvas-only; never executed. */
+  pinned_data?: Record<string, PinnedDatum>;
 }
 
 export interface WorkflowDefinition {
@@ -136,6 +182,12 @@ export interface WorkflowDefinition {
   edges: WorkflowEdge[];
   variables: WorkflowVariable[];
   settings: WorkflowSettings;
+  /** 1.1: workflow executed when this one fails (same organization). */
+  error_workflow_id?: string | null;
+  /** 1.1: read-only constants available to expressions. */
+  static_data?: Record<string, unknown>;
+  /** 1.1: portable, non-executed metadata (author, labels, notes). */
+  metadata?: Record<string, unknown>;
 }
 
 /** Clipboard payload for copy/paste/duplicate (sensitive values stripped). */
@@ -158,6 +210,57 @@ export interface ValidationResult {
   valid: boolean;
   errors: ValidationIssue[];
   warnings: ValidationIssue[];
+}
+
+// --------------------------------------------------------------------------
+// Data-flow contract (schema 1.1). Types only: the execution engine does not
+// consume these yet (Prompt 08), and no runtime should claim they work.
+// --------------------------------------------------------------------------
+
+export interface BinaryReference {
+  mime_type: string;
+  file_name?: string;
+  /** Stable reference into the binary store; never inline base64 here. */
+  data_ref: string;
+  size_bytes?: number;
+}
+
+export interface DataItemError {
+  code?: string;
+  message: string;
+  retriable?: boolean;
+}
+
+export interface DataItem {
+  json: Record<string, unknown>;
+  binary?: Record<string, BinaryReference>;
+  /** Upstream item index/indices this item derived from (n8n pairedItem). */
+  paired_item?: number | number[];
+  error?: DataItemError;
+}
+
+/** Payload leaving one named node port. */
+export interface PortPayload {
+  port: string;
+  connection_type: ConnectionType;
+  items: DataItem[];
+}
+
+/** One node-level execution trace record (contract for the event stream). */
+export interface ExecutionTraceEvent {
+  execution_id: string;
+  node_id: string;
+  node_name?: string;
+  port?: string;
+  connection_type?: ConnectionType;
+  item_index?: number;
+  attempt?: number;
+  status: 'running' | 'succeeded' | 'failed' | 'skipped' | 'waiting';
+  duration_ms?: number;
+  input_items?: number;
+  output_items?: number;
+  error?: DataItemError;
+  ts: string;
 }
 
 // API shapes ---------------------------------------------------------------
@@ -219,5 +322,7 @@ export function emptyDefinition(): WorkflowDefinition {
     edges: [],
     variables: [],
     settings: {},
+    static_data: {},
+    metadata: {},
   };
 }

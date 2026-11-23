@@ -102,6 +102,7 @@ from openagent.api.v1.integrations import webhooks_mgmt_router as connector_webh
 from openagent.api.v1.integrations import webhooks_router as inbound_webhooks_router
 from openagent.api.v1.invitations import router as invitations_router
 from openagent.api.v1.koro import router as koro_router
+from openagent.api.v1.nodes import router as nodes_router
 from openagent.api.v1.management import router as management_router
 from openagent.api.v1.marketplace import (
                                         advisories_router as marketplace_advisories_router,
@@ -178,6 +179,7 @@ router.include_router(workflows_router)
 router.include_router(workflow_executions_router)
 router.include_router(workflow_hooks_router)
 router.include_router(koro_router)
+router.include_router(nodes_router)
 router.include_router(agents_router)
 router.include_router(tools_router)
 router.include_router(mcp_router)
@@ -339,4 +341,5 @@ __all__ = [
     "enterprise_router",
     "identity_router",
     "scim_router",
+    "nodes_router",
 ]
