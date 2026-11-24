@@ -39,7 +39,8 @@ export interface KoroSettingsInput {
 
 export interface KoroAction {
   type: string;
-  status: 'ok' | 'failed';
+  /** `confirmation_required` carries a token to replay the action. */
+  status: 'ok' | 'failed' | 'confirmation_required';
   detail: string;
   workflow_id?: string | null;
   data?: Record<string, unknown> | null;
@@ -65,9 +66,11 @@ export interface AssistantConversation {
 /** An action as stored on a transcript message (no generated definition). */
 export interface StoredAssistantAction {
   type: string;
-  status: 'ok' | 'failed';
+  status: 'ok' | 'failed' | 'confirmation_required';
   detail: string;
   workflow_id?: string | null;
+  /** Small identifiers kept for deep links (run id, version, restored_from). */
+  data?: Record<string, unknown> | null;
 }
 
 export interface AssistantConversationMessage {

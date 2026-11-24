@@ -102,7 +102,6 @@ from openagent.api.v1.integrations import webhooks_mgmt_router as connector_webh
 from openagent.api.v1.integrations import webhooks_router as inbound_webhooks_router
 from openagent.api.v1.invitations import router as invitations_router
 from openagent.api.v1.koro import router as koro_router
-from openagent.api.v1.nodes import router as nodes_router
 from openagent.api.v1.management import router as management_router
 from openagent.api.v1.marketplace import (
                                         advisories_router as marketplace_advisories_router,
@@ -145,6 +144,7 @@ from openagent.api.v1.marketplace import (
 )
 from openagent.api.v1.mcp import router as mcp_router
 from openagent.api.v1.memory import router as memory_router
+from openagent.api.v1.nodes import router as nodes_router
 from openagent.api.v1.operations import router as operations_router
 from openagent.api.v1.orchestrations import router as orchestrations_router
 from openagent.api.v1.organizations import router as organizations_router
@@ -165,6 +165,7 @@ from openagent.api.v1.teams import router as teams_router
 from openagent.api.v1.tools import router as tools_router
 from openagent.api.v1.workflow_executions import router as workflow_executions_router
 from openagent.api.v1.workflow_hooks import router as workflow_hooks_router
+from openagent.api.v1.workflow_hooks import test_router as workflow_test_hooks_router
 from openagent.api.v1.workflows import router as workflows_router
 
 router = APIRouter()
@@ -178,6 +179,7 @@ router.include_router(service_accounts_router)
 router.include_router(workflows_router)
 router.include_router(workflow_executions_router)
 router.include_router(workflow_hooks_router)
+router.include_router(workflow_test_hooks_router)
 router.include_router(koro_router)
 router.include_router(nodes_router)
 router.include_router(agents_router)

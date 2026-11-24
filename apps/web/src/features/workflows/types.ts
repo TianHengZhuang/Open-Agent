@@ -6,7 +6,14 @@ export const SCHEMA_VERSION = '1.1' as const;
 /** 1.0 documents remain readable and are upgraded additively on import. */
 export const SUPPORTED_SCHEMA_VERSIONS = ['1.0', '1.1'] as const;
 
-export type TriggerType = 'manual' | 'webhook' | 'schedule' | 'event' | 'chat';
+export type TriggerType =
+  | 'manual'
+  | 'webhook'
+  | 'schedule'
+  | 'event'
+  | 'chat'
+  /** n8n "Execute Workflow Trigger": entry point of a called sub-workflow. */
+  | 'execute_workflow';
 
 export type WorkflowNodeType =
   | 'agent'
@@ -23,6 +30,15 @@ export type WorkflowNodeType =
   | 'limit'
   | 'remove_duplicates'
   | 'split_out'
+  | 'edit_fields'
+  | 'aggregate'
+  | 'split_in_batches'
+  | 'code'
+  | 'convert_to_file'
+  | 'extract_from_file'
+  | 'read_binary_file'
+  | 'write_binary_file'
+  | 'respond_to_webhook'
   | 'variable'
   | 'approval'
   | 'webhook'
@@ -96,6 +112,18 @@ export interface WorkflowNode {
   config: Record<string, unknown>;
   retry_policy?: RetryPolicy;
   timeout_seconds?: number;
+  /** n8n node setting: stop | continue | continueErrorOutput. */
+  on_error?: 'stop' | 'continue' | 'continueErrorOutput';
+  /** n8n "Retry On Fail" with `max_tries` total attempts and a fixed wait. */
+  retry_on_fail?: boolean;
+  max_tries?: number;
+  wait_between_tries_ms?: number;
+  /** Emit one empty item when the node produces no output. */
+  always_output_data?: boolean;
+  /** Run once (first item) even when several items arrive. */
+  execute_once?: boolean;
+  /** `each` runs the node once per input item; absent/`all` runs once. */
+  run_mode?: 'all' | 'each';
   approval_required?: boolean;
   /** Excluded from validation errors and future execution when true. */
   disabled?: boolean;
@@ -151,8 +179,8 @@ export interface StickyNote {
 
 /**
  * Output captured by "Pin output" in the node detail view. Pinned data is a
- * canvas-authoring aid: it feeds previews and step tests, while workflow
- * executions ignore it (the backend never reads `settings.pinned_data`).
+ * canvas-authoring aid: it feeds previews and step tests (`use_pinned` on the
+ * execute-node endpoint), while real workflow executions ignore it.
  */
 export interface PinnedDatum {
   /** ISO timestamp of when the data was pinned. */
@@ -170,6 +198,10 @@ export interface WorkflowSettings {
   max_concurrency?: number;
   /** Workflow-level execution budget (1..86400s); absent means no limit. */
   execution_timeout_seconds?: number;
+  /** n8n "Save execution data": all (default) | none | on_error. */
+  save_execution_data?: 'all' | 'none' | 'on_error';
+  /** Workflow to run when this workflow fails (n8n "On error"). */
+  error_workflow_id?: string;
   sticky_notes?: StickyNote[];
   /** Node id → pinned output. Canvas-only; never executed. */
   pinned_data?: Record<string, PinnedDatum>;

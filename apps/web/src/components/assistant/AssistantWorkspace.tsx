@@ -5,10 +5,10 @@ import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Bot,
-  Boxes,
   Check,
+  Cpu,
   Download,
-  LayoutDashboard,
+  KeyRound,
   Loader2,
   MessagesSquare,
   PanelLeft,
@@ -78,24 +78,24 @@ type Entry = {
 
 const QUICK_PROMPTS = [
   'Build a workflow that triages support emails',
-  'Create an agent that reviews invoices',
-  'Every morning, post a digest to Slack',
-  'Summarize the last run of my main workflow',
+  'Show the versions of my main workflow',
+  'What is running right now?',
+  'List my credentials',
 ];
 
 const STARTERS = [
   'Build a webhook to AI + Slack workflow',
-  'Create a scheduled scraper that posts a digest',
+  'Duplicate my main workflow and publish it',
   'Debug my last failed run',
   'Review my open workflow and suggest fixes',
 ];
 
 const NAV_LINKS = [
-  { href: '/', label: 'Overview', icon: LayoutDashboard },
   { href: '/workflows', label: 'Workflows', icon: Workflow },
-  { href: '/templates', label: 'Templates', icon: Boxes },
-  { href: '/runs', label: 'Insights', icon: Radio },
-  { href: '/settings/models', label: 'Models & keys', icon: Settings },
+  { href: '/runs', label: 'Executions', icon: Radio },
+  { href: '/settings?tab=credentials', label: 'Credentials', icon: KeyRound },
+  { href: '/settings/models', label: 'Models & keys', icon: Cpu },
+  { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
 function relativeTime(iso: string): string {

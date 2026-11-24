@@ -353,7 +353,7 @@ def output_ports(
     if node_type == "switch":
         routes = _switch_route_names(config)
         names = [*routes, "default"] if routes else ["out"]
-        return [
+        ports = [
             PortDefinition(
                 name=name,
                 label="Default" if name == "default" else name,
@@ -364,7 +364,23 @@ def output_ports(
             )
             for name in names
         ]
-    return list(definition.output_ports)
+    else:
+        ports = list(definition.output_ports)
+    # n8n's "On Error → Continue (using error output)" adds a second output.
+    raw_mode = (config or {}).get("on_error") if isinstance(config, dict) else None
+    mode = str(raw_mode or "").lower().replace("_", "").replace("-", "").replace(" ", "")
+    if mode in ("continueerroroutput", "continueonerroroutput") and not any(
+        port.name == "error" for port in ports
+    ):
+        ports.append(PortDefinition(
+            name="error",
+            label="Error",
+            direction="output",
+            data_types=("items",),
+            multiple=False,
+            dynamic=True,
+        ))
+    return ports
 
 
 def trigger_output_ports(trigger_type: str) -> list[PortDefinition]:

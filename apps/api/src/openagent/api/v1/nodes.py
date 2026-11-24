@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from openagent.api.dependencies import get_current_org_context, require_permission
 from openagent.db.session import get_db
+from openagent.registry import coverage as node_coverage
 from openagent.registry import node_registry
 from openagent.schemas.base import ApiErrorResponse
 
@@ -22,6 +23,18 @@ class NodeRegistryResponse(BaseModel):
     generated_from: str
     nodes: List[Dict[str, Any]]
     triggers: List[Dict[str, Any]]
+
+
+class NodeCoverageResponse(BaseModel):
+    registry_version: str
+    generated_from: str
+    summary: Dict[str, Any]
+    tiers: Dict[str, Any]
+    nodes: List[Dict[str, Any]]
+    triggers: List[Dict[str, Any]]
+    connectors: List[Dict[str, Any]]
+    documented: List[Dict[str, Any]]
+    unmapped: List[str]
 
 
 class NodeParameterValidationRequest(BaseModel):
@@ -57,6 +70,37 @@ def _registry_or_503() -> node_registry.NodeRegistry:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={"error": str(exc), "code": "NODE_REGISTRY_UNAVAILABLE"},
         ) from exc
+
+
+@router.get(
+    "/coverage",
+    response_model=NodeCoverageResponse,
+    responses={401: {"model": ApiErrorResponse}, 403: {"model": ApiErrorResponse}},
+)
+async def get_node_coverage(
+    request: Request,
+    organization_id: UUID,
+    tier: Optional[str] = Query(default=None, pattern="^[ABCabc]$"),
+    q: Optional[str] = Query(default=None, max_length=120),
+    auth_context=Depends(get_current_org_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Tier, status and n8n equivalent for every node (honest capability view)."""
+    await require_permission("workflow:read")(request, db)
+    document = node_coverage.build_coverage()
+    nodes = document["nodes"]
+    if tier:
+        nodes = [row for row in nodes if row["tier"].upper() == tier.upper()]
+    if q:
+        needle = q.strip().lower()
+        nodes = [
+            row for row in nodes
+            if any(
+                needle in str(row.get(key) or "").lower()
+                for key in ("type", "label", "n8n", "category")
+            )
+        ]
+    return NodeCoverageResponse(**{**document, "nodes": nodes})
 
 
 @router.get(

@@ -38,6 +38,10 @@ class Workflow(TimestampMixin, SoftDeleteMixin, UUIDMixin, Base):
         nullable=False
     )
     metadata: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    # n8n "workflow static data": values that survive between runs (counters,
+    # cursors, last-seen ids). Read with ``$getWorkflowStaticData(scope)`` and
+    # written from chat; separate from the immutable versioned definition.
+    static_data: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 
     organization: Mapped["Organization"] = relationship(back_populates="workflows")
     versions: Mapped[List["WorkflowVersion"]] = relationship(

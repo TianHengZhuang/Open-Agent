@@ -147,6 +147,15 @@ export function validateWorkflowDefinition(def: WorkflowDefinition): ValidationR
         err('INVALID_RETRY_POLICY', `Node '${nid}' 'retry_policy.max_attempts' must be an integer 0..10.`, nid, `${where}.retry_policy.max_attempts`);
       }
     }
+    if (n.on_error !== undefined && !['stop', 'continue', 'continueErrorOutput'].includes(String(n.on_error))) {
+      err('INVALID_ERROR_HANDLING', `Node '${nid}' 'on_error' must be stop, continue or continueErrorOutput.`, nid, `${where}.on_error`);
+    }
+    if (n.max_tries !== undefined && (!Number.isInteger(n.max_tries) || (n.max_tries as number) < 1 || (n.max_tries as number) > 10)) {
+      err('INVALID_RETRY_POLICY', `Node '${nid}' 'max_tries' must be an integer 1..10.`, nid, `${where}.max_tries`);
+    }
+    if (n.wait_between_tries_ms !== undefined && (typeof n.wait_between_tries_ms !== 'number' || n.wait_between_tries_ms < 0 || n.wait_between_tries_ms > 60000)) {
+      err('INVALID_RETRY_POLICY', `Node '${nid}' 'wait_between_tries_ms' must be 0..60000.`, nid, `${where}.wait_between_tries_ms`);
+    }
   });
 
   const allIds = new Set([...triggerIds, ...nodeIds]);
@@ -177,7 +186,11 @@ export function validateWorkflowDefinition(def: WorkflowDefinition): ValidationR
     const dstType = dstNode?.type as string | undefined;
     const eid = typeof e.id === 'string' ? e.id : undefined;
     const sourcePorts: RegistryPort[] = srcNode
-      ? registryOutputPorts(String(srcType), srcNode.config, srcNode.type_version)
+      ? registryOutputPorts(
+          String(srcType),
+          { ...srcNode.config, on_error: srcNode.on_error ?? srcNode.config?.on_error },
+          srcNode.type_version,
+        )
       : triggerOutputPorts(String(triggerById.get(src)?.type ?? ''));
     const targetPorts: RegistryPort[] = dstNode
       ? registryInputPorts(String(dstType), dstNode.type_version)
@@ -324,7 +337,14 @@ export function validateWorkflowDefinition(def: WorkflowDefinition): ValidationR
     const [nid, portName] = key.split('|');
     const node = nodeById.get(nid);
     if (!node) continue;
-    const port = findPort(registryOutputPorts(String(node.type), node.config, node.type_version), portName);
+    const port = findPort(
+      registryOutputPorts(
+        String(node.type),
+        { ...node.config, on_error: node.on_error ?? node.config?.on_error },
+        node.type_version,
+      ),
+      portName,
+    );
     if (port && !port.multiple && refs.length > 1) {
       err('PORT_FAN_OUT_EXCEEDED', `Node '${nid}' output '${portName}' allows one connection, got ${refs.length}.`, nid, `output.${portName}`);
     }
@@ -407,6 +427,11 @@ export function validateWorkflowDefinition(def: WorkflowDefinition): ValidationR
             || timeout < 1 || timeout > 86400)) {
       err('INVALID_SETTINGS', "'settings.execution_timeout_seconds' must be an integer 1..86400.", undefined, 'settings.execution_timeout_seconds');
     }
+    const saveData = def.settings.save_execution_data;
+    if (saveData !== undefined
+        && (typeof saveData !== 'string' || !['all', 'none', 'on_error'].includes(saveData))) {
+      err('INVALID_SETTINGS', "'settings.save_execution_data' must be all, none or on_error.", undefined, 'settings.save_execution_data');
+    }
   }
 
   return { valid: errors.length === 0, errors, warnings };
@@ -471,6 +496,43 @@ function validateNodeConfig(
     }
     case 'merge':
       break;
+    case 'edit_fields':
+      if (cfg.fields !== undefined && !isObj(cfg.fields)) {
+        err('NODE_CONFIG_REQUIRED', `Node '${nid}' 'config.fields' must be an object.`, nid, `${where}.config.fields`);
+      }
+      break;
+    case 'aggregate': {
+      const mode = String(cfg.mode ?? 'collect');
+      if (!['collect', 'count', 'sum', 'average', 'group_by'].includes(mode)) {
+        err('NODE_CONFIG_REQUIRED', `Node '${nid}' 'config.mode' must be collect, count, sum, average or group_by.`, nid, `${where}.config.mode`);
+      }
+      if (['collect', 'sum', 'average'].includes(mode) && !cfg.field) {
+        err('NODE_CONFIG_REQUIRED', `Node '${nid}' aggregate ${mode} requires 'config.field'.`, nid, `${where}.config.field`);
+      }
+      if (mode === 'group_by' && !cfg.group_by) {
+        err('NODE_CONFIG_REQUIRED', `Node '${nid}' group_by requires 'config.group_by'.`, nid, `${where}.config.group_by`);
+      }
+      break;
+    }
+    case 'split_in_batches': {
+      const size = cfg.batch_size === undefined ? 10 : Number(cfg.batch_size);
+      if (!Number.isInteger(size) || size < 1 || size > 1000) {
+        err('NODE_CONFIG_REQUIRED', `Node '${nid}' 'config.batch_size' must be an integer 1..1000.`, nid, `${where}.config.batch_size`);
+      }
+      break;
+    }
+    case 'code':
+      if (!cfg.code) {
+        err('NODE_CONFIG_REQUIRED', `Node '${nid}' requires 'config.code' (an expression).`, nid, `${where}.config.code`);
+      }
+      break;
+    case 'respond_to_webhook': {
+      const statusCode = cfg.status === undefined ? 200 : Number(cfg.status);
+      if (!Number.isInteger(statusCode) || statusCode < 100 || statusCode > 599) {
+        err('NODE_CONFIG_REQUIRED', `Node '${nid}' 'config.status' must be an HTTP status 100..599.`, nid, `${where}.config.status`);
+      }
+      break;
+    }
     case 'set':
       if (!isObj(cfg.values) || Object.keys(cfg.values).length === 0) {
         err('NODE_CONFIG_REQUIRED', `Node '${nid}' requires a non-empty 'config.values' object.`, nid, `${where}.config.values`);
@@ -489,9 +551,24 @@ function validateNodeConfig(
       }
       req('name', "variable nodes require 'config.name'");
       break;
+    case 'code': {
+      const language = String(cfg.language ?? 'expression').toLowerCase();
+      if (!['expression', 'python', 'py', 'python3', 'javascript', 'js', 'node'].includes(language)) {
+        err('CODE_LANGUAGE_UNSUPPORTED', `Node '${nid}' 'config.language' must be expression, python or javascript.`, nid, `${where}.config.language`);
+      }
+      const codeMode = String(cfg.mode ?? 'all').toLowerCase();
+      if (!['all', 'each', 'runonceforallitems', 'runonceforeachitem'].includes(codeMode)) {
+        err('CODE_MODE_UNSUPPORTED', `Node '${nid}' 'config.mode' must be all or each.`, nid, `${where}.config.mode`);
+      }
+      break;
+    }
     case 'subworkflow':
       if (!cfg.workflow_id) {
         err('NODE_CONFIG_REQUIRED', `Node '${nid}' requires 'config.workflow_id' (referenced workflow).`, nid, `${where}.config.workflow_id`);
+      } else if (
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(cfg.workflow_id))
+      ) {
+        err('SUBWORKFLOW_INVALID_ID', `Node '${nid}' 'config.workflow_id' must be a workflow UUID.`, nid, `${where}.config.workflow_id`);
       }
       break;
     case 'loop':

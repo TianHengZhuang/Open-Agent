@@ -109,6 +109,7 @@ export function registryOutputPorts(
 ): RegistryPort[] {
   const node = registryNode(type, version);
   if (!node) return [];
+  let ports: RegistryPort[];
   if (type === 'switch') {
     const routes = Array.isArray(config?.routes)
       ? config.routes
@@ -116,7 +117,7 @@ export function registryOutputPorts(
           .filter((n): n is string => typeof n === 'string' && n.length > 0)
       : [];
     const names = routes.length > 0 ? [...routes, 'default'] : ['out'];
-    return names.map((name) => ({
+    ports = names.map((name) => ({
       name,
       label: name === 'default' ? 'Default' : name,
       direction: 'output',
@@ -124,8 +125,27 @@ export function registryOutputPorts(
       multiple: true,
       dynamic: true,
     }));
+  } else {
+    ports = [...node.output_ports];
   }
-  return [...node.output_ports];
+  // n8n's "On Error → Continue (using error output)" adds a second output.
+  const mode = String(config?.on_error ?? '')
+    .toLowerCase()
+    .replace(/[_\-\s]/g, '');
+  if (
+    (mode === 'continueerroroutput' || mode === 'continueonerroroutput') &&
+    !ports.some((port) => port.name === 'error')
+  ) {
+    ports.push({
+      name: 'error',
+      label: 'Error',
+      direction: 'output',
+      data_types: ['items'],
+      multiple: false,
+      dynamic: true,
+    });
+  }
+  return ports;
 }
 
 export function triggerOutputPorts(type: string): RegistryPort[] {

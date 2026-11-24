@@ -1,12 +1,22 @@
 # Chat-first automation platform — n8n parity blueprint
 
 Status: **active plan**. Phase 1 (expression engine + item model), Phase 2
-(item execution contract, expression conditions, scheduled waits), the
-registry-driven node catalogue from Phase 5 and the chat surfaces from Phase 6
-(`/assistant`, the global Koro dock, the builder panel and workflow chat) are
-implemented in this repository. Production execution semantics (Phase 3) and
-operations hardening (Phase 4), including error workflows and per-workflow
-concurrency, remain specified but not built yet.
+(item execution contract, expression conditions, waits, webhook resume, merge
+fan-in), Phase 3 (error workflow, pinned previews, partial execution, per-node
+item metadata), Phase 4 (per-workflow concurrency with queued dispatch,
+retention pruning, webhook limits, execution budgets and `/operations`
+metrics), the registry-driven node catalogue from Phase 5 (now 59 nodes, 6
+triggers after the Phase 8 file/binary nodes, including the core n8n
+data/logic ports) and the chat
+surfaces from Phase 6 (`/assistant`, the global Koro dock, the builder panel
+and workflow chat) are implemented in this repository. The one Phase 4 item
+still open is routing workflow runs through the Redis worker (queue mode);
+the queued dispatcher is the seam for it.
+
+The audited continuation — node-level retry/error semantics, binary data,
+sub-workflows, the sandboxed Code node, node tiers, queue mode, full chat tool
+coverage and the UI collapse from 114 routes to six surfaces — lives in
+[`n8n-parity-roadmap.md`](./n8n-parity-roadmap.md).
 
 ---
 
@@ -76,15 +86,15 @@ Two findings shape this plan:
 | `{{ }}` expression language | JS subset: `$json`, `$node`, `$()`, `$items()`, `$input`, `$vars`, `$now`, `$today`, `$workflow`, `$execution`, `$parameter`, `$binary`, methods, iterators, ternary, optional chaining | Path resolver: `nodes.x.y`, `variables.x`, `trigger.x`, `env.X` | **Phase 1 (done)** |
 | Expressions in conditions | Same grammar | Custom `contains / starts with / and / or` parser | Phase 2 (route conditions through grammar) |
 | Run modes | Run once per item / once for all items, per-node | Whole-node execution | Phase 2 |
-| Partial execution / "execute node" | Yes, with dirty-node detection | `POST /workflows/{id}/execute-node` | Phase 3 (paired-item aware) |
-| Pinned data | Per-node pin | Pinned output already stored on the definition | Phase 3 (feed `$json` from pins in preview) |
-| Error workflow (workflow-level "On error") | Yes | Per-node `on_error: continue` only | Phase 3 |
-| Concurrency limits per workflow | Yes | Worker-level only (`cloud` config) | Phase 4 |
-| Execution pruning / retention | Settings-driven | Enterprise retention constants only | Phase 4 |
+| Partial execution / "execute node" | Yes, with dirty-node detection | `POST /workflows/{id}/execute-node` rebuilds upstream from pins/`upstream` | **Phase 3 (done)** |
+| Pinned data | Per-node pin | Pinned output on the definition feeds previews/step tests only | **Phase 3 (done)** |
+| Error workflow (workflow-level "On error") | Yes | `settings.error_workflow_id` run with `{execution, workflow, error, lastNodeExecuted}` | **Phase 3 (done)** |
+| Concurrency limits per workflow | Yes | `settings.max_concurrency` + queued dispatch | **Phase 4 (done)** |
+| Execution pruning / retention | Settings-driven | `prune_executions()` on the scheduler tick | **Phase 4 (done)** |
 | Queue mode / workers | Redis queue, main + worker | Redis workers exist (`apps/worker`) | Phase 4 (wire workflow runs) |
-| Wait / resume | Wait node + form/webhook resume | Approval parks run `waiting`, resume route exists | Phase 2 (delays > 10 s, webhook resume) |
+| Wait / resume | Wait node + form/webhook resume | Timed waits + `wait_for_webhook` resume route | **Phase 2 (done)** |
 | Versioning | Workflow history, restore | Versioned definitions | Already present |
-| Node library breadth | 400+ nodes | ~30 local types + provider nodes | Phase 5 (registry-generated) |
+| Node library breadth | 400+ nodes | 51 manifest nodes + 6 triggers (file/binary nodes in Phase 8, Execute Workflow trigger in Phase 9); provider nodes skip locally | **Phase 5 (registry + core ports done)** |
 | Chat control plane | n8n Assistant (build/edit/debug) | Koro (build/edit/run/publish/diagnose) + Assistant page + voice | Phase 6 (full command coverage) |
 | UI surface | Canvas-heavy | Chat + workflows + runs primary, everything else folded | Phase 6 (single chat box) |
 
@@ -218,80 +228,128 @@ and a full persist → sweep → resume cycle against SQLite. The workflow
 regression suites (expressions, chat, definition, subworkflow, connectors, Koro
 history) run 137 tests green.
 
-### 4.4 Still open from this phase
+### 4.4 Finished remainder of this phase
 
-* a per-item `merge` (fan-in of item lists) and a visual run-mode toggle in the
-  inspector;
-* webhook-driven resume in addition to the scheduler sweep;
-* pruning execution data for very large item counts.
+* **Merge fan-in** — `merge` consumes every inbound branch (edge labels can no
+  longer collide) and emits an item list: `mode: "append"` (default),
+  `by_index` (positional combine) or `by_key` (match on `config.field`).
+  `first` keeps the first non-empty branch. The legacy `merged` object is still
+  in `outputs` for older consumers.
+* **Run mode in the inspector** — node settings → *Run mode* writes
+  `run_mode: "all" | "each"` (undoable, validated by the API).
+* **Webhook-driven resume** — a delay with `config.wait_for_webhook` (or
+  `mode: "webhook"`) parks as `WAITING_FOR_WEBHOOK`; `metadata.wait` carries a
+  `webhook_token` and `POST /organizations/{org}/workflows/{id}/executions/{id}/webhook-resume`
+  resumes the same row with the caller's payload (`{{ trigger.webhook.* }}`).
+  The token is constant-time compared; timed waits keep using the sweep.
+* **Execution-data pruning** — stored `items` (both `node_runs` and
+  `execution_data`) are capped at `MAX_PERSISTED_ITEMS_PER_NODE` (100) with
+  `items_truncated` per node and `summary.items_pruned`; the API response still
+  returns the complete run.
 
 ---
 
-## 5. Phase 3 — Production execution semantics
+## 5. Phase 3 — Production execution semantics (implemented)
 
-1. **Error workflow** — add `settings.error_workflow_id` to the definition
-   schema; on a failed run, `run_workflow()` launches that workflow with
-   `{execution, workflow, error, lastNodeExecuted}` as trigger payload. Mirrors
-   n8n's workflow settings panel; surfaced from chat as
-   "when this fails, run X".
-2. **Pinned data in previews** — pinned node output already lives on the
-   definition; make `$json` and the NDV read pins when `mode=preview`, and
-   never during a real run.
-3. **Partial execution** — `execute-node` already exists; extend it to rebuild
-   upstream items from pinned/stored data so "execute this node" works
-   mid-graph, and add n8n-style dirty-node warnings.
-4. **Node-level execution metadata** — start/end time, item counts per output
-   port, `error` per item, `executionStatus` per node (already partially
-   stored).
+1. **Error workflow** — `settings.error_workflow_id` (validated in
+   `workflow_definition.py`, typed in `workflow_schema.py`, editable in the
+   workflow settings panel) is read by `run_workflow()` after a failed run.
+   `_run_error_workflow()` loads the handler inside the same organization and
+   runs it with `{execution, workflow, error, lastNodeExecuted}`; a missing or
+   malformed id is recorded in `metadata.error_workflow` instead of breaking
+   the run, a self-reference is skipped, and the handler itself is invoked with
+   `trigger_error_workflow=False` so failures cannot loop.
+2. **Pinned data in previews** — `run_single_node(use_pinned=True)` (the
+   default for `POST .../execute-node`) exposes `settings.pinned_data` both to
+   expressions (`{{nodes.x.y}}`, `$node`) and as the target node's input items;
+   real runs never pass the flag, so pins cannot leak into production data.
+3. **Partial execution** — the preview also resolves the target node's inbound
+   edges from pinned output or from a caller-supplied `upstream` map, so
+   "execute this node" works on a node whose upstream has not run in this
+   session; `sources` lists which nodes supplied data.
+4. **Node-level execution metadata** — every run records `input_items`,
+   `output_items`, start/end, duration, attempt, `ports`, `reason` and status.
 
-Acceptance: a failing HTTP node triggers the configured error workflow once;
+Acceptance: a failing node triggers the configured error workflow once;
 pinned data shows in previews but is excluded from real runs; "execute node"
 works on a node whose upstream has not run in this session.
+`apps/api/tests/test_workflow_production.py` covers merge modes, webhook wait +
+resume, pruning, error workflow (including the self-reference guard) and
+pinned/partial preview execution.
 
 ---
 
-## 6. Phase 4 — Operations hardening
+## 6. Phase 4 — Operations hardening (implemented, except queue mode)
 
-1. **Per-workflow concurrency** — a `workflow_concurrency` table
-   (`organization_id`, `workflow_id`, `limit`) checked before dispatch; runs
-   over the limit are queued, not dropped. n8n's equivalent is the workflow
-   settings "Concurrency" field.
-2. **Execution pruning** — a scheduled job honouring `retention_seconds`
-   from `apps/api/src/openagent/api/v1/enterprise.py`; soft-delete executions
-   and their events, keep the last N per workflow.
-3. **Queue mode for workflow runs** — route heavy nodes (AI, HTTP batches,
-   code) through `apps/worker` with the existing Redis queue; the local
-   in-process engine stays the default for SQLite dev.
-4. **Rate limits & timeouts** — per-organization webhook rate limit, request
-   body caps, and a global execution-time budget.
-5. **Health/observability** — structured execution metrics (runs, failures,
-   p95 duration, queue depth) exposed on `/operations`.
+`apps/api/src/openagent/runtime/workflow_ops.py` holds the policy helpers;
+`local_engine.run_workflow` and the scheduler tick call them.
 
-Acceptance: 10 parallel triggers with a limit of 2 never exceed 2 concurrent
-runs; pruning keeps the configured window; killing a worker leaves a
-recoverable `running` execution.
+1. **Per-workflow concurrency** — `settings.max_concurrency` (1–32, already
+   validated) is the slot count. `run_workflow` counts `running` executions
+   for the workflow and, when the limit is reached, persists the run as
+   `queued` (with its definition, trigger input and version) instead of
+   dropping it. `dispatch_queued_executions()` runs queued rows FIFO on every
+   scheduler tick once a slot frees up. No new table: the workflow settings
+   field is the source of truth, like n8n's workflow "Concurrency" setting.
+   Without the setting runs start immediately (backwards compatible).
+2. **Execution pruning** — `prune_executions()` deletes terminal executions
+   older than `OPENAGENT_WORKFLOW_RETENTION_SECONDS` (default 90 days, the
+   `enterprise.py` platform floor; `0` disables), keeping the newest
+   `OPENAGENT_WORKFLOW_KEEP_LAST` (default 50) runs per workflow. Their
+   execution events go with them. The scheduler runs the sweep hourly.
+3. **Rate limits & timeouts** — webhooks enforce a per-organization sliding
+   one-minute budget (`OPENAGENT_WEBHOOK_RATE_LIMIT`, default 120; 429 +
+   `Retry-After`) and a request-body cap (`OPENAGENT_WEBHOOK_MAX_BODY_BYTES`,
+   default 1 MiB; 413). `settings.execution_timeout_seconds` is enforced as an
+   `asyncio.wait_for` budget; an over-budget run fails with
+   `EXECUTION_TIMEOUT` instead of running forever.
+4. **Health/observability** — `GET /api/v1/operations/workflows` returns run
+   totals by status, queue depth and oldest queued age, failure rate and
+   p50/p95/avg duration for the window (24 h by default).
+5. **Queue mode for workflow runs** — *not built.* Agent runs still use the
+   Redis worker (`apps/worker`); workflow runs stay in the in-process engine.
+   The queued-execution dispatcher above is the seam a future worker-backed
+   runner would consume.
+
+Acceptance: over-limit runs are queued and started later (never dropped);
+pruning keeps the configured window and the newest N; an over-budget run fails
+with `EXECUTION_TIMEOUT`; webhook flood/oversized payloads are rejected.
+`apps/api/tests/test_workflow_operations.py` covers all of these.
 
 ---
 
-## 7. Phase 5 — Node breadth without UI sprawl
+## 7. Phase 5 — Node breadth (registry + core ports implemented)
 
 Node categories come from a registry, not hand-written menus:
 
-1. `apps/api/src/openagent/registry/` — one manifest per node type
-   (`type`, `version`, `group`, `properties`, `outputs`, `credentials`,
-   `run_mode`, expression-compatible parameter list).
-2. Generate: (a) the local executor mapping, (b) the builder's node palette,
-   (c) the chat tool catalogue the assistant uses to add nodes by name,
-   (d) validation rules.
-3. Port the high-value n8n nodes first: Set, If, Switch, Merge, Split In
-   Batches, Code, HTTP Request, Wait, Schedule, Webhook, Respond to Webhook,
-   Edit Fields, Remove Duplicates, Sort, Limit, Aggregate.
-4. Community nodes: the existing `.oaext` extension system already signs and
+1. `apps/api/src/openagent/registry/` — generated from the authoring catalog
+   (`apps/web/src/features/workflows/node-catalog.ts`) into
+   `node-registry.json`; the API loads it without Node.js and a web test keeps
+   both copies in sync. Each entry carries `type`, `version`, ports, config
+   fields, defaults, category and docs.
+2. Generate: the builder palette, the `GET /nodes/registry` API, the Koro
+   prompt catalogue and the backend/frontend validation rules all read the
+   same document.
+3. **Core n8n ports** — Set, If (condition), Switch, Merge, Split In Batches,
+   Code, HTTP Request (`webhook`), Wait (`delay`), Schedule/Webhook triggers,
+   Respond to Webhook, Edit Fields, Remove Duplicates, Sort, Limit and
+   Aggregate all exist as manifests plus local executors. The Phase 5 additions
+   are `edit_fields`, `aggregate` (collect/count/sum/average/group_by),
+   `split_in_batches`, `code` and `respond_to_webhook`; the responder node
+   drives the real HTTP response of `/hooks/<path>` (status, body, headers).
+4. **Scope of the local executors.** AI/tool/connector/coding nodes are
+   provider-backed: they are recorded as `skipped` with a reason rather than
+   faked. The `code` node evaluates expressions only — no arbitrary JS/Python
+   runs in the local engine; anything needing a sandbox uses the existing code
+   workspace nodes.
+5. Community nodes: the existing `.oaext` extension system already signs and
    versions packages — a node extension type is the n8n "community node"
    equivalent.
 
-Acceptance: adding a node type is one manifest file plus one executor; the
-palette, chat catalogue and validator all pick it up with no other edits.
+Acceptance: adding a node type is one manifest entry plus one executor; the
+palette, API registry, chat catalogue and both validators pick it up with no
+other edits. `apps/api/tests/test_workflow_nodes.py` covers the five nodes and
+`apps/web` keeps the registry and validation in sync.
 
 ---
 
@@ -347,10 +405,40 @@ and is undoable on the canvas.
    (workflow list, execution history, marketplace, settings).
 3. New features ship with a chat action first and a UI control second.
 
+### 8.4 Implemented actions (Phase 6)
+
+`KoroActionResponse.type` lists every typed tool the chat can return. Beyond the
+lifecycle tools (list, build, edit, run, publish/unpublish, delete, duplicate,
+versions, restore, runs, retry, cancel, explain, diagnose, schedule, variables,
+agents, credentials), Phase 6 adds:
+
+| Action | Fields | Permission | Effect |
+| --- | --- | --- | --- |
+| `test_node` | `node` (name or id), optional `input` | `workflow:execute` | Runs one step through `run_single_node` on the latest saved version and returns status, item count and a bounded output preview |
+| `update_workflow` | `name`, `description` | `workflow:update` | Renames the workflow (re-slugs, keeps slugs unique per org) and/or updates the description, with an audit entry |
+| `set_workflow_setting` | `max_concurrency` (0 clears), `execution_timeout_seconds` (1–86400), `error_workflow_id` or `error_workflow` name, `clear_error_workflow` | `workflow:update` | Mutates `definition.settings`, validates and saves a new version — the same settings Phase 4 reads at runtime |
+
+Deterministic phrases (no model needed): "test the Send notification node",
+"rename the workflow to Intake v2", "set concurrency to 2", "set a timeout of
+5 minutes", "when this fails run Failure handler", plus "wait 10 minutes"
+read when adding a delay step. Agent *runs* stay out of the chat: they need the
+Redis worker queue, which the local SQLite profile does not run.
+
+Phases 7–13 grow the same table to 46 tools without adding a second surface:
+node semantics (`set_node_settings`), sub-workflows and static data
+(`link_subworkflow`, `set_static_data`), capability honesty (`node_coverage`),
+production operations (`node_logs`, `resume_wait`, `prune`, `health`,
+`operations_status`, `webhook_url`), portability (`export_workflow`,
+`import_workflow`), safe mutation (`undo_last`, signed plan → confirm → apply
+for `delete`/`restore`/`prune`) and navigation (`open_page`). The registry is
+also the prompt's action union and the `GET …/copilot/tools` catalogue, so the
+chat, the model and the docs cannot drift apart.
+
 Acceptance: from a single conversation a user can create, edit, run, debug,
 publish, unpublish and delete a workflow, manage its credentials by reference,
 and inspect runs — without opening another page. The only graph edits that
 require the canvas are free-hand node positioning.
+`apps/api/tests/test_koro_tools.py` covers the new actions end to end.
 
 ---
 
@@ -359,11 +447,11 @@ require the canvas are free-hand node positioning.
 | Phase | Scope | Effort |
 | --- | --- | --- |
 | 1 | Expression engine + item read model | **done** |
-| 2 | Items as the execution contract, conditions, long waits | **done** |
-| 3 | Error workflow, pinned data in previews, partial execution | 1 week |
-| 4 | Concurrency, pruning, queue mode, observability | 1–2 weeks |
-| 5 | Manifest-driven node registry + core node ports | **registry done** (42 nodes, 5 triggers) |
-| 6 | Tool registry, voice, chat actions for every resource | **surfaces done**; resource actions ongoing |
+| 2 | Items as the execution contract, conditions, waits, merge, pruning | **done** |
+| 3 | Error workflow, pinned data in previews, partial execution | **done** |
+| 4 | Concurrency, pruning, limits, observability (queue mode open) | **done** (except queue mode) |
+| 5 | Manifest-driven node registry + core node ports | **done** (59 nodes, 6 triggers) |
+| 6 | Tool registry, voice, chat actions for every resource | **done** (agent runs need the Redis queue) |
 
 Phases 2–3 are the ones that unblock everything else; node breadth (Phase 5) is
 parallelisable and should not start before the item contract is stable.
@@ -400,6 +488,12 @@ SECRET_KEY=... ENCRYPTION_KEY=... \
   ./.venv/Scripts/python.exe -m pytest \
     tests/test_workflow_chat.py tests/test_workflow_definition.py \
     tests/test_connectors.py -q
+
+# execution contract + production semantics + operations
+SECRET_KEY=... ENCRYPTION_KEY=... DATABASE_URL="sqlite+aiosqlite://" \
+  ./.venv/Scripts/python.exe -m pytest \
+    tests/test_workflow_items.py tests/test_workflow_production.py \
+    tests/test_workflow_operations.py -q
 ```
 
 `reference/n8n` is a sparse checkout kept for reading only; it is excluded from

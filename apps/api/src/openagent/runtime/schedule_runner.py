@@ -41,11 +41,26 @@ from openagent.db.models import (
     WorkflowStatus,
     WorkflowVersion,
 )
+from openagent.runtime.binary_store import prune_binaries
 from openagent.runtime.local_engine import run_workflow
+from openagent.runtime.workflow_ops import (
+    dispatch_queued_executions,
+    prune_executions,
+)
 
 logger = get_logger("openagent.workflows.schedule")
 
 SCHEDULE_TICK_SECONDS = 20.0
+# Retention pruning is hourly; the tick itself is every 20 s.
+PRUNE_INTERVAL_SECONDS = 3600.0
+_last_pruned_at: Optional[datetime] = None
+
+
+def _should_prune(now: Optional[datetime] = None) -> bool:
+    moment = now or datetime.now(timezone.utc)
+    if _last_pruned_at is None:
+        return True
+    return (moment - _last_pruned_at).total_seconds() >= PRUNE_INTERVAL_SECONDS
 
 _MONTHS = {
     "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
@@ -359,6 +374,8 @@ async def start_schedule_loop(tick_seconds: float = SCHEDULE_TICK_SECONDS) -> No
     logger.info("Workflow schedule runner started", tick_seconds=tick_seconds)
     from openagent.db import session as db_session
 
+    global _last_pruned_at
+
     while True:
         try:
             maker = db_session.async_session_maker
@@ -366,10 +383,33 @@ async def start_schedule_loop(tick_seconds: float = SCHEDULE_TICK_SECONDS) -> No
                 async with maker() as session:
                     fired = await run_due_schedules(session)
                     resumed = await resume_due_waits(session)
+                    queued = await dispatch_queued_executions(session)
+                    # Crash journal: beat for runs this process owns, and fail
+                    # runs whose owner stopped beating (Phase 12).
+                    from openagent.runtime.crash_journal import heartbeat, mark_crashed
+
+                    heartbeats = await heartbeat(session)
+                    crashed = await mark_crashed(session)
+                    pruned = None
+                    binaries_pruned = 0
+                    if _should_prune():
+                        pruned = await prune_executions(session)
+                        binaries_pruned = prune_binaries()
+                        _last_pruned_at = datetime.now(timezone.utc)
                 if fired:
                     logger.info("Fired scheduled workflows", count=len(fired), fired=fired)
                 if resumed:
                     logger.info("Resumed waiting workflows", count=len(resumed), resumed=resumed)
+                if queued:
+                    logger.info("Started queued workflow runs", count=len(queued), runs=queued)
+                if heartbeats:
+                    logger.debug("Workflow run heartbeats", count=heartbeats)
+                if crashed:
+                    logger.warning("Marked crashed workflow executions", count=len(crashed))
+                if pruned and pruned.get("deleted"):
+                    logger.info("Pruned workflow executions", **pruned)
+                if binaries_pruned:
+                    logger.info("Pruned binary payloads", count=binaries_pruned)
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # never let the loop die

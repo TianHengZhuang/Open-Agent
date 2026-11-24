@@ -61,6 +61,21 @@ class WorkflowExecution(TimestampMixin, UUIDMixin, Base):
     )
     started_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    # Execution tree (n8n Execute Workflow): a sub-workflow call creates a
+    # child execution whose parent is the run that made the call. The root is
+    # the top-level execution, so every member of a tree is one query away.
+    parent_execution_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workflow_executions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    root_execution_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workflow_executions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     error_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     metadata: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
@@ -82,4 +97,5 @@ class WorkflowExecution(TimestampMixin, UUIDMixin, Base):
         Index("ix_workflow_executions_started_at", "started_at"),
         Index("ix_workflow_executions_organization_status", "organization_id", "status"),
         Index("ix_workflow_executions_organization_created", "organization_id", "created_at"),
+        Index("ix_workflow_executions_root", "root_execution_id", "created_at"),
     )

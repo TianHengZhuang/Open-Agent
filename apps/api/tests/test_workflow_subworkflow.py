@@ -6,10 +6,24 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 
-from openagent.db.models import Workflow, WorkflowStatus, WorkflowVersion
-from openagent.runtime.local_engine import RunContext, execute_definition
+from openagent.db.models import (
+    Workflow,
+    WorkflowExecution,
+    WorkflowExecutionStatus,
+    WorkflowExecutionTriggerType,
+    WorkflowStatus,
+    WorkflowVersion,
+)
+from openagent.runtime.local_engine import (
+    MAX_SUBWORKFLOW_DEPTH,
+    RunContext,
+    execute_definition,
+    run_workflow,
+)
 from openagent.runtime.schedule_runner import CronError, cron_matches, next_run_times
+from openagent.runtime.workflow_ops import cancel_execution_tree
 
 # SQLite's UUID columns use NUMERIC affinity, so an all-zero id collapses to
 # an integer and cannot be read back. Real ids are random.
@@ -117,6 +131,158 @@ async def test_subworkflow_cycle_is_rejected(db_session, org_a):
     assert status == "failed"
     step = next(r for r in runs if r["node_id"] == "n_sub")
     assert step["error_code"] == "SUBWORKFLOW_CYCLE"
+
+
+async def _parent_workflow(db_session, org_id, definition, name="Parent flow"):
+    parent = Workflow(
+        organization_id=org_id,
+        name=name,
+        slug=name.lower().replace(" ", "-"),
+        status=WorkflowStatus.ACTIVE,
+        metadata={},
+    )
+    db_session.add(parent)
+    await db_session.flush()
+    db_session.add(
+        WorkflowVersion(
+            workflow_id=parent.id,
+            version="v1",
+            definition=definition,
+            status="published",
+        )
+    )
+    await db_session.flush()
+    return parent
+
+
+@pytest.mark.asyncio
+async def test_subworkflow_creates_a_child_execution(db_session, org_a):
+    child = await _seed_remote(db_session, org_a.id)
+    parent = await _parent_workflow(db_session, org_a.id, SUB)
+
+    result = await run_workflow(
+        db_session,
+        workflow=parent,
+        organization_id=org_a.id,
+        triggered_by=None,
+        trigger_input={},
+    )
+
+    assert result["status"] == "completed", result.get("error_message")
+    child_run = (
+        await db_session.execute(
+            select(WorkflowExecution).where(WorkflowExecution.workflow_id == child.id)
+        )
+    ).scalar_one()
+    assert str(child_run.parent_execution_id) == result["execution_id"]
+    assert str(child_run.root_execution_id) == result["execution_id"]
+    assert child_run.status == WorkflowExecutionStatus.COMPLETED
+    assert child_run.metadata["run_source"] == "subworkflow"
+    assert child_run.metadata["node_runs"], "child node runs are stored on the child row"
+
+    step = next(run for run in result["node_runs"] if run["node_id"] == "n_sub")
+    assert step["outputs"]["execution_id"] == str(child_run.id)
+
+
+@pytest.mark.asyncio
+async def test_cancelling_a_parent_cancels_its_children(db_session, org_a):
+    child = await _seed_remote(db_session, org_a.id)
+    parent = await _parent_workflow(db_session, org_a.id, SIMPLE)
+    parent_run = WorkflowExecution(
+        organization_id=org_a.id,
+        workflow_id=parent.id,
+        status=WorkflowExecutionStatus.RUNNING,
+        trigger_type=WorkflowExecutionTriggerType.MANUAL,
+        metadata={},
+    )
+    db_session.add(parent_run)
+    await db_session.flush()
+    child_run = WorkflowExecution(
+        organization_id=org_a.id,
+        workflow_id=child.id,
+        status=WorkflowExecutionStatus.RUNNING,
+        trigger_type=WorkflowExecutionTriggerType.API,
+        parent_execution_id=parent_run.id,
+        root_execution_id=parent_run.id,
+        metadata={},
+    )
+    db_session.add(child_run)
+    await db_session.flush()
+
+    cancelled = await cancel_execution_tree(db_session, parent_run, reason="test")
+    await db_session.commit()
+
+    assert set(cancelled) == {parent_run.id, child_run.id}
+    await db_session.refresh(parent_run)
+    await db_session.refresh(child_run)
+    assert parent_run.status == WorkflowExecutionStatus.CANCELLED
+    assert child_run.status == WorkflowExecutionStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_workflow_static_data_is_read_and_persisted(db_session, org_a):
+    definition = {
+        "schema_version": "1.1",
+        "triggers": [{"id": "trg", "type": "manual", "name": "Start", "config": {}}],
+        "nodes": [
+            {
+                "id": "n_read",
+                "type": "set",
+                "name": "Read",
+                "config": {"values": {"last_id": "{{ $getWorkflowStaticData('global').last_id }}"}},
+            }
+        ],
+        "edges": [{"id": "e1", "from": "trg", "to": "n_read"}],
+        "settings": {},
+    }
+    workflow = await _parent_workflow(db_session, org_a.id, definition, name="Counter flow")
+    workflow.static_data = {"global": {"last_id": 7}}
+    await db_session.flush()
+
+    result = await run_workflow(
+        db_session,
+        workflow=workflow,
+        organization_id=org_a.id,
+        triggered_by=None,
+        trigger_input={},
+    )
+
+    step = next(run for run in result["node_runs"] if run["node_id"] == "n_read")
+    assert step["outputs"]["last_id"] == 7
+    await db_session.refresh(workflow)
+    assert workflow.static_data == {"global": {"last_id": 7}}
+
+
+@pytest.mark.asyncio
+async def test_execute_workflow_trigger_exposes_the_parent_payload():
+    definition = {
+        "schema_version": "1.1",
+        "triggers": [
+            {
+                "id": "trg",
+                "type": "execute_workflow",
+                "name": "Called by another workflow",
+                "config": {"inputs": {"ticket_id": "string", "ignored": "string"}},
+            }
+        ],
+        "nodes": [
+            {"id": "n_seen", "type": "set", "name": "Seen", "config": {"values": {"seen": "{{ $json.ticket_id }}"}}},
+        ],
+        "edges": [{"id": "e1", "from": "trg", "to": "n_seen"}],
+        "settings": {},
+    }
+
+    runs, _output, status = await execute_definition(definition, {"ticket_id": "T-1"})
+
+    assert status == "completed"
+    step = next(run for run in runs if run["node_id"] == "n_seen")
+    assert step["outputs"]["seen"] == "T-1"
+    trigger = next(run for run in runs if run["node_id"] == "trg")
+    assert trigger["outputs"]["ignored"] is None
+
+
+def test_subworkflow_depth_limit_matches_n8n():
+    assert MAX_SUBWORKFLOW_DEPTH == 10
 
 
 def test_cron_matches_basic_fields():

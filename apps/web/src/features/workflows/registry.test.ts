@@ -24,7 +24,7 @@ describe('node registry', () => {
     // drop a definition when the registry is regenerated.
     expect(doc.nodes.length).toBe(NODE_CATALOG.length);
     expect(doc.triggers.length).toBe(TRIGGER_CATALOG.length);
-    expect(doc.nodes.length + doc.triggers.length).toBe(47);
+    expect(doc.nodes.length + doc.triggers.length).toBe(65);
     expect(registryFieldTypesAreValid(doc)).toBe(true);
 
     const keys = [

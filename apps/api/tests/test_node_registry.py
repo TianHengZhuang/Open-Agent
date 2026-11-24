@@ -9,9 +9,9 @@ from openagent.services.workflow_definition import _FALLBACK_NODE_TYPES, _FALLBA
 def test_registry_loads_and_matches_the_authoring_catalog_size():
     registry = node_registry.load_registry()
     assert registry.registry_version
-    assert len(registry.nodes) == 42
-    assert len(registry.latest) == 42
-    assert len(registry.triggers) == 5
+    assert len(registry.nodes) == 59
+    assert len(registry.latest) == 59
+    assert len(registry.triggers) == 6
     assert node_registry.registry_document()["generated_from"].endswith("node-catalog.ts")
 
 

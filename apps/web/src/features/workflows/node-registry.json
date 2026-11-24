@@ -66,6 +66,95 @@
       ]
     },
     {
+      "type": "aggregate",
+      "version": 1,
+      "label": "Aggregate",
+      "description": "Collect, count, sum, average or group items.",
+      "category": "Data",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "items": "",
+        "mode": "collect",
+        "field": ""
+      },
+      "config_fields": [
+        {
+          "key": "items",
+          "label": "Collection expression",
+          "type": "expression",
+          "placeholder": "{{nodes.source.items}}",
+          "help": "Empty = use the incoming item collection."
+        },
+        {
+          "key": "mode",
+          "label": "Mode",
+          "type": "select",
+          "options": [
+            {
+              "value": "collect",
+              "label": "Collect values"
+            },
+            {
+              "value": "count",
+              "label": "Count items"
+            },
+            {
+              "value": "sum",
+              "label": "Sum field"
+            },
+            {
+              "value": "average",
+              "label": "Average field"
+            },
+            {
+              "value": "group_by",
+              "label": "Group by field"
+            }
+          ]
+        },
+        {
+          "key": "field",
+          "label": "Field",
+          "type": "text",
+          "placeholder": "amount",
+          "help": "Dotted path for collect/sum/average."
+        },
+        {
+          "key": "group_by",
+          "label": "Group by field",
+          "type": "text",
+          "placeholder": "customer.id",
+          "help": "Only for group_by mode."
+        }
+      ]
+    },
+    {
       "type": "approval",
       "version": 1,
       "label": "Approval",
@@ -416,6 +505,90 @@
           "label": "Browser session ID",
           "type": "text",
           "placeholder": "Reuse an existing session"
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "version": 1,
+      "label": "Code",
+      "description": "Run Python or JavaScript against the items in a sandboxed process, or evaluate an expression locally.",
+      "category": "Data",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "code": "",
+        "language": "expression",
+        "mode": "all"
+      },
+      "config_fields": [
+        {
+          "key": "language",
+          "label": "Language",
+          "type": "select",
+          "help": "Python/JavaScript run in a throwaway process with network and file access blocked; production requires the Docker runner.",
+          "options": [
+            {
+              "value": "expression",
+              "label": "Expression (local)"
+            },
+            {
+              "value": "python",
+              "label": "Python (sandboxed)"
+            },
+            {
+              "value": "javascript",
+              "label": "JavaScript (sandboxed)"
+            }
+          ]
+        },
+        {
+          "key": "mode",
+          "label": "Mode",
+          "type": "select",
+          "options": [
+            {
+              "value": "all",
+              "label": "Run once for all items"
+            },
+            {
+              "value": "each",
+              "label": "Run once for each item"
+            }
+          ]
+        },
+        {
+          "key": "code",
+          "label": "Code / expression",
+          "type": "textarea",
+          "required": true,
+          "placeholder": "return items.map(i => ({ json: { id: i.json.id } }));",
+          "help": "Expression mode: a list becomes one item per entry, an object becomes one item. Python/JS: return an object or a list of objects."
         }
       ]
     },
@@ -964,6 +1137,189 @@
       ]
     },
     {
+      "type": "compare_datasets",
+      "version": 1,
+      "label": "Compare datasets",
+      "description": "Split two item lists into same, different and only-in-one branches.",
+      "category": "Data",
+      "source": "builtin",
+      "outputs": [
+        "same",
+        "different",
+        "only_in_a",
+        "only_in_b"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Inputs",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true,
+          "multiple": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "same",
+          "label": "Same",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        },
+        {
+          "name": "different",
+          "label": "Different",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        },
+        {
+          "name": "only_in_a",
+          "label": "Only in A",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        },
+        {
+          "name": "only_in_b",
+          "label": "Only in B",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "fan_in": true,
+      "default_config": {
+        "field": ""
+      },
+      "config_fields": [
+        {
+          "key": "items_a",
+          "label": "Dataset A",
+          "type": "expression",
+          "placeholder": "{{ $json.old }}",
+          "help": "Empty uses the first incoming connection."
+        },
+        {
+          "key": "items_b",
+          "label": "Dataset B",
+          "type": "expression",
+          "placeholder": "{{ $json.new }}",
+          "help": "Empty uses the second incoming connection."
+        },
+        {
+          "key": "field",
+          "label": "Compare field(s)",
+          "type": "text",
+          "placeholder": "id, email",
+          "help": "Comma-separated. Empty compares whole items."
+        }
+      ]
+    },
+    {
+      "type": "compression",
+      "version": 1,
+      "label": "Compression",
+      "description": "Gzip, deflate or zip data and back (base64 payloads).",
+      "category": "Data",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "action": "gzip",
+        "binary_property": "data",
+        "file_name": "data.txt"
+      },
+      "config_fields": [
+        {
+          "key": "action",
+          "label": "Action",
+          "type": "select",
+          "required": true,
+          "options": [
+            {
+              "value": "gzip",
+              "label": "Gzip"
+            },
+            {
+              "value": "gunzip",
+              "label": "Gunzip"
+            },
+            {
+              "value": "deflate",
+              "label": "Deflate"
+            },
+            {
+              "value": "inflate",
+              "label": "Inflate"
+            },
+            {
+              "value": "zip",
+              "label": "Zip"
+            },
+            {
+              "value": "unzip",
+              "label": "Unzip"
+            }
+          ]
+        },
+        {
+          "key": "data",
+          "label": "Base64 data",
+          "type": "expression",
+          "help": "Empty uses the incoming item binary."
+        },
+        {
+          "key": "binary_property",
+          "label": "Binary property",
+          "type": "text",
+          "placeholder": "data"
+        },
+        {
+          "key": "file_name",
+          "label": "Zip entry name",
+          "type": "text",
+          "placeholder": "data.txt"
+        }
+      ]
+    },
+    {
       "type": "condition",
       "version": 1,
       "label": "If / Condition",
@@ -1264,6 +1620,92 @@
       ]
     },
     {
+      "type": "convert_to_file",
+      "version": 1,
+      "label": "Convert to file",
+      "description": "Turn items into a CSV, JSON or text file (binary).",
+      "category": "Data",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "format": "csv",
+        "file_name": "",
+        "delimiter": ",",
+        "header": true,
+        "binary_property": "data"
+      },
+      "config_fields": [
+        {
+          "key": "format",
+          "label": "Format",
+          "type": "select",
+          "options": [
+            {
+              "value": "csv",
+              "label": "CSV"
+            },
+            {
+              "value": "json",
+              "label": "JSON"
+            },
+            {
+              "value": "text",
+              "label": "Text"
+            }
+          ]
+        },
+        {
+          "key": "file_name",
+          "label": "File name",
+          "type": "text",
+          "placeholder": "rows.csv",
+          "help": "Expression allowed; defaults by format."
+        },
+        {
+          "key": "delimiter",
+          "label": "CSV delimiter",
+          "type": "text",
+          "placeholder": ","
+        },
+        {
+          "key": "header",
+          "label": "CSV header row",
+          "type": "boolean"
+        },
+        {
+          "key": "binary_property",
+          "label": "Binary property",
+          "type": "text",
+          "placeholder": "data"
+        }
+      ]
+    },
+    {
       "type": "correct",
       "version": 1,
       "label": "Correct",
@@ -1442,6 +1884,268 @@
       ]
     },
     {
+      "type": "crypto",
+      "version": 1,
+      "label": "Crypto",
+      "description": "Hash, sign, encode or generate identifiers locally.",
+      "category": "Utilities",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "action": "hash",
+        "algorithm": "sha256",
+        "encoding": "hex"
+      },
+      "config_fields": [
+        {
+          "key": "action",
+          "label": "Action",
+          "type": "select",
+          "required": true,
+          "options": [
+            {
+              "value": "hash",
+              "label": "Hash"
+            },
+            {
+              "value": "hmac",
+              "label": "HMAC"
+            },
+            {
+              "value": "uuid",
+              "label": "UUID"
+            },
+            {
+              "value": "base64_encode",
+              "label": "Base64 encode"
+            },
+            {
+              "value": "base64_decode",
+              "label": "Base64 decode"
+            }
+          ]
+        },
+        {
+          "key": "value",
+          "label": "Value",
+          "type": "expression",
+          "placeholder": "{{ $json.email }}",
+          "help": "Not used for UUID."
+        },
+        {
+          "key": "algorithm",
+          "label": "Algorithm",
+          "type": "select",
+          "options": [
+            {
+              "value": "md5",
+              "label": "MD5"
+            },
+            {
+              "value": "sha1",
+              "label": "SHA-1"
+            },
+            {
+              "value": "sha256",
+              "label": "SHA-256"
+            },
+            {
+              "value": "sha512",
+              "label": "SHA-512"
+            },
+            {
+              "value": "sha3_256",
+              "label": "SHA3-256"
+            }
+          ]
+        },
+        {
+          "key": "secret",
+          "label": "HMAC secret",
+          "type": "credential",
+          "sensitive": true,
+          "help": "Reference a credential; literal secrets are rejected by validation."
+        },
+        {
+          "key": "encoding",
+          "label": "Digest encoding",
+          "type": "select",
+          "options": [
+            {
+              "value": "hex",
+              "label": "Hex"
+            },
+            {
+              "value": "base64",
+              "label": "Base64"
+            }
+          ]
+        },
+        {
+          "key": "count",
+          "label": "UUID count",
+          "type": "number",
+          "min": 1,
+          "max": 100
+        }
+      ]
+    },
+    {
+      "type": "datetime",
+      "version": 1,
+      "label": "Date & Time",
+      "description": "Parse, format, shift or compare dates.",
+      "category": "Utilities",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "action": "now",
+        "format": ""
+      },
+      "config_fields": [
+        {
+          "key": "action",
+          "label": "Action",
+          "type": "select",
+          "required": true,
+          "options": [
+            {
+              "value": "now",
+              "label": "Now"
+            },
+            {
+              "value": "parse",
+              "label": "Parse"
+            },
+            {
+              "value": "format",
+              "label": "Format"
+            },
+            {
+              "value": "shift",
+              "label": "Add / subtract"
+            },
+            {
+              "value": "diff",
+              "label": "Difference"
+            }
+          ]
+        },
+        {
+          "key": "date",
+          "label": "Date",
+          "type": "expression",
+          "placeholder": "{{ $json.created_at }}",
+          "help": "ISO 8601, a Unix timestamp, or empty for now."
+        },
+        {
+          "key": "format",
+          "label": "Format",
+          "type": "text",
+          "placeholder": "yyyy-MM-dd HH:mm:ss",
+          "help": "strftime or n8n token style."
+        },
+        {
+          "key": "amount",
+          "label": "Amount",
+          "type": "number",
+          "help": "Only for add/subtract."
+        },
+        {
+          "key": "unit",
+          "label": "Unit",
+          "type": "select",
+          "options": [
+            {
+              "value": "seconds",
+              "label": "Seconds"
+            },
+            {
+              "value": "minutes",
+              "label": "Minutes"
+            },
+            {
+              "value": "hours",
+              "label": "Hours"
+            },
+            {
+              "value": "days",
+              "label": "Days"
+            },
+            {
+              "value": "weeks",
+              "label": "Weeks"
+            },
+            {
+              "value": "months",
+              "label": "Months"
+            },
+            {
+              "value": "years",
+              "label": "Years"
+            }
+          ]
+        },
+        {
+          "key": "to",
+          "label": "Compare to",
+          "type": "expression",
+          "placeholder": "{{ $now }}",
+          "help": "Only for difference."
+        }
+      ]
+    },
+    {
       "type": "delay",
       "version": 1,
       "label": "Delay",
@@ -1484,6 +2188,66 @@
           "type": "number",
           "required": true,
           "min": 1
+        }
+      ]
+    },
+    {
+      "type": "edit_fields",
+      "version": 1,
+      "label": "Edit fields",
+      "description": "Add, keep or remove fields on every item.",
+      "category": "Data",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "fields": {},
+        "keep_only": "",
+        "remove": ""
+      },
+      "config_fields": [
+        {
+          "key": "fields",
+          "label": "Fields (JSON)",
+          "type": "json",
+          "placeholder": "{\"status\": \"{{ $json.state }}\"}"
+        },
+        {
+          "key": "keep_only",
+          "label": "Keep only",
+          "type": "text",
+          "placeholder": "id, email",
+          "help": "Comma-separated. Empty keeps all fields."
+        },
+        {
+          "key": "remove",
+          "label": "Remove fields",
+          "type": "text",
+          "placeholder": "internal_note"
         }
       ]
     },
@@ -1542,6 +2306,82 @@
           "label": "Checks (JSON)",
           "type": "json",
           "placeholder": "[]"
+        }
+      ]
+    },
+    {
+      "type": "extract_from_file",
+      "version": 1,
+      "label": "Extract from file",
+      "description": "Read a CSV, JSON or text binary into items.",
+      "category": "Data",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "format": "auto",
+        "delimiter": ",",
+        "binary_property": "data"
+      },
+      "config_fields": [
+        {
+          "key": "format",
+          "label": "Format",
+          "type": "select",
+          "options": [
+            {
+              "value": "auto",
+              "label": "Auto (by type)"
+            },
+            {
+              "value": "csv",
+              "label": "CSV"
+            },
+            {
+              "value": "json",
+              "label": "JSON"
+            },
+            {
+              "value": "text",
+              "label": "Text (one item per line)"
+            }
+          ]
+        },
+        {
+          "key": "delimiter",
+          "label": "CSV delimiter",
+          "type": "text",
+          "placeholder": ","
+        },
+        {
+          "key": "binary_property",
+          "label": "Binary property",
+          "type": "text",
+          "placeholder": "data"
         }
       ]
     },
@@ -1655,6 +2495,72 @@
           "type": "textarea",
           "required": true,
           "placeholder": "fix(auth): validate session expiry"
+        }
+      ]
+    },
+    {
+      "type": "html",
+      "version": 1,
+      "label": "HTML",
+      "description": "Extract text or links from HTML, or render items as a table.",
+      "category": "Data",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "action": "extract_text"
+      },
+      "config_fields": [
+        {
+          "key": "action",
+          "label": "Action",
+          "type": "select",
+          "required": true,
+          "options": [
+            {
+              "value": "extract_text",
+              "label": "Extract text"
+            },
+            {
+              "value": "extract_links",
+              "label": "Extract links"
+            },
+            {
+              "value": "build_table",
+              "label": "Build table"
+            }
+          ]
+        },
+        {
+          "key": "html",
+          "label": "HTML",
+          "type": "expression",
+          "placeholder": "{{ $json.body }}",
+          "help": "Empty reads the html/body/data field of the incoming item."
         }
       ]
     },
@@ -1892,6 +2798,42 @@
       ]
     },
     {
+      "type": "no_op",
+      "version": 1,
+      "label": "No operation",
+      "description": "Pass items through unchanged.",
+      "category": "Utilities",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {},
+      "config_fields": []
+    },
+    {
       "type": "prompt",
       "version": 1,
       "label": "AI Prompt",
@@ -2048,6 +2990,60 @@
       ]
     },
     {
+      "type": "read_binary_file",
+      "version": 1,
+      "label": "Read binary file",
+      "description": "Read a file from the workflow file folder as binary.",
+      "category": "Data",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "path": "",
+        "binary_property": "data"
+      },
+      "config_fields": [
+        {
+          "key": "path",
+          "label": "Path",
+          "type": "text",
+          "required": true,
+          "placeholder": "inbox/report.csv",
+          "help": "Relative to OPENAGENT_FILE_DIR; parent paths are rejected."
+        },
+        {
+          "key": "binary_property",
+          "label": "Binary property",
+          "type": "text",
+          "placeholder": "data"
+        }
+      ]
+    },
+    {
       "type": "remove_duplicates",
       "version": 1,
       "label": "Remove duplicates",
@@ -2098,6 +3094,65 @@
           "type": "text",
           "placeholder": "email",
           "help": "Optional dotted path. Empty compares whole items."
+        }
+      ]
+    },
+    {
+      "type": "respond_to_webhook",
+      "version": 1,
+      "label": "Respond to webhook",
+      "description": "Return a custom HTTP response from a webhook run.",
+      "category": "HTTP",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "status": 200,
+        "body": "",
+        "headers": {}
+      },
+      "config_fields": [
+        {
+          "key": "status",
+          "label": "Status code",
+          "type": "number",
+          "min": 100,
+          "max": 599
+        },
+        {
+          "key": "body",
+          "label": "Body (JSON)",
+          "type": "json",
+          "placeholder": "{\"ok\": true}"
+        },
+        {
+          "key": "headers",
+          "label": "Headers (JSON)",
+          "type": "json"
         }
       ]
     },
@@ -2270,6 +3325,60 @@
       ]
     },
     {
+      "type": "split_in_batches",
+      "version": 1,
+      "label": "Split in batches",
+      "description": "Chunk items into fixed-size batches.",
+      "category": "Logic",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "items": "",
+        "batch_size": 10
+      },
+      "config_fields": [
+        {
+          "key": "items",
+          "label": "Collection expression",
+          "type": "expression",
+          "placeholder": "{{nodes.source.items}}",
+          "help": "Empty = use the incoming item collection."
+        },
+        {
+          "key": "batch_size",
+          "label": "Batch size",
+          "type": "number",
+          "min": 1,
+          "max": 1000
+        }
+      ]
+    },
+    {
       "type": "split_out",
       "version": 1,
       "label": "Split out",
@@ -2321,6 +3430,69 @@
           "required": true,
           "placeholder": "tags",
           "help": "Dotted path to the list inside each item."
+        }
+      ]
+    },
+    {
+      "type": "stop_and_error",
+      "version": 1,
+      "label": "Stop and error",
+      "description": "Fail the run with an explicit message.",
+      "category": "Logic",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "terminal": true,
+      "default_config": {
+        "mode": "error",
+        "message": ""
+      },
+      "config_fields": [
+        {
+          "key": "mode",
+          "label": "Mode",
+          "type": "select",
+          "options": [
+            {
+              "value": "error",
+              "label": "Error message"
+            },
+            {
+              "value": "error_object",
+              "label": "Error object"
+            }
+          ]
+        },
+        {
+          "key": "message",
+          "label": "Message",
+          "type": "expression",
+          "required": true,
+          "placeholder": "Order {{ $json.id }} failed validation"
         }
       ]
     },
@@ -2740,6 +3912,135 @@
           "help": "Reference id of a stored credential. Never paste secrets here."
         }
       ]
+    },
+    {
+      "type": "write_binary_file",
+      "version": 1,
+      "label": "Write binary file",
+      "description": "Write the item binary to a file in the workflow file folder.",
+      "category": "Data",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "path": "",
+        "binary_property": "data"
+      },
+      "config_fields": [
+        {
+          "key": "path",
+          "label": "Path",
+          "type": "text",
+          "required": true,
+          "placeholder": "out/report.csv",
+          "help": "Relative to OPENAGENT_FILE_DIR; parent paths are rejected."
+        },
+        {
+          "key": "binary_property",
+          "label": "Binary property",
+          "type": "text",
+          "placeholder": "data"
+        }
+      ]
+    },
+    {
+      "type": "xml",
+      "version": 1,
+      "label": "XML",
+      "description": "Parse XML into JSON, or build XML from JSON.",
+      "category": "Data",
+      "source": "builtin",
+      "outputs": [
+        "out"
+      ],
+      "has_input": true,
+      "input_ports": [
+        {
+          "name": "in",
+          "label": "Input",
+          "direction": "input",
+          "data_types": [
+            "items"
+          ],
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "default_config": {
+        "action": "parse",
+        "root": "root"
+      },
+      "config_fields": [
+        {
+          "key": "action",
+          "label": "Action",
+          "type": "select",
+          "required": true,
+          "options": [
+            {
+              "value": "parse",
+              "label": "XML → JSON"
+            },
+            {
+              "value": "build",
+              "label": "JSON → XML"
+            }
+          ]
+        },
+        {
+          "key": "xml",
+          "label": "XML",
+          "type": "expression",
+          "placeholder": "{{ $json.body }}"
+        },
+        {
+          "key": "data",
+          "label": "Data",
+          "type": "expression",
+          "placeholder": "{{ $json }}",
+          "help": "Only for JSON → XML."
+        },
+        {
+          "key": "root",
+          "label": "Root element",
+          "type": "text",
+          "placeholder": "root"
+        }
+      ]
     }
   ],
   "triggers": [
@@ -2825,6 +4126,32 @@
           "type": "text",
           "required": true,
           "placeholder": "ticket.created"
+        }
+      ]
+    },
+    {
+      "type": "execute_workflow",
+      "version": 1,
+      "label": "Execute Workflow Trigger",
+      "description": "Start this workflow when another workflow calls it as a sub-workflow.",
+      "output_ports": [
+        {
+          "name": "out",
+          "label": "Output",
+          "direction": "output",
+          "data_types": [
+            "items"
+          ],
+          "multiple": true
+        }
+      ],
+      "config_fields": [
+        {
+          "key": "inputs",
+          "label": "Expected inputs (JSON)",
+          "type": "json",
+          "placeholder": "{\"ticket_id\": \"string\"}",
+          "help": "Documentation only: declared keys appear on the trigger item with an empty default."
         }
       ]
     },

@@ -58,7 +58,7 @@ def test_alembic_revision_chain_includes_additive_migration():
     config.set_main_option("script_location", str(api_root / "alembic"))
     script = ScriptDirectory.from_config(config)
     heads = script.get_heads()
-    assert heads == ["028_workflow_definition_schema"]
+    assert heads == ["029_subworkflow_tree_static_data"]
 
     revision = script.get_revision("028_workflow_definition_schema")
     assert revision is not None

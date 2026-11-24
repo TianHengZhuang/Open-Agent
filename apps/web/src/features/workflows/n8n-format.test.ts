@@ -89,6 +89,43 @@ describe('n8n import', () => {
     expect(mystery?.config.n8n_parameters).toEqual({ foo: 'bar' });
   });
 
+  it('imports node error/retry settings and the error output', () => {
+    const result = fromN8nWorkflow({
+      nodes: [
+        {
+          name: 'Call API',
+          type: 'n8n-nodes-base.httpRequest',
+          position: [0, 0],
+          parameters: { url: 'https://api.example.com' },
+          onError: 'continueErrorOutput',
+          retryOnFail: true,
+          maxTries: 4,
+          waitBetweenTries: 500,
+          alwaysOutputData: true,
+          executeOnce: true,
+        },
+        { name: 'Recover', type: 'n8n-nodes-base.set', position: [200, 0], parameters: {} },
+      ],
+      connections: {
+        'Call API': { main: [[], [{ node: 'Recover', type: 'main', index: 1 }]] },
+      },
+    });
+
+    const node = result.definition?.nodes.find((entry) => entry.name === 'Call API');
+    expect(node).toMatchObject({
+      on_error: 'continueErrorOutput',
+      retry_on_fail: true,
+      max_tries: 4,
+      wait_between_tries_ms: 500,
+      always_output_data: true,
+      execute_once: true,
+    });
+    const recover = result.definition?.nodes.find((entry) => entry.name === 'Recover');
+    const errorEdge = result.definition?.edges.find((edge) => edge.to === recover?.id);
+    expect(errorEdge?.connection_type).toBe('error');
+    expect(errorEdge?.from_port).toBe('error');
+  });
+
   it('maps schedule triggers to cron config', () => {
     const result = fromN8nWorkflow({
       nodes: [

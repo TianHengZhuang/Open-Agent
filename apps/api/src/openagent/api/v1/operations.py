@@ -87,6 +87,17 @@ async def operations_metrics(
                 fromlist=["METRIC_CATALOG"]).METRIC_CATALOG.keys())}
 
 
+@router.get("/workflows", summary="Workflow execution health")
+async def operations_workflows(
+    auth: AuthorizationContext = Depends(get_current_org_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Run counts, queue depth, failure rate and latency for this organization."""
+    from openagent.runtime.workflow_ops import execution_metrics
+
+    return await execution_metrics(db, auth.organization_id)
+
+
 @router.get("/slos", summary="SLO status with error budgets")
 async def operations_slos(
     auth: AuthorizationContext = Depends(get_current_org_context),

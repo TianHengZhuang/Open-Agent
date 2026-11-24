@@ -16,7 +16,8 @@ describe('node registry', () => {
     for (const t of [
       'agent', 'prompt', 'condition', 'switch', 'merge', 'loop', 'set',
       'transform', 'filter', 'map', 'variable', 'approval', 'webhook',
-      'tool', 'delay', 'subworkflow',
+      'tool', 'delay', 'subworkflow', 'edit_fields', 'aggregate',
+      'split_in_batches', 'code', 'respond_to_webhook',
     ]) {
       expect(types.has(t)).toBe(true);
     }
@@ -25,6 +26,7 @@ describe('node registry', () => {
       'webhook',
       'schedule',
       'event',
+      'execute_workflow',
       'chat',
     ]);
   });

@@ -253,6 +253,27 @@ export function Inspector({
                 }
               />
             </Field>
+            <Field
+              label="Run mode"
+              htmlFor="node-run-mode"
+              help="Each item runs the node once per incoming item, with $json bound to that item."
+            >
+              <Select
+                id="node-run-mode"
+                value={node!.run_mode === 'each' ? 'each' : 'all'}
+                disabled={disabled}
+                onChange={(e) =>
+                  dispatch({
+                    type: 'update-node',
+                    id: item.id,
+                    patch: { run_mode: e.target.value === 'each' ? 'each' : undefined },
+                  })
+                }
+              >
+                <option value="all">Run once for all items</option>
+                <option value="each">Run once for each item</option>
+              </Select>
+            </Field>
             <Field label="Timeout (seconds)" htmlFor="node-timeout" help="Empty = engine default.">
               <Input
                 id="node-timeout"
@@ -273,32 +294,90 @@ export function Inspector({
             <Field
               label="On error"
               htmlFor="node-on-error"
-              help="Continue passes the input to the next node; the node is still reported as failed."
+              help="Continue passes the input on; “error output” routes one error item to the red port."
             >
               <Select
                 id="node-on-error"
-                value={String(node!.config?.on_error ?? 'stop')}
+                value={node!.on_error ?? String(node!.config?.on_error ?? 'stop')}
                 disabled={disabled}
-                onChange={(e) => setConfig('on_error', e.target.value === 'stop' ? undefined : e.target.value)}
-              >
-                <option value="stop">Stop workflow</option>
-                <option value="continue">Continue (pass input through)</option>
-              </Select>
-            </Field>
-            <Field label="Max retries" htmlFor="node-retry" help="0–10 additional attempts.">
-              <Input
-                id="node-retry"
-                type="number"
-                min={0}
-                max={10}
-                disabled={disabled}
-                value={node!.retry_policy?.max_attempts ?? 0}
                 onChange={(e) =>
                   dispatch({
                     type: 'update-node',
                     id: item.id,
-                    patch: { retry_policy: { max_attempts: Math.max(0, Math.min(10, Number(e.target.value) || 0)) } },
+                    patch: { on_error: e.target.value === 'stop' ? undefined : (e.target.value as 'continue' | 'continueErrorOutput') },
                   })
+                }
+              >
+                <option value="stop">Stop workflow</option>
+                <option value="continue">Continue (pass input through)</option>
+                <option value="continueErrorOutput">Continue (using error output)</option>
+              </Select>
+            </Field>
+            <Field label="Retry on fail" htmlFor="node-retry-toggle" help="Retries the node before the error handling above applies.">
+              <Switch
+                label="Retry on fail"
+                checked={node!.retry_on_fail === true}
+                disabled={disabled}
+                onCheckedChange={(v) =>
+                  dispatch({ type: 'update-node', id: item.id, patch: { retry_on_fail: v || undefined } })
+                }
+              />
+            </Field>
+            {node!.retry_on_fail && (
+              <>
+                <Field label="Max tries" htmlFor="node-max-tries" help="Total attempts, including the first (1–10).">
+                  <Input
+                    id="node-max-tries"
+                    type="number"
+                    min={1}
+                    max={10}
+                    disabled={disabled}
+                    value={node!.max_tries ?? 3}
+                    onChange={(e) =>
+                      dispatch({
+                        type: 'update-node',
+                        id: item.id,
+                        patch: { max_tries: Math.max(1, Math.min(10, Number(e.target.value) || 1)) },
+                      })
+                    }
+                  />
+                </Field>
+                <Field label="Wait between tries (ms)" htmlFor="node-retry-wait" help="0–60000 ms.">
+                  <Input
+                    id="node-retry-wait"
+                    type="number"
+                    min={0}
+                    max={60000}
+                    disabled={disabled}
+                    value={node!.wait_between_tries_ms ?? 0}
+                    onChange={(e) =>
+                      dispatch({
+                        type: 'update-node',
+                        id: item.id,
+                        patch: { wait_between_tries_ms: Math.max(0, Math.min(60000, Number(e.target.value) || 0)) },
+                      })
+                    }
+                  />
+                </Field>
+              </>
+            )}
+            <Field label="Execute once" htmlFor="node-execute-once" help="Run with the first item only, even when several arrive.">
+              <Switch
+                label="Execute once"
+                checked={node!.execute_once === true}
+                disabled={disabled}
+                onCheckedChange={(v) =>
+                  dispatch({ type: 'update-node', id: item.id, patch: { execute_once: v || undefined } })
+                }
+              />
+            </Field>
+            <Field label="Always output data" htmlFor="node-always-output" help="Emit one empty item when the node produces no output.">
+              <Switch
+                label="Always output data"
+                checked={node!.always_output_data === true}
+                disabled={disabled}
+                onCheckedChange={(v) =>
+                  dispatch({ type: 'update-node', id: item.id, patch: { always_output_data: v || undefined } })
                 }
               />
             </Field>
@@ -816,6 +895,19 @@ function WorkflowSettingsPanel({ editor, disabled }: { editor: WorkflowEditor; d
                 value={typeof definition.settings.max_concurrency === 'number' ? definition.settings.max_concurrency : ''}
                 placeholder="1"
                 onChange={(e) => setSettings({ ...definition.settings, max_concurrency: e.target.value === '' ? undefined : Number(e.target.value) })}
+              />
+            </Field>
+            <Field
+              label="Error workflow"
+              htmlFor="wf-error"
+              help="Workflow id to run when this workflow fails (n8n On error)."
+            >
+              <Input
+                id="wf-error"
+                value={typeof definition.settings.error_workflow_id === 'string' ? definition.settings.error_workflow_id : ''}
+                disabled={disabled}
+                placeholder="Workflow id"
+                onChange={(e) => setSettings({ ...definition.settings, error_workflow_id: e.target.value.trim() || undefined })}
               />
             </Field>
           </div>

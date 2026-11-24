@@ -32,6 +32,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
+from uuid import UUID
 
 from openagent.services.workflow_schema import (
     SCHEMA_VERSION,
@@ -42,7 +43,14 @@ from openagent.services.workflow_schema import (
 # Canonical registry: generated from the web authoring catalog. Fallback sets
 # keep the validator usable if the generated file is missing; a test asserts
 # every fallback type exists in the registry, so drift is caught in CI.
-_FALLBACK_TRIGGER_TYPES = {"manual", "webhook", "schedule", "event", "chat"}
+_FALLBACK_TRIGGER_TYPES = {
+    "manual",
+    "webhook",
+    "schedule",
+    "event",
+    "chat",
+    "execute_workflow",
+}
 _FALLBACK_NODE_TYPES = {
     "agent",
     "prompt",
@@ -107,6 +115,8 @@ except (ImportError, OSError, ValueError):  # pragma: no cover
 EDGE_WHEN = {"always", "success", "failure"}
 # n8n's "Run Once for All Items" / "Run Once for Each Item".
 RUN_MODES = {"all", "each"}
+# n8n's node setting "On Error".
+ERROR_HANDLING = {"stop", "continue", "continueerroroutput", "continueonerroroutput"}
 VARIABLE_TYPES = {"string", "number", "boolean", "json"}
 CONNECTION_TYPES = {"main", "error"}
 
@@ -156,10 +166,10 @@ def _ports_compatible(source: Any, target: Any) -> bool:
     return registry.are_port_types_compatible(_port_types(source), _port_types(target))
 
 # Node types that may terminate a branch without outgoing edges.
-TERMINAL_NODE_TYPES = {"approval"}
+TERMINAL_NODE_TYPES = {"approval", "stop_and_error"}
 
 # Nodes whose single input accepts many inbound edges (fan-in).
-FAN_IN_NODE_TYPES = {"merge"}
+FAN_IN_NODE_TYPES = {"merge", "compare_datasets"}
 
 # Config keys that must only hold references (credential_id or {{...}}),
 # never literal secret material.
@@ -380,6 +390,33 @@ def validate_definition(definition: Any) -> ValidationResult:
                     err("INVALID_RETRY_POLICY",
                         f"Node {nid!r} 'retry_policy.max_attempts' must be an integer 0..10.",
                         node_id=nid, field=f"{where}.retry_policy.max_attempts")
+        on_error = n.get("on_error")
+        if on_error is not None:
+            normalized = str(on_error).lower().replace("_", "").replace("-", "").replace(" ", "")
+            if normalized not in ERROR_HANDLING:
+                err("INVALID_ERROR_HANDLING",
+                    f"Node {nid!r} 'on_error' must be stop, continue or continueErrorOutput.",
+                    node_id=nid, field=f"{where}.on_error")
+        for flag in ("retry_on_fail", "always_output_data", "execute_once"):
+            value = n.get(flag)
+            if value is not None and not isinstance(value, bool):
+                err("INVALID_NODE_FIELD",
+                    f"Node {nid!r} '{flag}' must be a boolean.",
+                    node_id=nid, field=f"{where}.{flag}")
+        max_tries = n.get("max_tries")
+        if max_tries is not None and (
+            not isinstance(max_tries, int) or max_tries < 1 or max_tries > 10
+        ):
+            err("INVALID_RETRY_POLICY",
+                f"Node {nid!r} 'max_tries' must be an integer 1..10.",
+                node_id=nid, field=f"{where}.max_tries")
+        wait_ms = n.get("wait_between_tries_ms")
+        if wait_ms is not None and (
+            not isinstance(wait_ms, (int, float)) or wait_ms < 0 or wait_ms > 60000
+        ):
+            err("INVALID_RETRY_POLICY",
+                f"Node {nid!r} 'wait_between_tries_ms' must be 0..60000.",
+                node_id=nid, field=f"{where}.wait_between_tries_ms")
         run_mode = n.get("run_mode")
         if run_mode is not None and run_mode not in RUN_MODES:
             err("INVALID_RUN_MODE",
@@ -426,8 +463,13 @@ def validate_definition(definition: Any) -> ValidationResult:
         else:
             target_inputs = []
         if src_node is not None:
+            # The node-level `on_error` setting also shapes the output ports.
+            base_config = src_node.get("config") if _is_dict(src_node.get("config")) else {}
+            port_config = dict(base_config)
+            if src_node.get("on_error") and not port_config.get("on_error"):
+                port_config["on_error"] = src_node["on_error"]
             source_ports = _output_ports(
-                src_type, src_node.get("config"), src_node.get("type_version")
+                src_type, port_config, src_node.get("type_version")
             )
         else:
             trigger = next(
@@ -683,6 +725,11 @@ def validate_definition(definition: Any) -> ValidationResult:
             err("INVALID_SETTINGS",
                 "'settings.execution_timeout_seconds' must be an integer 1..86400.",
                 field="settings.execution_timeout_seconds")
+        efw = settings.get("error_workflow_id")
+        if efw is not None and (not isinstance(efw, str) or not efw.strip()):
+            err("INVALID_SETTINGS",
+                "'settings.error_workflow_id' must be a non-empty workflow id.",
+                field="settings.error_workflow_id")
 
     return result
 
@@ -737,6 +784,53 @@ def _validate_node_config(err, nid: str, ntype: Any, config: dict, where: str,
                         node_id=nid, field=f"{where}.config.routes")
     elif ntype == "merge":
         pass  # Fan-in only; no required config.
+    elif ntype == "edit_fields":
+        if config.get("fields") is not None and not isinstance(config.get("fields"), dict):
+            err("NODE_CONFIG_REQUIRED",
+                f"Node {nid!r} 'config.fields' must be an object.",
+                node_id=nid, field=f"{where}.config.fields")
+    elif ntype == "aggregate":
+        mode = str(config.get("mode") or "collect")
+        if mode not in {"collect", "count", "sum", "average", "group_by"}:
+            err("NODE_CONFIG_REQUIRED",
+                f"Node {nid!r} 'config.mode' must be collect, count, sum, average or group_by.",
+                node_id=nid, field=f"{where}.config.mode")
+        elif mode in {"collect", "sum", "average"} and not config.get("field"):
+            err("NODE_CONFIG_REQUIRED",
+                f"Node {nid!r} aggregate {mode} requires 'config.field'.",
+                node_id=nid, field=f"{where}.config.field")
+        elif mode == "group_by" and not config.get("group_by"):
+            err("NODE_CONFIG_REQUIRED",
+                f"Node {nid!r} group_by requires 'config.group_by'.",
+                node_id=nid, field=f"{where}.config.group_by")
+    elif ntype == "split_in_batches":
+        size = config.get("batch_size", 10)
+        if isinstance(size, bool) or not isinstance(size, int) or not 1 <= size <= 1000:
+            err("NODE_CONFIG_REQUIRED",
+                f"Node {nid!r} 'config.batch_size' must be an integer 1..1000.",
+                node_id=nid, field=f"{where}.config.batch_size")
+    elif ntype == "code":
+        req("code", "code nodes require 'config.code'")
+        language = str(config.get("language") or "expression").strip().lower()
+        if language not in {
+            "expression", "python", "py", "python3", "javascript", "js", "node",
+        }:
+            err("CODE_LANGUAGE_UNSUPPORTED",
+                f"Node {nid!r} 'config.language' must be expression, python or javascript.",
+                node_id=nid, field=f"{where}.config.language")
+        mode = str(config.get("mode") or "all").strip().lower()
+        if mode not in {
+            "all", "each", "runonceforallitems", "runonceforeachitem",
+        }:
+            err("CODE_MODE_UNSUPPORTED",
+                f"Node {nid!r} 'config.mode' must be all or each.",
+                node_id=nid, field=f"{where}.config.mode")
+    elif ntype == "respond_to_webhook":
+        code = config.get("status", 200)
+        if isinstance(code, bool) or not isinstance(code, int) or not 100 <= code <= 599:
+            err("NODE_CONFIG_REQUIRED",
+                f"Node {nid!r} 'config.status' must be an HTTP status 100..599.",
+                node_id=nid, field=f"{where}.config.status")
     elif ntype == "set":
         if not isinstance(config.get("values"), dict) or not config.get("values"):
             err("NODE_CONFIG_REQUIRED",
@@ -754,10 +848,18 @@ def _validate_node_config(err, nid: str, ntype: Any, config: dict, where: str,
                 node_id=nid, field=f"{where}.config.mode")
         req("name", "variable nodes require 'config.name'")
     elif ntype == "subworkflow":
-        if not config.get("workflow_id"):
+        raw_target = config.get("workflow_id")
+        if not raw_target:
             err("NODE_CONFIG_REQUIRED",
                 f"Node {nid!r} requires 'config.workflow_id' (referenced workflow).",
                 node_id=nid, field=f"{where}.config.workflow_id")
+        else:
+            try:
+                UUID(str(raw_target))
+            except (TypeError, ValueError):
+                err("SUBWORKFLOW_INVALID_ID",
+                    f"Node {nid!r} 'config.workflow_id' must be a workflow UUID.",
+                    node_id=nid, field=f"{where}.config.workflow_id")
     elif ntype == "loop":
         req("items", "loop nodes require 'config.items' (collection expression)")
         mi = config.get("max_iterations", 100)

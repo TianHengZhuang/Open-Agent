@@ -21,6 +21,12 @@ export interface N8nNode {
   disabled?: boolean;
   credentials?: Record<string, unknown>;
   notes?: string;
+  onError?: 'stop' | 'continue' | 'continueErrorOutput';
+  retryOnFail?: boolean;
+  maxTries?: number;
+  waitBetweenTries?: number;
+  alwaysOutputData?: boolean;
+  executeOnce?: boolean;
 }
 
 export interface N8nWorkflow {
@@ -40,6 +46,7 @@ const TRIGGER_TYPES: Record<string, TriggerType> = {
   'n8n-nodes-base.scheduleTrigger': 'schedule',
   'n8n-nodes-base.cron': 'schedule',
   'n8n-nodes-base.chatTrigger': 'chat',
+  'n8n-nodes-base.executeWorkflowTrigger': 'execute_workflow',
   'n8n-nodes-base.errorTrigger': 'event',
 };
 
@@ -87,6 +94,7 @@ const EXPORTED_TRIGGERS: Record<TriggerType, string> = {
   webhook: 'n8n-nodes-base.webhook',
   schedule: 'n8n-nodes-base.scheduleTrigger',
   chat: 'n8n-nodes-base.chatTrigger',
+  execute_workflow: 'n8n-nodes-base.executeWorkflowTrigger',
   event: 'n8n-nodes-base.errorTrigger',
 };
 
@@ -215,6 +223,17 @@ export function fromN8nWorkflow(workflow: N8nWorkflow): N8nImport {
     created.config = { ...created.config, ...nodeConfig(type, node) };
     if (node.disabled) created.disabled = true;
     if (node.notes) created.notes = node.notes;
+    if (node.onError && node.onError !== 'stop') created.on_error = node.onError;
+    if (node.retryOnFail) {
+      created.retry_on_fail = true;
+      created.max_tries = Math.max(1, Math.min(10, Number(node.maxTries ?? 3) || 3));
+      created.wait_between_tries_ms = Math.max(
+        0,
+        Math.min(60000, Number(node.waitBetweenTries ?? 0) || 0),
+      );
+    }
+    if (node.alwaysOutputData) created.always_output_data = true;
+    if (node.executeOnce) created.execute_once = true;
     definition.nodes.push(created);
     idByName.set(node.name, created.id);
   }
@@ -225,7 +244,10 @@ export function fromN8nWorkflow(workflow: N8nWorkflow): N8nImport {
     if (!from) continue;
     const sourceNode = createdById.get(from);
     const sourcePorts = sourceNode
-      ? registryOutputPorts(String(sourceNode.type), sourceNode.config)
+      ? registryOutputPorts(String(sourceNode.type), {
+          ...sourceNode.config,
+          on_error: sourceNode.on_error ?? sourceNode.config?.on_error,
+        })
       : [];
     const main = outputs?.main ?? [];
     main.forEach((branches, port) => {
@@ -237,6 +259,7 @@ export function fromN8nWorkflow(workflow: N8nWorkflow): N8nImport {
         if (portName && portName !== 'out') {
           edge.from_port = portName;
           edge.label = portName;
+          if (portName === 'error') edge.connection_type = 'error';
         } else if (port > 0) {
           edge.label = String(port);
         }
@@ -330,6 +353,16 @@ export function toN8nWorkflow(
             ),
       ...(node.disabled ? { disabled: true } : {}),
       ...(node.notes ? { notes: node.notes } : {}),
+      ...(node.on_error && node.on_error !== 'stop' ? { onError: node.on_error } : {}),
+      ...(node.retry_on_fail
+        ? {
+            retryOnFail: true,
+            maxTries: node.max_tries ?? 3,
+            waitBetweenTries: node.wait_between_tries_ms ?? 0,
+          }
+        : {}),
+      ...(node.always_output_data ? { alwaysOutputData: true } : {}),
+      ...(node.execute_once ? { executeOnce: true } : {}),
     });
   }
 
@@ -342,11 +375,15 @@ export function toN8nWorkflow(
     const sourceNode = definition.nodes.find((node) => node.id === edge.from);
     const sourceTrigger = definition.triggers.find((trigger) => trigger.id === edge.from);
     const sourcePorts = sourceNode
-      ? registryOutputPorts(String(sourceNode.type), sourceNode.config)
+      ? registryOutputPorts(String(sourceNode.type), {
+          ...sourceNode.config,
+          on_error: sourceNode.on_error ?? sourceNode.config?.on_error,
+        })
       : sourceTrigger
         ? triggerOutputPorts(sourceTrigger.type)
         : [];
-    const portName = edge.from_port ?? edge.label;
+    const portName =
+      edge.connection_type === 'error' ? 'error' : (edge.from_port ?? edge.label);
     const named = portName ? sourcePorts.findIndex((p) => p.name === portName) : -1;
     const numeric = Number(portName);
     const port = named >= 0 ? named : Number.isFinite(numeric) && numeric > 0 ? numeric : 0;

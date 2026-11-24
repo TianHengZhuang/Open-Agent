@@ -197,8 +197,10 @@ some features are PostgreSQL-only and are **not** available in this mode:
 
 - **Workflow execution** runs on the in-process local engine
   (`apps/api/src/openagent/runtime/local_engine.py`). Triggers, set, transform,
-  filter, map, sort, limit, remove-duplicates, split-out, condition, switch,
-  merge, loop, variable, delay and HTTP request nodes execute for real; nodes
+  filter, map, sort, limit, remove-duplicates, split-out, edit-fields,
+  aggregate, split-in-batches, code (expressions), condition, switch, merge,
+  loop, variable, delay, respond-to-webhook and HTTP request nodes execute for
+  real; nodes
   that need an external provider (AI prompt, agent, tool, connector, coding,
   quality gates) are recorded as `skipped` with a reason instead of being
   faked, and human approvals park the run as `waiting`. Every node run is
@@ -218,26 +220,49 @@ some features are PostgreSQL-only and are **not** available in this mode:
   `run_mode: "each"` to run once per incoming item, `$json` reads the node's
   first input item, branch conditions may be expressions, and a `delay` longer
   than 10 s parks the run as `waiting`; the scheduler resumes it from the saved
-  state instead of truncating the wait.
+  state instead of truncating the wait. `merge` fans item lists in (`append`,
+  `by_index`, `by_key`), a delay with `wait_for_webhook` parks until
+  `POST .../executions/{id}/webhook-resume` carries the stored token, and the
+  stored per-node item lists (`execution_data` and `node_runs`) are capped at
+  100 items per node with `items_truncated` recording what was dropped.
+- **Error workflow**: set `settings.error_workflow_id` (inspector → workflow
+  settings) and a failed run launches that workflow with
+  `{execution, workflow, error, lastNodeExecuted}`; the handler never triggers
+  its own error workflow, so failures cannot loop.
 - **Node settings are enforced**: `retry_policy.max_attempts` retries a failed
   node, `timeout_seconds` bounds it, and `On error → Continue` records the
   failure as a warning while passing the input to the next node.
+- **Operations**: `settings.max_concurrency` caps parallel runs — extra runs
+  are persisted as `queued` and started FIFO by the scheduler tick, never
+  dropped. `settings.execution_timeout_seconds` fails an over-budget run with
+  `EXECUTION_TIMEOUT`. Terminal executions past
+  `OPENAGENT_WORKFLOW_RETENTION_SECONDS` (90 d) are pruned hourly, keeping the
+  newest `OPENAGENT_WORKFLOW_KEEP_LAST` (50) per workflow. Webhooks are limited
+  per organization (`OPENAGENT_WEBHOOK_RATE_LIMIT`, 120/min → 429) with a body
+  cap (`OPENAGENT_WEBHOOK_MAX_BODY_BYTES`, 1 MiB → 413), and
+  `GET /api/v1/operations/workflows` reports run counts, queue depth, failure
+  rate and p50/p95 duration.
 - **Node detail view (NDV)**: double-click a node (or right-click → *Input / output data*)
   to open a 3-pane view — the data it received on the left, the
   parameter form in the middle, and its output on the right. **Pin output**
   keeps that output in the workflow definition (undoable, autosaved, and shown
-  again on reload); pinned data feeds previews and step-test defaults but is
-  never read by executions. The canvas shows per-node run status, output item
+  again on reload); pinned data feeds previews and step-test defaults (the
+  execute-node preview resolves upstream nodes from pins) but is never read by
+  real executions. The canvas shows per-node run status, output item
   counts, error tooltips and a live chip while a run is in flight, and the run
   panel's **Debug in editor** opens the NDV on the failing step.
 - **Test step** runs a single node with JSON input from the inspector
-  (`POST /workflows/{id}/execute-node`), and the workflow list has n8n's
+  (`POST /workflows/{id}/execute-node`); the preview rebuilds that node's
+  upstream inputs from pinned data (`use_pinned`) or caller-supplied
+  `upstream` output so "execute this node" works mid-graph, and the workflow
+  list has n8n's
   **Active** switch: publishing activates webhooks, unpublishing stops them.
 - **Production webhooks**: publishing a workflow activates its Webhook trigger
   at `POST /api/v1/hooks/<path>` (any method body is parsed as JSON; an
   optional plain shared secret is checked via `X-OpenAgent-Secret` or
-  `?token=`). Unpublished workflows never listen. The exact URL is shown in
-  the builder's inspector.
+  `?token=`). A `respond_to_webhook` node defines the HTTP response (status,
+  body, headers); otherwise the run summary is returned. Unpublished workflows
+  never listen. The exact URL is shown in the builder's inspector.
 - **Memory search** uses PostgreSQL-specific SQL (`ILIKE`). Memory create/list
 insist on the PostgreSQL/Redis profile (`pnpm dev --db=postgres`) for full
 fidelity; SQLite stores and returns rows but its raw-SQL search is limited.
@@ -614,7 +639,9 @@ settings are stored per organisation and the key is encrypted at rest. Ask it
 to “build an automation for new leads” or “edit this to add a delay”. Without
 a reachable model, Koro keeps working in command mode: “run My First Workflow”,
 “publish it”, “summarize the last run”, “create a workflow called Daily
-digest”; building custom automations needs a model.
+digest”, “test the Send notification node”, “rename this workflow to Intake
+v2”, “set concurrency to 2”, “set a timeout of 5 minutes”, “when this fails run
+Failure handler”; building custom automations needs a model.
 
 Defaults come from `.env`: `OPENAGENT_KORO_BASE_URL` (default
 `http://127.0.0.1:11434/v1`), `OPENAGENT_KORO_MODEL`,

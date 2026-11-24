@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import hmac
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -69,9 +70,14 @@ class ExecutionListResponse(PaginatedResponse[ExecutionResponse]):
 
 
 class ExecutionDetailResponse(ExecutionResponse):
-    """Execution with node runs and events."""
+    """Execution with node runs, events and its sub-workflow children."""
+
     node_runs: List[Dict[str, Any]] = []
     events: List[EventResponse] = []
+    # Execution tree: the caller's run and the runs this one started.
+    parent_execution_id: Optional[UUID] = None
+    root_execution_id: Optional[UUID] = None
+    children: List[Dict[str, Any]] = []
 
 
 class CancelResponse(BaseModel):
@@ -359,11 +365,21 @@ async def get_execution(
             payload=e.payload,
         ))
     
+    children = (
+        await db.execute(
+            select(WorkflowExecution)
+            .where(WorkflowExecution.parent_execution_id == execution_id)
+            .order_by(WorkflowExecution.created_at)
+        )
+    ).scalars().all()
+
     return ExecutionDetailResponse(
         id=execution.id,
         organization_id=execution.organization_id,
         workflow_id=execution.workflow_id,
         workflow_version_id=execution.workflow_version_id,
+        parent_execution_id=execution.parent_execution_id,
+        root_execution_id=execution.root_execution_id,
         status=execution.status.value if hasattr(execution.status, "value") else str(execution.status),
         trigger_type=execution.trigger_type.value if hasattr(execution.trigger_type, "value") else str(execution.trigger_type),
         started_at=execution.started_at,
@@ -374,6 +390,20 @@ async def get_execution(
         output=(execution.metadata or {}).get("output"),
         node_runs=node_runs,
         events=events,
+        children=[
+            {
+                "id": str(child.id),
+                "workflow_id": str(child.workflow_id),
+                "status": child.status.value
+                if hasattr(child.status, "value")
+                else str(child.status),
+                "started_at": child.started_at.isoformat() if child.started_at else None,
+                "completed_at": child.completed_at.isoformat() if child.completed_at else None,
+                "error_message": child.error_message,
+                "parent_node": (child.metadata or {}).get("parent_node"),
+            }
+            for child in children
+        ],
     )
 
 
@@ -415,13 +445,20 @@ async def cancel_execution(
             message=f"Execution is already in terminal state: {execution.status.value}",
         )
     
-    execution.status = WorkflowExecutionStatus.CANCELLED
-    execution.completed_at = datetime.now(timezone.utc)
+    from openagent.runtime.workflow_ops import cancel_execution_tree
+
+    cancelled = await cancel_execution_tree(
+        db, execution, reason="cancelled through the execution API"
+    )
     await db.commit()
-    
+
     return CancelResponse(
         status="cancelled",
-        message="Execution cancelled",
+        message=(
+            "Execution cancelled"
+            if len(cancelled) <= 1
+            else f"Execution and {len(cancelled) - 1} sub-workflow run(s) cancelled"
+        ),
     )
 
 
@@ -559,6 +596,96 @@ async def resume_execution(
     runtime = get_runtime()
     await runtime.start_execution(str(execution.id))
     return ResumeResponse(status="resume_queued", message="Execution resumed after approval")
+
+
+class WaitWebhookResumeRequest(BaseModel):
+    """Resume a Wait node parked "On Webhook Call"."""
+
+    token: Optional[str] = Field(default=None, max_length=200)
+    payload: Optional[Dict[str, Any]] = None
+
+
+@router.post(
+    "/{workflow_id}/executions/{execution_id}/webhook-resume",
+    response_model=ResumeResponse,
+    responses={401: {"model": ApiErrorResponse}, 403: {"model": ApiErrorResponse},
+               404: {"model": ApiErrorResponse}, 409: {"model": ApiErrorResponse}},
+)
+async def resume_waiting_webhook(
+    request: Request,
+    organization_id: UUID,
+    workflow_id: UUID,
+    execution_id: UUID,
+    data: WaitWebhookResumeRequest,
+    auth_context=Depends(get_current_org_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Resume an execution parked by a Wait node waiting for a webhook call.
+
+    The caller supplies the single-run ``webhook_token`` the engine stored in
+    ``metadata.wait`` (constant-time compared) plus an optional payload, which
+    later nodes read as ``{{ $json.input.webhook }}`` / ``{{ $json.webhook }}``.
+    Time-based waits stay with the scheduler sweep.
+    """
+    await require_permission("execution:retry")(request, db)
+    execution = await _get_execution_or_404(db, organization_id, execution_id)
+    if execution.workflow_id != workflow_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "Execution not found for this workflow", "code": "EXECUTION_NOT_FOUND"},
+        )
+    if execution.status != WorkflowExecutionStatus.WAITING:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error": f"Only WAITING executions can be resumed (is {execution.status.value})",
+                    "code": "NOT_WAITING"},
+        )
+    wait = (execution.metadata or {}).get("wait") or {}
+    expected = wait.get("webhook_token")
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error": "Execution is not waiting for a webhook", "code": "NOT_WEBHOOK_WAIT"},
+        )
+    if not data.token or not hmac.compare_digest(str(data.token), str(expected)):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "Invalid wait webhook token", "code": "INVALID_WAIT_TOKEN"},
+        )
+
+    workflow = (
+        await db.execute(
+            select(Workflow).where(
+                Workflow.id == workflow_id,
+                Workflow.organization_id == organization_id,
+                Workflow.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if workflow is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "Workflow not found", "code": "WORKFLOW_NOT_FOUND"},
+        )
+
+    from openagent.runtime.local_engine import run_workflow
+
+    try:
+        run = await run_workflow(
+            db,
+            workflow=workflow,
+            organization_id=organization_id,
+            triggered_by=auth_context.user_id,
+            definition=wait.get("definition"),
+            trigger_input={**(wait.get("trigger_input") or {}), "webhook": data.payload or {}},
+            resume_from=execution,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error": str(exc), "code": "WORKFLOW_NOT_RESUMABLE"},
+        )
+    return ResumeResponse(status=run.get("status", "running"), message="Execution resumed by webhook")
 
 
 class ExecutionVerifyRequest(BaseModel):

@@ -654,6 +654,30 @@ async def publish_workflow(
                 ],
             },
         )
+    # One production hook path belongs to one active workflow per organization
+    # (Phase 12 webhook lifecycle): publishing a duplicate is refused instead of
+    # silently shadowing an existing hook.
+    from openagent.runtime.webhook_registry import find_duplicate, webhook_paths
+
+    duplicate = await find_duplicate(
+        db,
+        organization_id=organization_id,
+        paths=webhook_paths(latest.definition or {}),
+        exclude_workflow_id=workflow.id,
+    )
+    if duplicate is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": (
+                    f"Webhook path \"{duplicate['path']}\" is already active in "
+                    f"\"{duplicate['workflow_name']}\""
+                ),
+                "code": "WEBHOOK_PATH_CONFLICT",
+                "conflicting_workflow_id": duplicate["workflow_id"],
+            },
+        )
+
     latest.status = "published"
     workflow.status = WorkflowStatus.ACTIVE
     await _record_audit(db, request, organization_id, auth_context.user_id,
@@ -1049,6 +1073,13 @@ class WorkflowNodeRunRequest(BaseModel):
     node_id: str = Field(min_length=1, max_length=200)
     definition: Optional[Dict[str, Any]] = None
     input: Optional[Dict[str, Any]] = None
+    # Preview-only: pinned output stands in for upstream nodes that have not
+    # run in this session. Ignored by real executions.
+    use_pinned: bool = True
+    upstream: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Node id → output object to use as that node's result.",
+    )
 
 
 @router.post(
@@ -1091,6 +1122,8 @@ async def execute_workflow_node(
             data.input or {},
             db=db,
             organization_id=organization_id,
+            use_pinned=data.use_pinned,
+            upstream=data.upstream,
         )
     except ValueError as exc:
         raise HTTPException(

@@ -139,6 +139,18 @@ async def lifespan(app: FastAPI):
         logger.info("SQLite schema ensured", database=settings.DATABASE_URL)
     # Fail fast in production when dependencies are unreachable; warn in dev.
     await _probe_dependencies(fail_fast=settings.is_production)
+    # Phase 12 crash recovery: a process that died mid-run leaves a `running`
+    # row whose journal heartbeat stopped. Mark those failed, never running.
+    from openagent.runtime.crash_journal import mark_crashed
+
+    maker = db_session.async_session_maker
+    if maker is not None:
+        async with maker() as session:
+            recovered = await mark_crashed(session)
+        if recovered:
+            logger.warning(
+                "Recovered crashed workflow executions", count=len(recovered)
+            )
     # Workflow Schedule triggers fire from this loop (n8n parity). It is
     # disabled with OPENAGENT_WORKFLOW_SCHEDULER=0.
     from openagent.runtime.schedule_runner import start_schedule_loop
@@ -146,6 +158,24 @@ async def lifespan(app: FastAPI):
     schedule_task = asyncio.create_task(start_schedule_loop())
     yield
     logger.info("Shutting down OpenAgent API")
+    # Phase 12 graceful drain: stop starting runs, let the running ones finish
+    # within the budget, and leave anything queued as queued.
+    from openagent.runtime.lifecycle import (
+        begin_shutdown,
+        shutdown_timeout_seconds,
+        wait_for_drain,
+    )
+
+    begin_shutdown()
+    remaining = await wait_for_drain()
+    if remaining:
+        logger.warning(
+            "Shutdown drain timed out; the journal sweep will mark unfinished runs crashed",
+            remaining=remaining,
+            timeout_seconds=shutdown_timeout_seconds(),
+        )
+    else:
+        logger.info("Workflow runs drained", timeout_seconds=shutdown_timeout_seconds())
     schedule_task.cancel()
     try:
         await schedule_task
@@ -196,6 +226,14 @@ def create_app() -> FastAPI:
     app.add_middleware(MetricsMiddleware)
 
     app.include_router(v1_router, prefix="/api/v1")
+
+    # Prometheus scrape (Phase 12). Token-guarded; 404 unless configured, so
+    # production never exposes run counts anonymously.
+    from openagent.api.metrics_endpoint import metrics_response
+
+    app.add_api_route(
+        "/metrics", metrics_response, methods=["GET"], include_in_schema=False
+    )
 
     @app.get("/api/v1", include_in_schema=False)
     async def api_root():

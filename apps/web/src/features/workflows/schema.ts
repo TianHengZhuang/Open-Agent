@@ -9,7 +9,7 @@ import { WORKFLOW_REGISTRY } from './registry';
 
 const triggerSchema = z.object({
   id: z.string().min(1),
-  type: z.enum(['manual', 'webhook', 'schedule', 'event', 'chat']),
+  type: z.enum(['manual', 'webhook', 'schedule', 'event', 'chat', 'execute_workflow']),
   name: z.string().min(1),
   config: z.record(z.string(), z.unknown()).default({}),
 });
@@ -30,6 +30,13 @@ const nodeSchema = z.object({
   config: z.record(z.string(), z.unknown()).default({}),
   retry_policy: z.object({ max_attempts: z.number().int().min(0).max(10) }).optional(),
   timeout_seconds: z.number().positive().optional(),
+  on_error: z.enum(['stop', 'continue', 'continueErrorOutput']).optional(),
+  retry_on_fail: z.boolean().optional(),
+  max_tries: z.number().int().min(1).max(10).optional(),
+  wait_between_tries_ms: z.number().int().min(0).max(60000).optional(),
+  always_output_data: z.boolean().optional(),
+  execute_once: z.boolean().optional(),
+  run_mode: z.enum(['all', 'each']).optional(),
   approval_required: z.boolean().optional(),
   disabled: z.boolean().optional(),
   notes: z.string().max(2000).optional(),

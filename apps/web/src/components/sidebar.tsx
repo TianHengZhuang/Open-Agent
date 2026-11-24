@@ -6,116 +6,29 @@ import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { Logo, LogoMark } from '@/components/brand';
 import {
-  Bot,
-  LayoutDashboard,
-  GitBranch,
-  Play,
-  Wrench,
-  Plug,
-  Brain,
-  Code2,
-  Container,
-  Store,
-  Settings,
-  ShieldCheck,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
-  FileStack,
-  BookOpen,
-  Server,
-  Sparkles,
-  SlidersHorizontal,
-  Building2,
+  GitBranch,
+  Play,
   Plus,
-  Network,
-  Users,
-  Cpu,
+  Settings,
+  Sparkles,
+  UserRound,
 } from 'lucide-react';
-import { useAuth } from '@/context/AuthContext';
-import { useFeature } from '@/lib/feature-flags';
+import { PRIMARY_NAV, type SurfaceIcon } from '@/features/navigation/surfaces';
 
-interface NavItem {
-  name: string;
-  href: string;
-  icon: React.ElementType;
-  exact?: boolean;
-}
-
-/** The four things a chat-first automation workspace needs every day. */
-const primaryNav: NavItem[] = [
-  { name: 'Chat', href: '/assistant', icon: Sparkles, exact: true },
-  { name: 'Workflows', href: '/workflows', icon: GitBranch },
-  { name: 'Executions', href: '/runs', icon: Play },
-  { name: 'Settings', href: '/settings', icon: Settings },
-];
-
-/** Everything else stays reachable, folded behind one disclosure. */
-const moreSections: { label: string; items: NavItem[] }[] = [
-  {
-    label: 'Workspace',
-    items: [
-      { name: 'Overview', href: '/', icon: LayoutDashboard, exact: true },
-      { name: 'Agents', href: '/agents', icon: Bot },
-      { name: 'Orchestrations', href: '/orchestrations', icon: Network },
-      { name: 'Management', href: '/management', icon: Users },
-    ],
-  },
-  {
-    label: 'Build',
-    items: [
-      { name: 'Tools', href: '/tools', icon: Wrench },
-      { name: 'MCP Servers', href: '/mcp', icon: Server },
-      { name: 'Integrations', href: '/integrations', icon: Plug },
-      { name: 'Memory', href: '/memory', icon: Brain },
-      { name: 'Code', href: '/code', icon: Code2 },
-      { name: 'Sandbox', href: '/sandbox', icon: Container },
-    ],
-  },
-  {
-    label: 'Library',
-    items: [
-      { name: 'Templates', href: '/templates', icon: FileStack },
-      { name: 'Skills', href: '/skills', icon: Sparkles },
-      { name: 'Presets', href: '/presets', icon: SlidersHorizontal },
-      { name: 'Marketplace', href: '/marketplace', icon: Store },
-    ],
-  },
-  {
-    label: 'Account',
-    items: [
-      { name: 'Local models', href: '/settings/models', icon: Cpu },
-      { name: 'Publisher Studio', href: '/publisher/packages', icon: Building2 },
-      { name: 'Documentation', href: '/docs', icon: BookOpen },
-    ],
-  },
-];
-
-
-const developerNav: NavItem[] = [
-  { name: 'Developer overview', href: '/developer', icon: Code2, exact: true },
-  { name: 'Projects', href: '/developer/projects', icon: Building2 },
-  { name: 'Extensions', href: '/developer/extensions', icon: Plug },
-  { name: 'New extension', href: '/developer/extensions/new', icon: Sparkles },
-  { name: 'SDK', href: '/developer/sdk', icon: Code2 },
-  { name: 'CLI', href: '/developer/cli', icon: SlidersHorizontal },
-  { name: 'API Explorer', href: '/developer/api', icon: FileStack },
-  { name: 'Docs', href: '/developer/docs', icon: BookOpen },
-  { name: 'Registry', href: '/developer/registry', icon: Container },
-  { name: 'Webhooks & usage', href: '/developer/settings', icon: Settings },
-];
-
-const moreRoutes = [
-  ...moreSections.flatMap((section) => section.items.map((item) => item.href)),
-  ...developerNav.map((item) => item.href),
-  '/platform',
-  '/master/marketplace',
-];
-
-function isMoreRoute(pathname: string | null): boolean {
-  if (!pathname) return false;
-  return moreRoutes.some((href) => pathname === href || pathname.startsWith(href + '/'));
-}
+/**
+ * Phase 14: the sidebar is the six surfaces, nothing else. Every former page
+ * forwards to the assistant (see `features/navigation/surfaces.ts`), so browse
+ * tasks are one message away instead of one more nav entry.
+ */
+const ICONS: Record<SurfaceIcon, React.ElementType> = {
+  chat: Sparkles,
+  workflow: GitBranch,
+  runs: Play,
+  settings: Settings,
+  account: UserRound,
+};
 
 interface SidebarProps {
   collapsed?: boolean;
@@ -125,27 +38,21 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed = false, onToggle, mobile = false }: SidebarProps) {
   const pathname = usePathname();
-  const { user } = useAuth();
-  const marketplaceOn = useFeature('marketplace');
-  const isPlatform = !!(user?.is_platform_owner || user?.is_superadmin);
-  const [moreOpen, setMoreOpen] = React.useState(() => isMoreRoute(pathname));
-  const moreActive = isMoreRoute(pathname);
 
   const isActive = (href: string, exact?: boolean) =>
     exact ? pathname === href : pathname === href || pathname.startsWith(href + '/');
 
-  const renderLink = (item: NavItem, nested = false) => {
-    if (item.name === 'Marketplace' && !marketplaceOn) return null;
+  const renderLink = (item: (typeof PRIMARY_NAV)[number]) => {
     const active = isActive(item.href, item.exact);
+    const Icon = ICONS[item.icon];
     return (
       <Link
-        key={item.name}
+        key={item.href}
         href={item.href}
         aria-current={active ? 'page' : undefined}
-        title={collapsed && !mobile ? item.name : undefined}
+        title={collapsed && !mobile ? item.label : undefined}
         className={cn(
           'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-          nested && 'pl-8',
           active
             ? 'bg-primary/10 text-primary'
             : 'text-muted-foreground hover:bg-accent/70 hover:text-foreground',
@@ -158,14 +65,14 @@ export function Sidebar({ collapsed = false, onToggle, mobile = false }: Sidebar
             aria-hidden
           />
         )}
-        <item.icon
+        <Icon
           className={cn(
             'h-[18px] w-[18px] shrink-0',
             active ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground',
           )}
           aria-hidden
         />
-        {(!collapsed || mobile) && <span className="truncate">{item.name}</span>}
+        {(!collapsed || mobile) && <span className="truncate">{item.label}</span>}
       </Link>
     );
   };
@@ -221,76 +128,8 @@ export function Sidebar({ collapsed = false, onToggle, mobile = false }: Sidebar
         </div>
       )}
 
-      <nav className="oa-scroll flex-1 space-y-1 overflow-y-auto p-3" aria-label="Primary">
-        <div className="space-y-0.5">{primaryNav.map((item) => renderLink(item))}</div>
-
-        <div className="pt-2">
-          <button
-            type="button"
-            onClick={() => setMoreOpen((open) => !open)}
-            aria-expanded={moreActive ? true : moreOpen}
-            aria-controls="sidebar-more"
-            title={collapsed && !mobile ? 'More' : undefined}
-            className={cn(
-              'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground',
-              collapsed && !mobile && 'justify-center px-2',
-              moreActive && !moreOpen && 'text-primary',
-            )}
-          >
-            <ChevronDown
-              className={cn('h-[18px] w-[18px] shrink-0 transition-transform', (moreOpen || moreActive) && 'rotate-180')}
-              aria-hidden
-            />
-            {(!collapsed || mobile) && <span className="flex-1 text-left">More</span>}
-            {(!collapsed || mobile) && moreActive && !moreOpen && (
-              <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-label="Current page is in More" />
-            )}
-          </button>
-
-          {(moreOpen || moreActive) && (!collapsed || mobile) && (
-            <div id="sidebar-more" className="space-y-3 pt-2">
-              {moreSections.map((section) => (
-                <div key={section.label}>
-                  <p className="px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
-                    {section.label}
-                  </p>
-                  <div className="space-y-0.5">{section.items.map((item) => renderLink(item, true))}</div>
-                </div>
-              ))}
-
-              <div>
-                <p className="px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
-                  Developer
-                </p>
-                <div role="group" aria-label="Developer" className="space-y-0.5">
-                  {developerNav.map((item) => renderLink(item, true))}
-                </div>
-              </div>
-
-              {isPlatform && (
-                <div className="space-y-0.5">
-                  <p className="px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
-                    Platform
-                  </p>
-                  <Link
-                    href="/platform"
-                    aria-current={isActive('/platform') ? 'page' : undefined}
-                    className="flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] pl-8 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  >
-                    <ShieldCheck className="h-[18px] w-[18px] shrink-0" aria-hidden />
-                    <span>Platform</span>
-                  </Link>
-                  <Link
-                    href="/master/marketplace"
-                    className="flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] pl-10 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  >
-                    <span>Marketplace moderation</span>
-                  </Link>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+      <nav className="oa-scroll flex-1 space-y-0.5 overflow-y-auto p-3" aria-label="Primary">
+        {PRIMARY_NAV.map((item) => renderLink(item))}
       </nav>
 
       <div className="border-t border-sidebar-border p-3">

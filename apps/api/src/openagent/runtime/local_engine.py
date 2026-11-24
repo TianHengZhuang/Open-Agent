@@ -17,6 +17,7 @@ import asyncio
 import json
 import os
 import re
+import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
@@ -34,6 +35,7 @@ from openagent.db.models import (
     WorkflowExecutionTriggerType,
     WorkflowVersion,
 )
+from openagent.runtime.crash_journal import journal_start
 from openagent.runtime.expressions import (
     ExpressionData,
     evaluate_expression,
@@ -43,6 +45,14 @@ from openagent.runtime.expressions import (
     ExpressionError as NativeExpressionError,
 )
 from openagent.runtime.items import as_items, is_item, item_json
+from openagent.runtime.lifecycle import begin_run, end_run, is_shutting_down
+from openagent.runtime.queue_mode import queue_mode_enabled
+from openagent.runtime.workflow_ops import (
+    active_executions,
+    concurrency_limit,
+    execution_timeout,
+    save_execution_data_mode,
+)
 from openagent.services.model_runtime import (
     ModelRuntimeError,
     ModelTarget,
@@ -57,7 +67,10 @@ from openagent.services.model_runtime import (
 MAX_SYNC_DELAY_SECONDS = 10.0
 HTTP_NODE_TIMEOUT_SECONDS = 20.0
 MAX_LOOP_ITEMS = 1000
-MAX_SUBWORKFLOW_DEPTH = 5
+MAX_SUBWORKFLOW_DEPTH = 10
+# Execution data is capped per node so one huge item list cannot bloat the
+# execution row (n8n prunes/limits what the NDV persists the same way).
+MAX_PERSISTED_ITEMS_PER_NODE = 100
 
 _EXPR_RE = re.compile(r"\{\{\s*(.+?)\s*\}\}", re.S)
 _PATH_RE = re.compile(r"([^.\[\]]+)|\[(\d+)\]")
@@ -93,6 +106,12 @@ class RunContext:
     organization_id: Optional[UUID] = None
     depth: int = 0
     stack: Tuple[str, ...] = ()
+    # Persisted run identity and workflow static data. A sub-workflow call
+    # creates a child execution row from these, and ``$getWorkflowStaticData``
+    # reads/writes the shared dict that the run writes back when it finishes.
+    execution_id: Optional[UUID] = None
+    root_execution_id: Optional[UUID] = None
+    static_data: Dict[str, Any] = field(default_factory=dict)
     # The organization's chat endpoint, when one was resolved. Without it a
     # ``prompt`` node is reported as skipped instead of being faked.
     model: Optional[ModelTarget] = None
@@ -112,6 +131,9 @@ class RunContext:
             organization_id=self.organization_id,
             depth=self.depth,
             stack=self.stack,
+            execution_id=self.execution_id,
+            root_execution_id=self.root_execution_id,
+            static_data=self.static_data,
             model=self.model,
             token_sink=self.token_sink,
         )
@@ -128,6 +150,18 @@ def _now() -> datetime:
 
 def _iso(value: Optional[datetime]) -> Optional[str]:
     return value.isoformat() if value else None
+
+
+def _persisted_items(
+    items: Optional[List[Dict[str, Any]]],
+) -> Tuple[List[Dict[str, Any]], int]:
+    """Cap the items stored on an execution row; returns (items, dropped)."""
+    if not items:
+        return [], 0
+    limit = MAX_PERSISTED_ITEMS_PER_NODE
+    if len(items) <= limit:
+        return list(items), 0
+    return list(items[:limit]), len(items) - limit
 
 
 def parse_jsonish(value: Any, fallback: Any = None) -> Any:
@@ -309,14 +343,18 @@ def expression_data(ctx: RunContext) -> ExpressionData:
     """Build the n8n data proxy for one evaluation."""
     current = _current_item_json(ctx)
     items = list(ctx.input_items) if ctx.input_items else (as_items(ctx.item) if ctx.item is not None else [])
+    from openagent.runtime.items import first_binary
+
     return ExpressionData(
         json=current,
         legacy_json=current,
         items=items,
+        binary=first_binary([item for item in items if isinstance(item, dict)]) if items else {},
         node_outputs=ctx.outputs,
         variables=ctx.variables,
         workflow=ctx.trigger.get("_workflow") or {},
         execution={"id": ctx.trigger.get("_execution_id")},
+        static_data=ctx.static_data,
         trigger=ctx.trigger,
         item_index=ctx.index,
         run_index=0,
@@ -517,6 +555,9 @@ class NodeOutcome:
     # Canonical n8n items for this node (`{json, pairedItem}`). Nodes that know
     # their item lineage set this; otherwise it is derived from ``outputs``.
     items: Optional[List[Dict[str, Any]]] = None
+    # True when the failure was routed to the node's "error" output
+    # (``on_error: continueErrorOutput``) and must not fail the workflow.
+    handled: bool = False
 
 
 def item_envelope(value: Any, source_index: Optional[int] = None) -> Dict[str, Any]:
@@ -547,6 +588,112 @@ def _cfg(node: Dict[str, Any], key: str, default: Any = None) -> Any:
     return config.get(key, default)
 
 
+def _node_setting(node: Dict[str, Any], key: str, default: Any = None) -> Any:
+    """Node-level setting: the n8n-style top-level field wins over config."""
+    value = node.get(key)
+    if value is None:
+        value = _cfg(node, key, default)
+    return default if value is None else value
+
+
+_ERROR_MODES = {
+    "": "stop",
+    "stop": "stop",
+    "stopworkflow": "stop",
+    "continue": "continue",
+    "continueonerror": "continue",
+    "continueerroroutput": "error_output",
+    "continueonerroroutput": "error_output",
+}
+
+
+def _error_mode(node: Dict[str, Any]) -> str:
+    """n8n's ``onError``: stop | continue | continueErrorOutput."""
+    raw = _node_setting(node, "on_error", "")
+    key = str(raw).lower().replace("_", "").replace("-", "").replace(" ", "")
+    return _ERROR_MODES.get(key, "stop")
+
+
+def _node_flag(node: Dict[str, Any], key: str) -> bool:
+    value = _node_setting(node, key, False)
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)
+
+
+def _retry_plan(node: Dict[str, Any]) -> Tuple[int, Optional[float]]:
+    """Attempts and per-retry wait (ms) from n8n or legacy retry fields."""
+    retry_on_fail = _node_flag(node, "retry_on_fail")
+    max_tries = _node_setting(node, "max_tries")
+    policy = node.get("retry_policy") or {}
+    if retry_on_fail:
+        # n8n needs retryOnFail; maxTries alone is only a stored preference.
+        try:
+            tries = int(max_tries if max_tries is not None else 3)
+        except (TypeError, ValueError):
+            tries = 3
+        attempts_allowed = max(1, min(tries, 11))
+    else:
+        try:
+            extra_attempts = int(policy.get("max_attempts") or 0)
+        except (TypeError, ValueError):
+            extra_attempts = 0
+        attempts_allowed = max(1, min(extra_attempts + 1, 11))
+
+    raw_wait = _node_setting(node, "wait_between_tries_ms")
+    wait_ms: Optional[float]
+    if raw_wait is not None:
+        try:
+            wait_ms = max(0.0, min(float(raw_wait), 60000.0))
+        except (TypeError, ValueError):
+            wait_ms = None
+    elif retry_on_fail:
+        # n8n defaults to 1000 ms; local runs stay fast unless asked to wait.
+        wait_ms = 0.0
+    else:
+        wait_ms = None
+    return attempts_allowed, wait_ms
+
+
+def _download_name(response: Any, url: str) -> str:
+    """Filename for a downloaded binary response (Content-Disposition wins)."""
+    disposition = str(response.headers.get("content-disposition") or "")
+    match = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^"\';]+)', disposition)
+    if match:
+        return match.group(1).strip()
+    name = str(url).rstrip("/").rsplit("/", 1)[-1].split("?", 1)[0]
+    return name or "download.bin"
+
+
+def _carry_binary(outcome: "NodeOutcome", arrived: List[Dict[str, Any]]) -> None:
+    """Keep a 1:1 node's binary payload downstream (a Set between file nodes)."""
+    if outcome.items or len(arrived) != 1:
+        return
+    binary = arrived[0].get("binary") if isinstance(arrived[0], dict) else None
+    if not isinstance(binary, dict) or not binary:
+        return
+    derived = as_items(outcome.outputs)
+    if len(derived) != 1:
+        return
+    item = dict(derived[0])
+    item["binary"] = binary
+    outcome.items = [item]
+
+
+def _ensure_output_data(outcome: "NodeOutcome") -> None:
+    """n8n's ``alwaysOutputData``: an empty result still emits one item."""
+    if outcome.items:
+        return
+    outputs = dict(outcome.outputs or {})
+    existing = outputs.get("items")
+    if isinstance(existing, list) and existing:
+        return
+    outcome.items = [item_envelope({})]
+    outputs["items"] = [{}]
+    outputs.setdefault("count", 0)
+    outcome.outputs = outputs
+
+
 def _as_list(value: Any) -> List[Any]:
     if isinstance(value, list):
         return value
@@ -558,6 +705,15 @@ def _as_list(value: Any) -> List[Any]:
     if value is None:
         return []
     return [value]
+
+
+def _field_names(value: Any) -> List[str]:
+    """Comma-separated text or a list → the field names it names."""
+    if isinstance(value, list):
+        return [str(entry).strip() for entry in value if str(entry).strip()]
+    if isinstance(value, str):
+        return [part.strip() for part in value.split(",") if part.strip()]
+    return []
 
 
 def _field_value(item: Any, field: str) -> Any:
@@ -597,12 +753,7 @@ async def _execute_with_policy(
     node failed but the node's ``config.on_error`` is "continue", in which case
     the failure is recorded and the input is passed downstream.
     """
-    policy = node.get("retry_policy") or {}
-    try:
-        extra_attempts = int(policy.get("max_attempts") or 0)
-    except (TypeError, ValueError):
-        extra_attempts = 0
-    attempts_allowed = max(1, min(extra_attempts + 1, 11))
+    attempts_allowed, wait_ms = _retry_plan(node)
 
     raw_timeout = node.get("timeout_seconds")
     try:
@@ -610,12 +761,15 @@ async def _execute_with_policy(
     except (TypeError, ValueError):
         timeout = None
 
-    continue_on_error = str(_cfg(node, "on_error") or "").strip().lower() == "continue"
+    error_mode = _error_mode(node)
 
     # n8n evaluates `$json` against the node's first incoming item, not the
     # trigger payload; node-level configs and conditions read it that way.
     working = ctx
     arrived = list(items) if items else _input_items(inputs)
+    if arrived and _node_flag(node, "execute_once"):
+        # n8n's "Execute Once": the node runs for the first item only.
+        arrived = arrived[:1]
     if arrived:
         working.input_items = arrived
         if ctx.item is None:
@@ -645,12 +799,41 @@ async def _execute_with_policy(
         if outcome.status != "failed":
             break
         if attempt < attempts_allowed:
-            await asyncio.sleep(min(0.25 * (2 ** (attempt - 1)), 2.0))
+            if wait_ms is not None:
+                await asyncio.sleep(wait_ms / 1000.0)
+            else:
+                await asyncio.sleep(min(0.25 * (2 ** (attempt - 1)), 2.0))
 
-    if outcome.status == "failed" and continue_on_error:
+    if outcome.status == "failed" and error_mode == "error_output":
+        # n8n's continueErrorOutput: the failure becomes one item on the
+        # "error" output, a normal edge receives nothing, and the run itself
+        # is not marked failed because the error was handled.
+        payload = {
+            "error": outcome.error or "Node failed",
+            "error_code": outcome.error_code,
+            "node": str(node.get("name") or node.get("id") or ""),
+        }
+        outcome.items = [item_envelope(payload)]
+        outcome.outputs = {
+            **(outcome.outputs or {}),
+            "items": [payload],
+            "count": 1,
+            "error": outcome.error,
+            "error_code": outcome.error_code,
+        }
+        outcome.ports = ["error"]
+        outcome.handled = True
+        return outcome, attempts_used, False
+
+    if outcome.status == "failed" and error_mode == "continue":
         passthrough = _merged_input(inputs)
         outcome.outputs = passthrough if isinstance(passthrough, dict) else {"items": passthrough}
         return outcome, attempts_used, True
+
+    if outcome.status == "succeeded" and not outcome.items:
+        _carry_binary(outcome, arrived)
+    if outcome.status == "succeeded" and _node_flag(node, "always_output_data"):
+        _ensure_output_data(outcome)
 
     return outcome, attempts_used, False
 
@@ -671,19 +854,37 @@ def _merged_input(inputs: Dict[str, Any]) -> Any:
 async def _exec_trigger(trigger: Dict[str, Any], trigger_input: Dict[str, Any], ctx: RunContext) -> NodeOutcome:
     ttype = str(trigger.get("type") or "manual")
     config = trigger.get("config") or {}
+    binary: Optional[Dict[str, Any]] = None
     if ttype == "webhook":
+        incoming = dict(trigger_input)
+        raw_binary = incoming.pop("__binary", None)
+        if isinstance(raw_binary, dict) and raw_binary:
+            binary = raw_binary
         payload = {
             "method": "POST",
             "headers": {},
-            "body": trigger_input,
+            "body": incoming,
             "query": {},
             "path": config.get("path") or "",
-            **trigger_input,
+            **incoming,
         }
     elif ttype == "schedule":
         payload = {"fired_at": _now().isoformat(), "cron": config.get("cron"), **trigger_input}
     elif ttype == "event":
         payload = {"event": config.get("event"), "payload": trigger_input, **trigger_input}
+    elif ttype in ("execute_workflow", "execute_workflow_trigger", "subworkflow"):
+        # n8n "Execute Workflow Trigger": the parent call's payload becomes
+        # this flow's first item. ``config.inputs`` only documents the
+        # expected shape, so declared keys appear with an empty default.
+        inner = trigger_input.get("json")
+        payload = dict(inner) if isinstance(inner, dict) else dict(trigger_input)
+        declared = parse_jsonish(config.get("inputs"), {})
+        if isinstance(declared, dict):
+            for key in declared:
+                payload.setdefault(str(key), None)
+        payload["input"] = trigger_input
+        ctx.trigger.update(payload)
+        return NodeOutcome(status="succeeded", outputs=payload)
     elif ttype == "chat":
         # n8n "Chat Trigger" item: ``{json: {chatInput, sessionId, action, files}}``
         # plus the transcript the chat UI keeps locally, so a prompt node can
@@ -698,7 +899,12 @@ async def _exec_trigger(trigger: Dict[str, Any], trigger_input: Dict[str, Any], 
 
     payload["input"] = trigger_input
     ctx.trigger.update(payload)
-    return NodeOutcome(status="succeeded", outputs=payload)
+    outcome = NodeOutcome(status="succeeded", outputs=payload)
+    if binary is not None:
+        # Webhook upload: the file rides on the trigger item, as in n8n where
+        # the webhook node exposes `binary` next to the parsed JSON.
+        outcome.items = [{**item_envelope(payload), "binary": binary}]
+    return outcome
 
 
 async def _exec_subworkflow(node: Dict[str, Any], inputs: Dict[str, Any], ctx: RunContext) -> NodeOutcome:
@@ -773,17 +979,64 @@ async def _exec_subworkflow(node: Dict[str, Any], inputs: Dict[str, Any], ctx: R
             error_code="SUBWORKFLOW_NO_VERSION",
         )
 
+    raw_mode = str(resolve(_cfg(node, "mode"), ctx) or "wait").strip().lower()
+    if raw_mode in ("run", "async", "fire-and-forget"):
+        # n8n can start a sub-workflow without waiting. The local engine is
+        # in-process and has no queue, so this fails loudly instead of
+        # pretending the child ran.
+        return NodeOutcome(
+            status="failed",
+            error="mode 'run' (fire-and-forget) needs queue mode; use mode 'wait'",
+            error_code="SUBWORKFLOW_ASYNC_UNSUPPORTED",
+        )
+
     payload = resolve(_cfg(node, "input"), ctx)
     if payload is None:
         payload = _merged_input(inputs)
     if not isinstance(payload, dict):
         payload = {"input": payload}
 
+    # Execution tree: a persisted parent gets a real child execution row, so
+    # the run detail can show parent -> child and cancellation can cascade.
+    # A definition-only run (engine tests) has no row to attach to.
+    child_execution: Optional[WorkflowExecution] = None
+    child_static: Dict[str, Any] = {}
+    stored_static = getattr(target, "static_data", None)
+    if isinstance(stored_static, dict):
+        child_static.update(json.loads(json.dumps(stored_static, default=str)))
+    if ctx.db is not None and ctx.execution_id is not None:
+        child_execution = WorkflowExecution(
+            organization_id=ctx.organization_id,
+            workflow_id=target.id,
+            workflow_version_id=version.id,
+            status=WorkflowExecutionStatus.RUNNING,
+            trigger_type=WorkflowExecutionTriggerType.API,
+            started_at=_now(),
+            parent_execution_id=ctx.execution_id,
+            root_execution_id=ctx.root_execution_id or ctx.execution_id,
+            metadata={
+                "run_source": "subworkflow",
+                "parent_node": str(node.get("id") or ""),
+                "parent_node_name": str(node.get("name") or ""),
+                "depth": ctx.depth + 1,
+                "trigger_input": payload,
+            },
+        )
+        ctx.db.add(child_execution)
+        await ctx.db.flush()
+
     parent = RunContext(
         db=ctx.db,
         organization_id=ctx.organization_id,
         depth=ctx.depth + 1,
         stack=ctx.stack + (str(target_id),),
+        execution_id=child_execution.id if child_execution is not None else ctx.execution_id,
+        root_execution_id=(
+            (ctx.root_execution_id or ctx.execution_id)
+            if child_execution is not None
+            else ctx.root_execution_id
+        ),
+        static_data=child_static,
         model=ctx.model,
         token_sink=ctx.token_sink,
     )
@@ -797,6 +1050,12 @@ async def _exec_subworkflow(node: Dict[str, Any], inputs: Dict[str, Any], ctx: R
         "workflow_name": target.name,
         "version": version.version,
         "status": status,
+        "execution_id": str(child_execution.id) if child_execution is not None else None,
+        "root_execution_id": (
+            str(ctx.root_execution_id or ctx.execution_id)
+            if child_execution is not None
+            else None
+        ),
         "output": output.get("terminal") or output,
         "steps": len(runs),
         "node_runs": [
@@ -809,6 +1068,48 @@ async def _exec_subworkflow(node: Dict[str, Any], inputs: Dict[str, Any], ctx: R
             for run in runs
         ],
     }
+
+    if child_execution is not None:
+        completed_at = _now()
+        status_map = {
+            "completed": WorkflowExecutionStatus.COMPLETED,
+            "failed": WorkflowExecutionStatus.FAILED,
+            "waiting": WorkflowExecutionStatus.WAITING,
+        }
+        child_execution.status = status_map.get(status, WorkflowExecutionStatus.FAILED)
+        child_execution.completed_at = completed_at
+        child_execution.error_code = "NODE_FAILED" if failed else None
+        child_execution.error_message = (
+            "; ".join(
+                f"{run['node_name']}: {run['error']}" for run in failed if run.get("error")
+            )[:2000]
+            or None
+        )
+        child_execution.metadata = {
+            **(child_execution.metadata or {}),
+            "node_runs": runs,
+            "output": output,
+            "summary": {
+                "total": len(runs),
+                "succeeded": sum(1 for run in runs if run["status"] == "succeeded"),
+                "failed": len(failed),
+                "skipped": sum(1 for run in runs if run["status"] == "skipped"),
+                "waiting": sum(1 for run in runs if run["status"] == "waiting"),
+                "duration_ms": int((completed_at - (child_execution.started_at or completed_at)).total_seconds() * 1000),
+            },
+        }
+        # Static data written inside the child belongs to the child workflow.
+        target.static_data = json.loads(json.dumps(child_static, default=str))
+
+    if status == "waiting":
+        # A synchronous call cannot park; the parent node reports it instead of
+        # claiming the child finished.
+        return NodeOutcome(
+            status="failed",
+            outputs=outputs,
+            error="Sub-workflow is waiting (approval or timed wait); a waiting child cannot complete a synchronous call",
+            error_code="SUBWORKFLOW_WAITING",
+        )
     if failed:
         return NodeOutcome(
             status="failed",
@@ -963,6 +1264,36 @@ async def _exec_node_once(node: Dict[str, Any], inputs: Dict[str, Any], ctx: Run
     node_type = str(node.get("type") or "")
     merged = _merged_input(inputs)
 
+    if node_type in ("convert_to_file", "extract_from_file", "read_binary_file", "write_binary_file"):
+        from openagent.runtime.executors.nodes.files import execute_file_node
+
+        return await execute_file_node(node, inputs, ctx)
+
+    if node_type in (
+        "crypto",
+        "datetime",
+        "html",
+        "xml",
+        "compression",
+        "compare_datasets",
+        "no_op",
+        "stop_and_error",
+    ):
+        from openagent.runtime.executors.nodes.core_extras import execute_core_extra
+
+        return await execute_core_extra(node, inputs, ctx)
+
+    if node_type == "code":
+        from openagent.runtime.executors.nodes.sandbox_code import (
+            execute_code_node,
+            is_sandboxed_code,
+        )
+
+        # `language: python|javascript` runs in the sandboxed runner; without it
+        # the original expression behaviour below is unchanged.
+        if is_sandboxed_code(node):
+            return await execute_code_node(node, inputs, ctx)
+
     if node_type in ("prompt", "llm", "chat_model"):
         return await _exec_prompt_node(node, inputs, ctx)
 
@@ -1098,6 +1429,176 @@ async def _exec_node_once(node: Dict[str, Any], inputs: Dict[str, Any], ctx: Run
             items=_items_from_pairs(pairs),
         )
 
+    if node_type == "edit_fields":
+        # n8n "Edit Fields / Set": add, keep or remove fields per item.
+        raw_fields = parse_jsonish(_cfg(node, "fields"), {})
+        if raw_fields is not None and not isinstance(raw_fields, dict):
+            return NodeOutcome(
+                status="failed",
+                error="Edit fields node needs a fields object",
+                error_code="INVALID_CONFIG",
+            )
+        fields = raw_fields or {}
+        keep = _field_names(_cfg(node, "keep_only"))
+        remove = _field_names(_cfg(node, "remove"))
+        source = as_items(_items_for(node, inputs, ctx))
+        pairs: List[Tuple[int, Any]] = []
+        for index, entry in enumerate(source[:MAX_LOOP_ITEMS]):
+            data = item_json(entry)
+            if keep:
+                result = {key: data[key] for key in keep if isinstance(data, dict) and key in data}
+            else:
+                result = dict(data) if isinstance(data, dict) else {"value": data}
+            if fields:
+                child = ctx.child(entry, index)
+                child.input_items = source
+                resolved = resolve(fields, child)
+                if isinstance(resolved, dict):
+                    result.update(resolved)
+            for key in remove:
+                result.pop(key, None)
+            pairs.append((index, result))
+        return NodeOutcome(
+            status="succeeded",
+            outputs={"items": [value for _, value in pairs], "count": len(pairs)},
+            items=_items_from_pairs(pairs),
+        )
+
+    if node_type == "aggregate":
+        mode = str(_cfg(node, "mode") or "collect").strip().lower()
+        if mode in ("group", "groupby", "group-by"):
+            mode = "group_by"
+        field = str(_cfg(node, "field") or "").strip()
+        group_field = str(_cfg(node, "group_by") or "").strip()
+        source = as_items(_items_for(node, inputs, ctx))
+        values = [item_json(entry) for entry in source[:MAX_LOOP_ITEMS]]
+
+        if mode == "count":
+            return NodeOutcome(
+                status="succeeded",
+                outputs={"count": len(values), "items": [{"count": len(values)}]},
+            )
+        if mode == "group_by":
+            if not group_field:
+                return NodeOutcome(
+                    status="failed",
+                    error="Aggregate group_by needs config.group_by",
+                    error_code="INVALID_CONFIG",
+                )
+            groups: Dict[str, Dict[str, Any]] = {}
+            for index, value in enumerate(values):
+                key = _stringify(_field_value(value, group_field))
+                bucket = groups.setdefault(
+                    key,
+                    {"key": _field_value(value, group_field), "count": 0, "items": [], "first": index},
+                )
+                bucket["count"] += 1
+                bucket["items"].append(value)
+            pairs = [
+                (bucket.pop("first"), {k: v for k, v in bucket.items()})
+                for bucket in groups.values()
+            ]
+            return NodeOutcome(
+                status="succeeded",
+                outputs={"groups": [value for _, value in pairs], "count": len(pairs)},
+                items=_items_from_pairs(pairs),
+            )
+        if mode not in ("collect", "sum", "average"):
+            return NodeOutcome(
+                status="failed",
+                error=f"Unknown aggregate mode '{mode}'",
+                error_code="INVALID_CONFIG",
+            )
+        if not field:
+            return NodeOutcome(
+                status="failed",
+                error=f"Aggregate {mode} needs config.field",
+                error_code="INVALID_CONFIG",
+            )
+        collected = [_field_value(value, field) for value in values]
+        if mode == "collect":
+            payload: Dict[str, Any] = {field: collected, "count": len(collected)}
+        else:
+            numbers = [_as_number(value) for value in collected]
+            usable = [number for number in numbers if number is not None]
+            total = sum(usable)
+            if mode == "sum":
+                payload = {"sum": total, "count": len(usable), "field": field}
+            else:
+                payload = {
+                    "average": (total / len(usable)) if usable else None,
+                    "count": len(usable),
+                    "field": field,
+                }
+        return NodeOutcome(status="succeeded", outputs=payload)
+
+    if node_type == "split_in_batches":
+        raw_size = _as_number(_cfg(node, "batch_size")) if _cfg(node, "batch_size") is not None else 10
+        batch_size = int(raw_size) if raw_size and raw_size >= 1 else 10
+        batch_size = min(batch_size, 1000)
+        source = as_items(_items_for(node, inputs, ctx))[:MAX_LOOP_ITEMS]
+        pairs: List[Tuple[int, Any]] = []
+        for start in range(0, len(source), batch_size):
+            chunk = source[start : start + batch_size]
+            pairs.append(
+                (
+                    start,
+                    {
+                        "batch": [item_json(entry) for entry in chunk],
+                        "index": len(pairs),
+                        "size": len(chunk),
+                        "total": len(source),
+                    },
+                )
+            )
+        return NodeOutcome(
+            status="succeeded",
+            outputs={"items": [value for _, value in pairs], "count": len(pairs)},
+            items=_items_from_pairs(pairs),
+        )
+
+    if node_type == "code":
+        raw_code = _cfg(node, "code")
+        if not raw_code or not str(raw_code).strip():
+            return NodeOutcome(
+                status="failed",
+                error="Code node needs config.code (an expression)",
+                error_code="INVALID_CONFIG",
+            )
+        result = resolve(raw_code, ctx)
+        if isinstance(result, str):
+            result = parse_jsonish(result, result)
+        if isinstance(result, list):
+            pairs = [(index, value) for index, value in enumerate(result[:MAX_LOOP_ITEMS])]
+            return NodeOutcome(
+                status="succeeded",
+                outputs={"items": [value for _, value in pairs], "count": len(pairs)},
+                items=_items_from_pairs(pairs),
+            )
+        outputs = result if isinstance(result, dict) else {"result": result}
+        return NodeOutcome(status="succeeded", outputs=outputs)
+
+    if node_type == "respond_to_webhook":
+        raw_status = _as_number(_cfg(node, "status")) if _cfg(node, "status") is not None else 200
+        code = int(raw_status) if raw_status and 100 <= raw_status <= 599 else 200
+        body = parse_jsonish(_cfg(node, "body"), None)
+        if body is None:
+            body = resolve(_cfg(node, "body"), ctx)
+        elif isinstance(body, (dict, list)):
+            body = resolve(body, ctx)
+        headers = parse_jsonish(_cfg(node, "headers"), {}) or {}
+        return NodeOutcome(
+            status="succeeded",
+            outputs={
+                "responded": True,
+                "status": code,
+                "body": body,
+                "headers": {str(k): str(v) for k, v in headers.items()}
+                if isinstance(headers, dict)
+                else {},
+            },
+        )
+
     if node_type == "condition":
         result = evaluate(_cfg(node, "expression"), ctx)
         return NodeOutcome(
@@ -1117,7 +1618,101 @@ async def _exec_node_once(node: Dict[str, Any], inputs: Dict[str, Any], ctx: Run
         return NodeOutcome(status="succeeded", outputs={"route": "default"}, ports=["default"])
 
     if node_type == "merge":
-        return NodeOutcome(status="succeeded", outputs={"merged": merged})
+        # n8n Merge: fan-in of item lists (append), positional combine, or a
+        # key-matched combine. The legacy `merged` object is kept for callers
+        # that read the old single-object output.
+        mode = str(_cfg(node, "mode") or "append").strip().lower()
+        if mode in ("combine", "by_index", "merge_by_index", "merge-by-index", "by-index", "index"):
+            mode = "by_index"
+        elif mode in ("by_key", "merge_by_key", "merge-by-key", "by-key", "key", "combine_by_key"):
+            mode = "by_key"
+        elif mode in ("choose", "choose_branch", "choose-branch", "first"):
+            mode = "first"
+        else:
+            mode = "append"
+
+        ports: List[Tuple[str, List[Dict[str, Any]]]] = [
+            (str(label), as_items(value)) for label, value in inputs.items()
+        ]
+        if not ports:
+            return NodeOutcome(
+                status="succeeded",
+                outputs={"items": [], "count": 0, "mode": mode, "merged": {}},
+                items=[],
+            )
+
+        pairs: List[Tuple[int, Any]] = []
+        if mode == "first":
+            for _, source_items in ports:
+                if source_items:
+                    pairs = [
+                        (index, item_json(entry))
+                        for index, entry in enumerate(source_items[:MAX_LOOP_ITEMS])
+                    ]
+                    break
+        elif mode == "by_index":
+            longest = max((len(source) for _, source in ports), default=0)
+            for index in range(min(longest, MAX_LOOP_ITEMS)):
+                combined: Dict[str, Any] = {}
+                for _, source_items in ports:
+                    if index >= len(source_items):
+                        continue
+                    value = item_json(source_items[index])
+                    if isinstance(value, dict):
+                        combined.update(value)
+                    else:
+                        combined[f"value_{index}"] = value
+                pairs.append((index, combined))
+        elif mode == "by_key":
+            raw_field = _cfg(node, "field") or _cfg(node, "fields") or ""
+            if isinstance(raw_field, list):
+                raw_field = raw_field[0] if raw_field else ""
+            field = str(raw_field).strip()
+            if not field:
+                return NodeOutcome(
+                    status="failed",
+                    error="Merge by key needs config.field (the matching field)",
+                    error_code="INVALID_CONFIG",
+                )
+            base_items = ports[0][1]
+            others = [source for _, source in ports[1:]]
+            for index, entry in enumerate(base_items[:MAX_LOOP_ITEMS]):
+                value = item_json(entry)
+                key = _stringify(_field_value(value, field))
+                combined = dict(value) if isinstance(value, dict) else {"value": value}
+                for other in others:
+                    match = next(
+                        (
+                            item_json(candidate)
+                            for candidate in other
+                            if _stringify(_field_value(item_json(candidate), field)) == key
+                        ),
+                        None,
+                    )
+                    if isinstance(match, dict):
+                        combined.update(match)
+                pairs.append((index, combined))
+        else:  # append
+            for _, source_items in ports:
+                for entry in source_items[:MAX_LOOP_ITEMS]:
+                    # pairedItem stays relative to the node's concatenated input.
+                    pairs.append((len(pairs), item_json(entry)))
+
+        merged_items = _items_from_pairs(pairs)
+        merged_output: Dict[str, Any] = {}
+        for value in inputs.values():
+            if isinstance(value, dict):
+                merged_output.update(value)
+        return NodeOutcome(
+            status="succeeded",
+            outputs={
+                "items": [entry["json"] for entry in merged_items],
+                "count": len(merged_items),
+                "mode": mode,
+                "merged": merged_output or merged,
+            },
+            items=merged_items,
+        )
 
     if node_type == "loop":
         items = resolve(_cfg(node, "items"), ctx)
@@ -1146,6 +1741,22 @@ async def _exec_node_once(node: Dict[str, Any], inputs: Dict[str, Any], ctx: Run
     if node_type == "delay":
         seconds = _as_number(resolve(_cfg(node, "duration_seconds", 0), ctx)) or 0
         wait = max(0.0, min(float(seconds), MAX_SYNC_DELAY_SECONDS))
+        wants_webhook = _truthy(_cfg(node, "wait_for_webhook")) or str(
+            _cfg(node, "mode") or ""
+        ).strip().lower() in ("webhook", "on_webhook", "on-webhook")
+        if wants_webhook and ctx.db is not None and ctx.depth == 0:
+            # n8n's Wait node "On Webhook Call": park until an external caller
+            # resumes the execution (POST .../webhook-resume), not until a time.
+            return NodeOutcome(
+                status="waiting",
+                outputs={
+                    "waiting": True,
+                    "resume": "webhook",
+                    "requested_seconds": float(seconds),
+                    "resume_at": None,
+                },
+                reason="WAITING_FOR_WEBHOOK",
+            )
         if float(seconds) > wait and ctx.db is not None and ctx.depth == 0:
             # n8n's Wait node: the run parks and a scheduler resumes it, instead
             # of capping the delay at the synchronous limit.
@@ -1180,19 +1791,54 @@ async def _exec_node_once(node: Dict[str, Any], inputs: Dict[str, Any], ctx: Run
                     json=body if body is not None and method not in ("GET", "HEAD") else None,
                 )
             parsed: Any
-            try:
-                parsed = response.json()
-            except ValueError:
-                parsed = response.text[:20000]
-            outcome = NodeOutcome(
-                status="succeeded" if response.status_code < 400 else "failed",
-                outputs={
-                    "status": response.status_code,
-                    "ok": response.status_code < 400,
-                    "body": parsed,
-                    "headers": dict(response.headers),
-                },
+            content_type = (response.headers.get("content-type") or "").split(";")[0].strip().lower()
+            is_binary = bool(response.content) and not (
+                "json" in content_type
+                or content_type.startswith("text/")
+                or content_type in ("application/xml", "application/xhtml+xml")
+                or content_type.endswith("+xml")
             )
+            if is_binary:
+                from openagent.runtime.binary_store import make_binary_property
+
+                file_name = _download_name(response, url)
+                try:
+                    prop = make_binary_property(
+                        response.content, file_name=file_name, mime_type=content_type
+                    )
+                except ValueError as exc:
+                    return NodeOutcome(
+                        status="failed", error=str(exc), error_code="BINARY_TOO_LARGE"
+                    )
+                meta = {
+                    "fileName": prop["fileName"],
+                    "mimeType": prop["mimeType"],
+                    "fileSize": prop["fileSize"],
+                }
+                outcome = NodeOutcome(
+                    status="succeeded" if response.status_code < 400 else "failed",
+                    outputs={
+                        "status": response.status_code,
+                        "ok": response.status_code < 400,
+                        "headers": dict(response.headers),
+                        **meta,
+                    },
+                    items=[{**item_envelope(meta), "binary": {"data": prop}}],
+                )
+            else:
+                try:
+                    parsed = response.json()
+                except ValueError:
+                    parsed = response.text[:20000]
+                outcome = NodeOutcome(
+                    status="succeeded" if response.status_code < 400 else "failed",
+                    outputs={
+                        "status": response.status_code,
+                        "ok": response.status_code < 400,
+                        "body": parsed,
+                        "headers": dict(response.headers),
+                    },
+                )
             if response.status_code >= 400:
                 outcome.error = f"HTTP {response.status_code}"
                 outcome.error_code = "HTTP_ERROR"
@@ -1258,6 +1904,8 @@ async def _exec_node_once(node: Dict[str, Any], inputs: Dict[str, Any], ctx: Run
 def _edge_active(edge: Dict[str, Any], source_status: str, source_ports: List[str]) -> bool:
     # Typed edges carry the output port explicitly; legacy edges use `label`.
     label = str(edge.get("from_port") or edge.get("label") or "").strip().lower()
+    if not label and str(edge.get("connection_type") or "").strip().lower() == "error":
+        label = "error"
     if source_status == "failed":
         return label in ("failure", "error")
     if source_status == "waiting":
@@ -1307,6 +1955,9 @@ async def execute_definition(
         organization_id=parent.organization_id if parent else None,
         depth=parent.depth if parent else 0,
         stack=parent.stack if parent else (),
+        execution_id=parent.execution_id if parent else None,
+        root_execution_id=parent.root_execution_id if parent else None,
+        static_data=parent.static_data if parent else {},
         model=model or (parent.model if parent else None),
         token_sink=token_sink or (parent.token_sink if parent else None),
     )
@@ -1317,7 +1968,9 @@ async def execute_definition(
                outcome_error: Optional[str] = None, error_code: Optional[str] = None,
                reason: Optional[str] = None, ports: Optional[List[str]] = None,
                continued: bool = False, attempt: int = 1,
-               items: Optional[List[Dict[str, Any]]] = None) -> None:
+               items: Optional[List[Dict[str, Any]]] = None,
+               input_items_count: Optional[int] = None,
+               handled: bool = False) -> None:
         completed = _now()
         run = {
             "node_id": str(item["id"]),
@@ -1327,6 +1980,8 @@ async def execute_definition(
             "inputs": {},
             "outputs": outputs,
             "items": items if items is not None else [item_envelope(outputs)],
+            "input_items": input_items_count if input_items_count is not None else 0,
+            "output_items": len(items) if items is not None else 1,
             "error": outcome_error,
             "error_code": error_code,
             "reason": reason,
@@ -1336,6 +1991,7 @@ async def execute_definition(
             "duration_ms": int((completed - started).total_seconds() * 1000),
             "attempt": attempt,
             "continued": continued,
+            "handled": handled,
         }
         runs.append(run)
         results[run["node_id"]] = run
@@ -1347,7 +2003,7 @@ async def execute_definition(
     for trigger in triggers:
         started = _now()
         outcome = await _exec_trigger(trigger, trigger_input, ctx)
-        record(trigger, outcome.status, outcome.outputs, started)
+        record(trigger, outcome.status, outcome.outputs, started, items=outcome.items)
 
     incoming: Dict[str, List[Dict[str, Any]]] = {str(n["id"]): [] for n in nodes}
     outgoing: Dict[str, List[Dict[str, Any]]] = {str(t["id"]): [] for t in triggers}
@@ -1415,7 +2071,11 @@ async def execute_definition(
             inputs: Dict[str, Any] = {}
             incoming_items: List[Dict[str, Any]] = []
             for edge in active:
-                label = str(edge.get("label") or "input")
+                # Fan-in (Merge) reaches the same node through several edges:
+                # keep every branch instead of letting the last one win.
+                label = str(edge.get("to_port") or edge.get("label") or "input")
+                if label in inputs:
+                    label = f"{label}:{edge['from']}"
                 upstream = results[str(edge["from"])]
                 inputs[label] = upstream["outputs"]
                 incoming_items.extend(upstream.get("items") or [])
@@ -1433,7 +2093,8 @@ async def execute_definition(
             )
             record(node, outcome.status, outcome.outputs, started, outcome.error,
                    outcome.error_code, outcome.reason, outcome.ports,
-                   continued=continued, attempt=attempts, items=outcome.items)
+                   continued=continued, attempt=attempts, items=outcome.items,
+                   input_items_count=len(incoming_items), handled=outcome.handled)
             ctx.outputs[node_id] = {
                 **outcome.outputs,
                 "_status": outcome.status,
@@ -1451,7 +2112,12 @@ async def execute_definition(
                outcome_error="Upstream dependency did not run")
 
     statuses = [run["status"] for run in runs]
-    real_failures = [run for run in runs if run["status"] == "failed" and not run.get("continued")]
+    real_failures = [
+        run for run in runs
+        if run["status"] == "failed"
+        and not run.get("continued")
+        and not run.get("handled")
+    ]
     if "waiting" in statuses:
         overall = "waiting"
     elif real_failures:
@@ -1475,6 +2141,7 @@ async def execute_definition(
                 "trigger": ctx.trigger,
                 "variables": ctx.variables,
                 "outputs": ctx.outputs,
+                "static_data": ctx.static_data,
             }
         )
     return runs, final_output, overall
@@ -1493,8 +2160,132 @@ def _trigger_type_for(definition: Dict[str, Any]) -> WorkflowExecutionTriggerTyp
         "schedule": WorkflowExecutionTriggerType.SCHEDULED,
         "event": WorkflowExecutionTriggerType.EVENT,
         "chat": WorkflowExecutionTriggerType.API,
+        "execute_workflow": WorkflowExecutionTriggerType.API,
         "manual": WorkflowExecutionTriggerType.MANUAL,
     }.get(ttype, WorkflowExecutionTriggerType.API)
+
+
+async def _run_error_workflow(
+    db: AsyncSession,
+    *,
+    workflow: Workflow,
+    organization_id: UUID,
+    definition: Dict[str, Any],
+    execution: WorkflowExecution,
+    node_runs: List[Dict[str, Any]],
+    triggered_by: Optional[UUID],
+) -> Optional[Dict[str, Any]]:
+    """Run the workflow configured as this workflow's "On error" handler.
+
+    Mirrors n8n's workflow settings panel: ``settings.error_workflow_id`` (the
+    1.1 top-level ``error_workflow_id`` is accepted too). The handler receives
+    ``{execution, workflow, error, lastNodeExecuted}`` and never triggers its
+    own error workflow, so a failure loop cannot form.
+    """
+    settings = definition.get("settings") or {}
+    raw = settings.get("error_workflow_id") or definition.get("error_workflow_id")
+    if not raw or str(raw).strip() in ("", str(workflow.id)):
+        return None
+    try:
+        target_id = UUID(str(raw).strip())
+    except (TypeError, ValueError):
+        return {
+            "workflow_id": str(raw),
+            "status": "invalid",
+            "error": "error_workflow_id is not a workflow id",
+        }
+
+    target = (
+        await db.execute(
+            select(Workflow).where(
+                Workflow.id == target_id,
+                Workflow.deleted_at.is_(None),
+                Workflow.organization_id == organization_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if target is None:
+        return {
+            "workflow_id": str(target_id),
+            "status": "missing",
+            "error": "Error workflow was not found in this organization",
+        }
+
+    last = next(
+        (
+            run
+            for run in reversed(node_runs)
+            if run["status"] == "failed"
+            and not run.get("continued")
+            and not run.get("handled")
+        ),
+        None,
+    )
+    payload: Dict[str, Any] = {
+        "execution": {
+            "id": str(execution.id),
+            "workflow_id": str(workflow.id),
+            "status": "failed",
+            "error": execution.error_message,
+            "trigger_type": getattr(execution.trigger_type, "value", execution.trigger_type),
+        },
+        "workflow": {"id": str(workflow.id), "name": workflow.name},
+        "error": {
+            "message": execution.error_message,
+            "code": execution.error_code,
+            "node": (last or {}).get("node_name"),
+        },
+        "lastNodeExecuted": {
+            "node_id": (last or {}).get("node_id"),
+            "node_name": (last or {}).get("node_name"),
+            "error": (last or {}).get("error"),
+            "error_code": (last or {}).get("error_code"),
+        },
+    }
+
+    try:
+        run = await run_workflow(
+            db,
+            workflow=target,
+            organization_id=organization_id,
+            triggered_by=triggered_by,
+            trigger_input=payload,
+            trigger_error_workflow=False,
+        )
+    except Exception as exc:  # a broken handler must not hide the first failure
+        return {"workflow_id": str(target_id), "status": "failed", "error": str(exc)}
+
+    return {
+        "workflow_id": str(target_id),
+        "workflow_name": target.name,
+        "execution_id": run.get("execution_id"),
+        "status": run.get("status"),
+    }
+
+
+def _queued_result(
+    execution: WorkflowExecution, workflow: Workflow, message: str
+) -> Dict[str, Any]:
+    """The run response for an execution that was persisted, not executed."""
+    return {
+        "execution_id": str(execution.id),
+        "workflow_id": str(workflow.id),
+        "status": "queued",
+        "message": message,
+        "node_runs": [],
+        "output": {},
+        "summary": {
+            "total": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "skipped": 0,
+            "waiting": 0,
+            "warnings": 0,
+            "duration_ms": 0,
+            "items_pruned": 0,
+        },
+        "error_message": None,
+    }
 
 
 async def run_workflow(
@@ -1509,6 +2300,9 @@ async def run_workflow(
     model: Optional[ModelTarget] = None,
     token_sink: Optional[Callable[[str], Awaitable[None]]] = None,
     resume_from: Optional[WorkflowExecution] = None,
+    trigger_error_workflow: bool = True,
+    parent_execution_id: Optional[UUID] = None,
+    root_execution_id: Optional[UUID] = None,
 ) -> Dict[str, Any]:
     """Create an execution row, run the definition, persist node runs.
 
@@ -1560,11 +2354,89 @@ async def run_workflow(
             raise ValueError("Workflow has no saved version to run")
         definition = version.definition or {}
 
+    # ---- workflow static data (n8n ``$getWorkflowStaticData``) ------------
+    # The version's static_data is the seed; the mutable copy on the workflow
+    # row wins, and whatever the run leaves behind is written back below.
+    static_data: Dict[str, Any] = {}
+    seeded_static = definition.get("static_data")
+    if isinstance(seeded_static, dict):
+        static_data.update(json.loads(json.dumps(seeded_static, default=str)))
+    stored_static = getattr(workflow, "static_data", None)
+    if isinstance(stored_static, dict):
+        static_data.update(json.loads(json.dumps(stored_static, default=str)))
+
+    # ---- per-workflow concurrency (n8n's workflow "Concurrency" field) -----
+    # Opt-in: without settings.max_concurrency every run starts immediately.
+    # Over the limit the run is persisted as queued (never dropped) and the
+    # scheduler's dispatcher starts it when a slot frees up.
+    # ---- queue mode / graceful drain (Phase 12) --------------------------
+    # With WORKFLOW_QUEUE_MODE on, or while the API is draining, the main
+    # process never executes: it persists the run and a worker claims it.
+    if resume_from is None and (queue_mode_enabled() or is_shutting_down()):
+        queued_execution = WorkflowExecution(
+            organization_id=organization_id,
+            workflow_id=workflow.id,
+            workflow_version_id=version.id if version else None,
+            status=WorkflowExecutionStatus.QUEUED,
+            trigger_type=_trigger_type_for(definition),
+            started_at=None,
+            metadata={
+                "run_source": "draft" if definition_override else "version",
+                "trigger_input": trigger_input or {},
+                "queue_mode": "worker",
+                "queued_at": _now().isoformat(),
+                "queued": {
+                    "definition": definition,
+                    "trigger_input": trigger_input or {},
+                    "mode": "worker",
+                },
+            },
+        )
+        db.add(queued_execution)
+        await db.flush()
+        await db.commit()
+        reason = (
+            "Queue mode is on" if queue_mode_enabled() else "The API is shutting down"
+        )
+        return _queued_result(
+            queued_execution, workflow, f"{reason}; run queued for a worker"
+        )
+
+    limit = concurrency_limit(definition) if resume_from is None else 0
+    if limit and await active_executions(db, workflow.id) >= limit:
+        queued_execution = WorkflowExecution(
+            organization_id=organization_id,
+            workflow_id=workflow.id,
+            workflow_version_id=version.id if version else None,
+            status=WorkflowExecutionStatus.QUEUED,
+            trigger_type=_trigger_type_for(definition),
+            started_at=None,
+            metadata={
+                "run_source": "draft" if definition_override else "version",
+                "trigger_input": trigger_input or {},
+                "queued_at": _now().isoformat(),
+                "queued": {
+                    "definition": definition,
+                    "trigger_input": trigger_input or {},
+                    "limit": limit,
+                },
+            },
+        )
+        db.add(queued_execution)
+        await db.flush()
+        await db.commit()
+        return _queued_result(
+            queued_execution,
+            workflow,
+            f"Workflow concurrency limit ({limit}) reached; run queued",
+        )
+
     started_at = _now()
     if resume_from is not None:
         execution = resume_from
         execution.status = WorkflowExecutionStatus.RUNNING
         execution.completed_at = None
+        execution.started_at = execution.started_at or started_at
         execution_id = execution.id
     else:
         execution = WorkflowExecution(
@@ -1574,26 +2446,69 @@ async def run_workflow(
             status=WorkflowExecutionStatus.RUNNING,
             trigger_type=_trigger_type_for(definition),
             started_at=started_at,
-            metadata={"run_source": "draft" if definition_override else "version"},
+            parent_execution_id=parent_execution_id,
+            root_execution_id=root_execution_id,
+            metadata={
+                "run_source": "draft" if definition_override else "version",
+                "trigger_input": trigger_input or {},
+            },
         )
         db.add(execution)
         await db.flush()
         execution_id = execution.id
 
+    # A resumed run keeps its tree; a new run is its own root unless it was
+    # started by a parent (sub-workflow call).
+    if execution.root_execution_id is None:
+        execution.root_execution_id = execution_id
+    if execution.parent_execution_id is not None:
+        execution.metadata = {
+            **(execution.metadata or {}),
+            "parent_execution_id": str(execution.parent_execution_id),
+        }
+
+    # Crash journal + drain accounting. The row is committed before the engine
+    # starts so a process that dies mid-run leaves a visible `running` row the
+    # journal sweep can mark `crashed` (instead of nothing at all).
+    journal_start(execution)
+    await db.commit()
+    begin_run(execution_id)
+
+    budget = execution_timeout(definition)
     try:
-        node_runs, output, overall = await execute_definition(
+        runner = execute_definition(
             definition,
             trigger_input or {},
-            parent=RunContext(db=db, organization_id=organization_id),
+            parent=RunContext(
+                db=db,
+                organization_id=organization_id,
+                depth=0,
+                stack=(str(workflow.id),),
+                execution_id=execution_id,
+                root_execution_id=execution.root_execution_id or execution_id,
+                static_data=static_data,
+            ),
             model=model,
             token_sink=token_sink,
             seed=seed,
             state=state,
         )
+        if budget:
+            node_runs, output, overall = await asyncio.wait_for(runner, timeout=float(budget))
+        else:
+            node_runs, output, overall = await runner
+    except asyncio.TimeoutError:
+        node_runs = []
+        output = {"status": "failed", "error": f"Execution exceeded {budget}s"}
+        overall = "failed"
+        execution.error_message = f"Execution exceeded the {budget}s workflow budget"
+        execution.error_code = "EXECUTION_TIMEOUT"
     except Exception as exc:  # engine failure is reported, never swallowed
         node_runs, output, overall = [], {"status": "failed", "error": str(exc)}, "failed"
         execution.error_message = str(exc)
         execution.error_code = "EXECUTION_ENGINE_ERROR"
+    finally:
+        end_run(execution_id)
 
     completed_at = _now()
     failed = [run for run in node_runs if run["status"] == "failed" and not run.get("continued")]
@@ -1607,8 +2522,10 @@ async def run_workflow(
     wait_info: Optional[Dict[str, Any]] = None
     if overall == "waiting":
         wait_run = next((run for run in node_runs if run["status"] == "waiting"), None)
-        resume_at = (wait_run or {}).get("outputs", {}).get("resume_at")
-        if wait_run is not None and resume_at:
+        wait_outputs = (wait_run or {}).get("outputs") or {}
+        resume_at = wait_outputs.get("resume_at")
+        waits_for_webhook = str(wait_outputs.get("resume") or "").lower() == "webhook"
+        if wait_run is not None and (resume_at or waits_for_webhook):
             # The wait node is stored as completed: on resume the scheduler
             # does not make the workflow wait for the same duration again.
             waited = {
@@ -1626,6 +2543,9 @@ async def run_workflow(
             wait_info = {
                 "node_id": wait_run["node_id"],
                 "resume_at": resume_at,
+                # A webhook wait has no time; the caller resumes it with this
+                # single-run token through POST .../webhook-resume.
+                "webhook_token": secrets.token_urlsafe(32) if waits_for_webhook else None,
                 "definition": definition,
                 "trigger_input": trigger_input or {},
                 "trigger": state.get("trigger") or {},
@@ -1641,13 +2561,36 @@ async def run_workflow(
 
     execution.status = status_map[overall]
     execution.completed_at = completed_at
+    # Persist a bounded item view per node (execution_data mirrors n8n's shape
+    # and the run panel reads it) so a huge list cannot bloat the row.
+    # n8n's "Save execution data": statuses and events are always stored, the
+    # per-node items only as far as the workflow's setting allows.
+    save_mode = save_execution_data_mode(definition)
+    store_items = save_mode == "all" or (save_mode == "on_error" and overall == "failed")
+    persisted_runs: List[Dict[str, Any]] = []
+    execution_data: Dict[str, List[Dict[str, Any]]] = {}
+    pruned_items = 0
+    for run in node_runs:
+        saved = dict(run)
+        if store_items:
+            stored, dropped = _persisted_items(run.get("items"))
+            pruned_items += dropped
+            saved["items"] = stored
+            saved["items_truncated"] = dropped
+            execution_data[run["node_id"]] = stored
+        else:
+            saved["items"] = []
+            saved["items_truncated"] = len(run.get("items") or [])
+            saved.pop("inputs", None)
+            saved.pop("outputs", None)
+        persisted_runs.append(saved)
+
     metadata = {
         **(execution.metadata or {}),
-        "node_runs": node_runs,
+        "node_runs": persisted_runs,
         "output": output,
-        "execution_data": {
-            "nodes": {run["node_id"]: run.get("items") or [] for run in node_runs},
-        },
+        "save_execution_data": save_mode,
+        "execution_data": {"nodes": execution_data},
         "summary": {
             "total": len(node_runs),
             "succeeded": sum(1 for run in node_runs if run["status"] == "succeeded"),
@@ -1656,8 +2599,16 @@ async def run_workflow(
             "waiting": sum(1 for run in node_runs if run["status"] == "waiting"),
             "warnings": len(continued_failures),
             "duration_ms": int((completed_at - run_started).total_seconds() * 1000),
+            "items_pruned": pruned_items,
         },
     }
+    # Persist whatever the run left in workflow static data; a version's
+    # authored seed never overwrites the mutable value on the row.
+    if isinstance(state.get("static_data"), dict):
+        workflow.static_data = json.loads(
+            json.dumps(state["static_data"], default=str)
+        )
+
     metadata.pop("wait", None)
     if wait_info is not None:
         metadata["wait"] = wait_info
@@ -1707,6 +2658,20 @@ async def run_workflow(
     db.add_all(events)
     await db.commit()
 
+    if overall == "failed" and trigger_error_workflow:
+        error_run = await _run_error_workflow(
+            db,
+            workflow=workflow,
+            organization_id=organization_id,
+            definition=definition,
+            execution=execution,
+            node_runs=node_runs,
+            triggered_by=triggered_by,
+        )
+        if error_run is not None:
+            execution.metadata = {**(execution.metadata or {}), "error_workflow": error_run}
+            await db.commit()
+
     return {
         "execution_id": str(execution_id),
         "workflow_id": str(workflow.id),
@@ -1730,16 +2695,24 @@ async def run_single_node(
     db: Optional[AsyncSession] = None,
     organization_id: Optional[UUID] = None,
     model: Optional[ModelTarget] = None,
+    *,
+    use_pinned: bool = False,
+    upstream: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Execute one node (or trigger) of a definition — n8n's "Execute step".
 
-    Expressions see the supplied trigger input as ``trigger``; nodes that did
-    not run are unavailable, so ``{{nodes.<id>.*}}`` resolves empty. Retries,
-    timeouts and "continue on error" apply exactly as in a full run.
+    ``use_pinned`` is a **preview-only** switch: pinned node output from
+    ``settings.pinned_data`` stands in for nodes that have not run, both as
+    ``{{nodes.<id>.*}}`` data and as this node's input items. ``upstream`` does
+    the same for caller-supplied output (partial execution). Real runs never
+    pass either, so pins can never leak into production data.
+
+    Retries, timeouts and "continue on error" apply exactly as in a full run.
     """
     trigger_input = trigger_input or {}
     triggers: List[Dict[str, Any]] = list(definition.get("triggers") or [])
     nodes: List[Dict[str, Any]] = list(definition.get("nodes") or [])
+    edges: List[Dict[str, Any]] = [e for e in (definition.get("edges") or []) if isinstance(e, dict)]
 
     variables: Dict[str, Any] = {}
     for variable in definition.get("variables") or []:
@@ -1754,6 +2727,33 @@ async def run_single_node(
     else:
         ctx.trigger.update(trigger_input)
 
+    pinned = (definition.get("settings") or {}).get("pinned_data") or {}
+    if not isinstance(pinned, dict):
+        pinned = {}
+    supplied = upstream or {}
+
+    def _available(ref: str) -> Optional[Dict[str, Any]]:
+        """Output a source node would have produced, if it is available."""
+        if ref in supplied:
+            value = supplied[ref]
+            return value if isinstance(value, dict) else {"items": as_items(value)}
+        if use_pinned and ref in pinned:
+            datum = pinned[ref]
+            outputs = datum.get("outputs") if isinstance(datum, dict) else None
+            if isinstance(outputs, dict):
+                return outputs
+            if outputs is not None:
+                return {"items": as_items(outputs)}
+        return None
+
+    used_sources: List[str] = []
+    if use_pinned:
+        for ref, datum in pinned.items():
+            outputs = datum.get("outputs") if isinstance(datum, dict) else None
+            if isinstance(outputs, dict):
+                ctx.outputs[str(ref)] = {**outputs, "_status": "succeeded", "_error": None}
+                used_sources.append(str(ref))
+
     started = _now()
     target_trigger = next((t for t in triggers if str(t.get("id")) == node_id), None)
     if target_trigger is not None:
@@ -1766,7 +2766,23 @@ async def run_single_node(
         if node is None:
             raise ValueError(f"Node {node_id!r} is not part of this workflow")
         item = node
-        inputs = {"input": trigger_input}
+        inputs: Dict[str, Any] = {}
+        incoming_items: List[Dict[str, Any]] = []
+        for edge in edges:
+            if str(edge.get("to") or "") != str(node.get("id") or ""):
+                continue
+            source = str(edge.get("from") or "")
+            outputs = _available(source)
+            if outputs is None:
+                continue
+            label = str(edge.get("label") or edge.get("from_port") or source or "input")
+            inputs[label] = outputs
+            incoming_items.extend(as_items(outputs.get("items") if "items" in outputs else outputs))
+            used_sources.append(source)
+        if not incoming_items and trigger_input:
+            incoming_items = as_items(trigger_input)
+        if not inputs:
+            inputs = {"input": trigger_input}
         if node.get("disabled"):
             completed = _now()
             return {
@@ -1783,7 +2799,9 @@ async def run_single_node(
                 "attempt": 1,
                 "continued": False,
             }
-        outcome, attempts, continued = await _execute_with_policy(node, inputs, ctx)
+        outcome, attempts, continued = await _execute_with_policy(
+            node, inputs, ctx, items=incoming_items
+        )
 
     completed = _now()
     return {
@@ -1794,10 +2812,12 @@ async def run_single_node(
         "inputs": inputs,
         "outputs": outcome.outputs,
         "items": outcome.items if outcome.items is not None else as_items(outcome.outputs),
+        "sources": sorted(set(used_sources)),
         "error": outcome.error,
         "error_code": outcome.error_code,
         "reason": outcome.reason,
         "duration_ms": int((completed - started).total_seconds() * 1000),
         "attempt": attempts,
         "continued": continued,
+        "handled": outcome.handled,
     }

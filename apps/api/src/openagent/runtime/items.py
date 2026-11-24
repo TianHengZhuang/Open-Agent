@@ -67,6 +67,24 @@ def as_items(value: Any) -> List[Dict[str, Any]]:
     return [make_item(value)]
 
 
+def item_binary(item: Any) -> Dict[str, Any]:
+    """The binary properties of an item (``{}`` when it has none)."""
+    if isinstance(item, dict):
+        binary = item.get("binary")
+        if isinstance(binary, dict):
+            return binary
+    return {}
+
+
+def first_binary(items: Iterable[Any]) -> Dict[str, Any]:
+    """The first binary property group among ``items`` (n8n's ``$binary``)."""
+    for item in items:
+        binary = item_binary(item)
+        if binary:
+            return binary
+    return {}
+
+
 def item_json(item: Any) -> Any:
     """Read the JSON payload of an item (or return a plain value unchanged)."""
     if is_item(item):

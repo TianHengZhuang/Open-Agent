@@ -30,7 +30,7 @@ alphabetically. `Integrations` is intentionally empty — the extension point.
 | `webhook` | HTTP | in → out | `url`, valid `method` |
 | `tool` | Tools | in → out | `tool_id` or `tool_name` |
 | `delay` | Utilities | in → out | positive `duration_seconds` |
-| `subworkflow` | Advanced | in → out | `workflow_id` (not executed yet) |
+| `subworkflow` | Advanced | in → out | `workflow_id`, optional `input`/`mode: wait` — runs in-process, child execution linked |
 | `code_agent` | Agents | in → out | `objective` + (`repository_id` or `repository`); `max_steps` 1..200; optional `execution_policy`/`review_policy`/`approval_policy` objects |
 | `code_search` | Tools | in → out | `query` + (`workspace_id` or `repository_id`) |
 | `code_read` | Tools | in → out | `path` (+ `workspace_id`, `start`, `end`) |

@@ -112,6 +112,12 @@ class WorkflowSettingsModel(BaseModel):
     timezone: Optional[str] = None
     max_concurrency: Optional[int] = Field(default=None, ge=1, le=32)
     execution_timeout_seconds: Optional[int] = Field(default=None, ge=1, le=86400)
+    # n8n's "Save execution data": all (default) | none | on_error.
+    save_execution_data: Optional[str] = Field(
+        default=None, pattern="^(all|none|on_error)$"
+    )
+    # n8n's workflow-level "On error" handler run when this workflow fails.
+    error_workflow_id: Optional[str] = None
     sticky_notes: list[StickyNoteModel] = Field(default_factory=list)
     pinned_data: dict[str, Any] = Field(default_factory=dict)
 

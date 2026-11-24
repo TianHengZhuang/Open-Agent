@@ -33,8 +33,8 @@ async def test_registry_returns_shared_definitions(client, registry_auth):
     assert response.status_code == 200
     payload = response.json()
     assert payload["registry_version"]
-    assert len(payload["nodes"]) == 42
-    assert len(payload["triggers"]) == 5
+    assert len(payload["nodes"]) == 59
+    assert len(payload["triggers"]) == 6
     types = {n["type"] for n in payload["nodes"]}
     assert {"condition", "browser_agent", "connector_action"} <= types
 

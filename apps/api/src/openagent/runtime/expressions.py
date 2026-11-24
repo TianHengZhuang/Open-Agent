@@ -291,7 +291,7 @@ def _tokenize(source: str) -> List[Tuple[str, Any]]:
 
 _COMPARISONS = {"===", "!==", "==", "!=", "<", "<=", ">", ">="}
 _LEGACY_ROOTS = {"json", "nodes", "variables", "trigger", "run", "workflow", "env", "item", "index"}
-_FUNCTION_ROOTS = {"$", "$items", "$input", "$node"}
+_FUNCTION_ROOTS = {"$", "$items", "$input", "$node", "$getWorkflowStaticData"}
 
 
 class _Parser:
@@ -576,6 +576,9 @@ class ExpressionData:
     execution: Dict[str, Any] = field(default_factory=dict)
     env: Dict[str, str] = field(default_factory=lambda: dict(os.environ))
     trigger: Any = None
+    # Workflow static data, keyed by scope (``global``, ``node:<Name>``). The
+    # evaluator hands out the live dict so a write is visible to the run.
+    static_data: Dict[str, Any] = field(default_factory=dict)
     item_index: int = 0
     run_index: int = 0
     timezone: Optional[str] = None
@@ -988,6 +991,15 @@ class _Evaluator:
             if not args:
                 return self.roots["$node"]
             return _LegacyNodes(self.data.node_outputs).lookup(str(args[0]))
+        if name == "$getWorkflowStaticData":
+            args = [self.eval(arg) for arg in arg_nodes]
+            first = args[0] if args else None
+            scope = "global" if _is_nullish(first) else str(first)
+            bucket = self.data.static_data.get(scope)
+            if not isinstance(bucket, dict):
+                bucket = {}
+                self.data.static_data[scope] = bucket
+            return bucket
         raise UnknownReferenceError(f"Unknown function: {name}")
 
     def _unary(self, op: str, value: Any) -> Any:

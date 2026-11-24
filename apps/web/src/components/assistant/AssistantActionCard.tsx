@@ -11,18 +11,71 @@ export type DisplayAction = {
   status: string;
   detail: string;
   workflow_id?: string | null;
+  /** Action payload (e.g. the resolved path from the `open_page` tool). */
+  data?: Record<string, unknown> | null;
 };
 
 /** Where an assistant action should take the user next. */
 export function actionTarget(action: DisplayAction): { href: string; label: string } | null {
+  if (action.type === 'open_page') {
+    // Phase 14: the chat can hand back the page that shows the result.
+    const path = typeof action.data?.path === 'string' ? action.data.path : '';
+    if (!path.startsWith('/')) return null;
+    const label = typeof action.data?.label === 'string' ? action.data.label : 'Open page';
+    return { href: path, label };
+  }
+  const runId =
+    typeof action.data?.execution_id === 'string' ? action.data.execution_id : null;
   if (action.type === 'build' || action.type === 'edit') {
     return action.workflow_id
       ? { href: `/workflows/${action.workflow_id}/edit`, label: 'Open in builder' }
       : null;
   }
-  if (action.type === 'create_agent') return { href: '/agents', label: 'Open agents' };
-  if (action.type === 'run' || action.type === 'inspect' || action.type === 'diagnose') {
-    return { href: '/runs', label: 'View runs' };
+  if (action.type === 'duplicate') {
+    return action.workflow_id
+      ? { href: `/workflows/${action.workflow_id}/edit`, label: 'Open the copy' }
+      : { href: '/workflows', label: 'Open workflows' };
+  }
+  if (action.type === 'delete') return { href: '/workflows', label: 'Open workflows' };
+  if (
+    action.type === 'versions' ||
+    action.type === 'restore' ||
+    action.type === 'variables' ||
+    action.type === 'set_variable' ||
+    action.type === 'schedule'
+  ) {
+    return action.workflow_id
+      ? { href: `/workflows/${action.workflow_id}/edit`, label: 'Open in builder' }
+      : null;
+  }
+  // Agents are a chat surface, so there is no separate page to open.
+  if (action.type === 'create_agent' || action.type === 'list_agents') return null;
+  if (action.type === 'list_credentials') {
+    return { href: '/settings?tab=credentials', label: 'Open credentials' };
+  }
+  if (action.type === 'run' || action.type === 'retry' || action.type === 'inspect' || action.type === 'diagnose') {
+    return runId
+      ? { href: `/runs/${runId}`, label: 'View run' }
+      : { href: '/runs', label: 'View runs' };
+  }
+  if (action.type === 'runs') {
+    const runs = Array.isArray(action.data?.runs)
+      ? (action.data.runs as Array<Record<string, unknown>>)
+      : [];
+    const only =
+      runs.length === 1 && typeof runs[0]?.id === 'string'
+        ? (runs[0].id as string)
+        : null;
+    return only
+      ? { href: `/runs/${only}`, label: 'View run' }
+      : { href: '/runs', label: 'View runs' };
+  }
+  if (action.type === 'cancel') {
+    return runId
+      ? { href: `/runs/${runId}`, label: 'View execution' }
+      : action.workflow_id
+        ? { href: `/workflows/${action.workflow_id}`, label: 'View workflow' }
+        : { href: '/runs', label: 'View runs' };
   }
   if (action.type === 'publish' || action.type === 'unpublish') {
     return action.workflow_id

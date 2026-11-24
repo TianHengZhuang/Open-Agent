@@ -37,6 +37,10 @@ Phases marked from the actual implementation in this repository.
 
 ## Planned
 
+- [ ] **n8n parity execution plan (Phases 7–14)** — node semantics, binary data,
+  sub-workflows, sandboxed Code node, node tiers, queue mode, full chat tool
+  coverage and the 114-route UI collapse. See
+  `docs/architecture/n8n-parity-roadmap.md`.
 - [ ] **Phase 26 — Production Release**
   Release engineering, versioned distributions, upgrade paths, long-term support policy.
 - [ ] **Desktop app** (`apps/desktop/` is currently an empty placeholder)
