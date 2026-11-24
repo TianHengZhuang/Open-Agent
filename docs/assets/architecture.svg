@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-label="Open-Agent architecture: chat, canvas, CLI and webhooks share one API, one chat control plane, one workflow engine and one agent runtime">
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#080d1c"/>
+      <stop offset="1" stop-color="#0e1530"/>
+    </linearGradient>
+    <linearGradient id="line" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#6ee7ff"/>
+      <stop offset="0.5" stop-color="#8b7bff"/>
+      <stop offset="1" stop-color="#ff7ac6"/>
+    </linearGradient>
+    <pattern id="grid2" width="30" height="30" patternUnits="userSpaceOnUse">
+      <path d="M30 0H0V30" fill="none" stroke="#ffffff" stroke-opacity="0.035"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#5d6b9e"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="560" rx="18" fill="url(#panel)"/>
+  <rect width="1200" height="560" rx="18" fill="url(#grid2)"/>
+  <rect x="0.5" y="0.5" width="1199" height="559" rx="18" fill="none" stroke="#ffffff" stroke-opacity="0.08"/>
+
+  <text x="50" y="42" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" font-weight="700" fill="#e8edff">One engine, every surface</text>
+  <text x="50" y="66" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#8e9ac4">Chat, canvas, CLI, SDKs and webhooks are views over the same runtime.</text>
+
+  <!-- Row 1: surfaces -->
+  <g font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">
+    <g>
+      <rect x="50" y="92" width="260" height="66" rx="12" fill="#6ee7ff" fill-opacity="0.07" stroke="#6ee7ff" stroke-opacity="0.35"/>
+      <text x="180" y="121" font-size="16" font-weight="600" fill="#dbe6ff">Chat · Voice</text>
+      <text x="180" y="142" font-size="12.5" fill="#8e9ac4">the primary surface</text>
+    </g>
+    <g>
+      <rect x="330" y="92" width="260" height="66" rx="12" fill="#6ee7ff" fill-opacity="0.07" stroke="#6ee7ff" stroke-opacity="0.35"/>
+      <text x="460" y="121" font-size="16" font-weight="600" fill="#dbe6ff">Visual canvas</text>
+      <text x="460" y="142" font-size="12.5" fill="#8e9ac4">undoable drafts</text>
+    </g>
+    <g>
+      <rect x="610" y="92" width="260" height="66" rx="12" fill="#8b7bff" fill-opacity="0.07" stroke="#8b7bff" stroke-opacity="0.35"/>
+      <text x="740" y="121" font-size="16" font-weight="600" fill="#dbe6ff">CLI · SDKs</text>
+      <text x="740" y="142" font-size="12.5" fill="#8e9ac4">automate the platform</text>
+    </g>
+    <g>
+      <rect x="890" y="92" width="260" height="66" rx="12" fill="#ff7ac6" fill-opacity="0.07" stroke="#ff7ac6" stroke-opacity="0.35"/>
+      <text x="1020" y="121" font-size="16" font-weight="600" fill="#dbe6ff">Webhooks · Schedules</text>
+      <text x="1020" y="142" font-size="12.5" fill="#8e9ac4">triggers, no user needed</text>
+    </g>
+  </g>
+
+  <line x1="600" y1="158" x2="600" y2="196" stroke="#5d6b9e" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Row 2: API -->
+  <g font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">
+    <rect x="50" y="200" width="1100" height="66" rx="12" fill="url(#line)" fill-opacity="0.10" stroke="#8b7bff" stroke-opacity="0.45"/>
+    <text x="600" y="229" font-size="17" font-weight="700" fill="#f0f3ff">FastAPI /api/v1</text>
+    <text x="600" y="250" font-size="12.5" fill="#9aa6cd">auth · organisation-scoped permissions · audit · SSE streaming</text>
+  </g>
+
+  <line x1="225" y1="266" x2="225" y2="306" stroke="#5d6b9e" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="600" y1="266" x2="600" y2="306" stroke="#5d6b9e" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="975" y1="266" x2="975" y2="306" stroke="#5d6b9e" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Row 3: engines -->
+  <g font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">
+    <g>
+      <rect x="50" y="310" width="350" height="100" rx="12" fill="#6ee7ff" fill-opacity="0.07" stroke="#6ee7ff" stroke-opacity="0.35"/>
+      <text x="225" y="342" font-size="16" font-weight="700" fill="#dbe6ff">Chat control plane</text>
+      <text x="225" y="365" font-size="12.5" fill="#8e9ac4">46 tools · confirm · undo · deep links</text>
+      <text x="225" y="387" font-size="12.5" fill="#8e9ac4">build · edit · run · debug · publish</text>
+    </g>
+    <g>
+      <rect x="425" y="310" width="350" height="100" rx="12" fill="#8b7bff" fill-opacity="0.07" stroke="#8b7bff" stroke-opacity="0.35"/>
+      <text x="600" y="342" font-size="16" font-weight="700" fill="#dbe6ff">Workflow engine</text>
+      <text x="600" y="365" font-size="12.5" fill="#8e9ac4">59 nodes · 6 triggers · item model</text>
+      <text x="600" y="387" font-size="12.5" fill="#8e9ac4">expressions · waits · retries · sub-workflows</text>
+    </g>
+    <g>
+      <rect x="800" y="310" width="350" height="100" rx="12" fill="#ff7ac6" fill-opacity="0.07" stroke="#ff7ac6" stroke-opacity="0.35"/>
+      <text x="975" y="342" font-size="16" font-weight="700" fill="#dbe6ff">Agents &amp; tools</text>
+      <text x="975" y="365" font-size="12.5" fill="#8e9ac4">runs · memory · MCP · integrations</text>
+      <text x="975" y="387" font-size="12.5" fill="#8e9ac4">browser · sandbox · approvals</text>
+    </g>
+  </g>
+
+  <line x1="225" y1="410" x2="225" y2="450" stroke="#5d6b9e" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="600" y1="410" x2="600" y2="450" stroke="#5d6b9e" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="975" y1="410" x2="975" y2="450" stroke="#5d6b9e" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Row 4: storage -->
+  <g font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">
+    <g>
+      <rect x="50" y="454" width="260" height="58" rx="10" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.14"/>
+      <text x="180" y="479" font-size="14.5" font-weight="600" fill="#cfd8f6">SQLite / PostgreSQL</text>
+      <text x="180" y="498" font-size="11.5" fill="#8e9ac4">workflows, runs, versions</text>
+    </g>
+    <g>
+      <rect x="330" y="454" width="260" height="58" rx="10" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.14"/>
+      <text x="460" y="479" font-size="14.5" font-weight="600" fill="#cfd8f6">Redis queue</text>
+      <text x="460" y="498" font-size="11.5" fill="#8e9ac4">queue mode · schedules</text>
+    </g>
+    <g>
+      <rect x="610" y="454" width="260" height="58" rx="10" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.14"/>
+      <text x="740" y="479" font-size="14.5" font-weight="600" fill="#cfd8f6">Binary store</text>
+      <text x="740" y="498" font-size="11.5" fill="#8e9ac4">files with retention</text>
+    </g>
+    <g>
+      <rect x="890" y="454" width="260" height="58" rx="10" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.14"/>
+      <text x="1020" y="479" font-size="14.5" font-weight="600" fill="#cfd8f6">Docker sandbox</text>
+      <text x="1020" y="498" font-size="11.5" fill="#8e9ac4">isolated code execution</text>
+    </g>
+  </g>
+
+  <text x="600" y="540" text-anchor="middle" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif"
+        font-size="12.5" fill="#6f7aa0">Runs locally. No cloud account required. Add Docker only when you want PostgreSQL, Redis or the sandbox.</text>
+</svg>

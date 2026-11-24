@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="400" viewBox="0 0 1280 400" role="img" aria-label="Open-Agent — the open-source operating system for AI agents">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#060a16"/>
+      <stop offset="0.55" stop-color="#0b1228"/>
+      <stop offset="1" stop-color="#121a3c"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#6ee7ff"/>
+      <stop offset="0.5" stop-color="#8b7bff"/>
+      <stop offset="1" stop-color="#ff7ac6"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#6ee7ff" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#6ee7ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ff7ac6" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#ff7ac6" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#ffffff" stroke-opacity="0.045"/>
+    </pattern>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+  </defs>
+
+  <rect width="1280" height="400" fill="url(#bg)"/>
+  <rect width="1280" height="400" fill="url(#grid)"/>
+  <circle cx="1100" cy="70" r="280" fill="url(#glow)"/>
+  <circle cx="150" cy="390" r="240" fill="url(#glow2)"/>
+
+  <!-- Logo mark: a node graph inside a hexagon -->
+  <g transform="translate(160 200)">
+    <path d="M0 -86 L74.5 -43 L74.5 43 L0 86 L-74.5 43 L-74.5 -43 Z"
+          fill="#0a1024" stroke="url(#accent)" stroke-width="5" stroke-linejoin="round"/>
+    <g stroke="#8b9bd6" stroke-opacity="0.55" stroke-width="2.5">
+      <line x1="0" y1="0" x2="0" y2="-46"/>
+      <line x1="0" y1="0" x2="-40" y2="30"/>
+      <line x1="0" y1="0" x2="40" y2="30"/>
+    </g>
+    <circle cx="0" cy="0" r="15" fill="url(#accent)"/>
+    <circle cx="0" cy="-46" r="9" fill="#0a1024" stroke="#6ee7ff" stroke-width="3"/>
+    <circle cx="-40" cy="30" r="9" fill="#0a1024" stroke="#8b7bff" stroke-width="3"/>
+    <circle cx="40" cy="30" r="9" fill="#0a1024" stroke="#ff7ac6" stroke-width="3"/>
+  </g>
+
+  <text x="300" y="166" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif"
+        font-size="74" font-weight="800" letter-spacing="-2" fill="#ffffff">Open-Agent</text>
+  <text x="302" y="218" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif"
+        font-size="26" font-weight="500" fill="#b7c1e2">The open-source operating system for AI agents</text>
+  <rect x="302" y="242" width="520" height="4" rx="2" fill="url(#accent)" opacity="0.9"/>
+
+  <!-- Chips -->
+  <g font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="17" font-weight="600">
+    <rect x="302" y="278" width="126" height="40" rx="20" fill="#ffffff" fill-opacity="0.06" stroke="#ffffff" stroke-opacity="0.16"/>
+    <text x="365" y="304" text-anchor="middle" fill="#dbe4ff">Local-first</text>
+
+    <rect x="440" y="278" width="62" height="40" rx="20" fill="#ffffff" fill-opacity="0.06" stroke="#ffffff" stroke-opacity="0.16"/>
+    <text x="471" y="304" text-anchor="middle" fill="#dbe4ff">MIT</text>
+
+    <rect x="514" y="278" width="214" height="40" rx="20" fill="#ffffff" fill-opacity="0.06" stroke="#ffffff" stroke-opacity="0.16"/>
+    <text x="621" y="304" text-anchor="middle" fill="#dbe4ff">n8n-compatible engine</text>
+
+    <rect x="740" y="278" width="238" height="40" rx="20" fill="#ffffff" fill-opacity="0.06" stroke="#ffffff" stroke-opacity="0.16"/>
+    <text x="859" y="304" text-anchor="middle" fill="#dbe4ff">59 nodes · 46 chat tools</text>
+  </g>
+
+  <!-- Decorative constellation -->
+  <g opacity="0.55">
+    <g stroke="#6ee7ff" stroke-opacity="0.35" stroke-width="1.5">
+      <line x1="1050" y1="130" x2="1120" y2="196"/>
+      <line x1="1120" y1="196" x2="1046" y2="262"/>
+      <line x1="1120" y1="196" x2="1190" y2="150"/>
+      <line x1="1046" y1="262" x2="1152" y2="306"/>
+    </g>
+    <circle cx="1050" cy="130" r="7" fill="#6ee7ff"/>
+    <circle cx="1120" cy="196" r="11" fill="#8b7bff"/>
+    <circle cx="1046" cy="262" r="6" fill="#ff7ac6"/>
+    <circle cx="1190" cy="150" r="5" fill="#6ee7ff"/>
+    <circle cx="1152" cy="306" r="6" fill="#8b7bff"/>
+  </g>
+
+  <text x="1180" y="376" text-anchor="end" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif"
+        font-size="14" fill="#6f7aa0">github.com/mdsabibahamedsad/Open-Agent</text>
+</svg>

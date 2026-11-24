@@ -1,144 +1,115 @@
-# Open-Agent
+<div align="center">
+  <img src="docs/assets/banner.svg" alt="Open-Agent — the open-source operating system for AI agents" width="100%">
+</div>
 
-### The Open-Source Operating System for AI Agents
+<h1 align="center">Open-Agent</h1>
 
-Build, orchestrate, automate, and deploy autonomous AI workforces.
+<p align="center">
+  <b>Describe the automation. Watch it become a workflow.</b><br>
+  Local-first automation with an n8n-style engine, AI agents, MCP tools,<br>
+  and one chat box that builds, runs, debugs and publishes everything.
+</p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![GitHub stars](https://img.shields.io/github/stars/mdsabibahamedsad/Open-Agent.svg)](https://github.com/mdsabibahamedsad/Open-Agent/stargazers)
-[![GitHub issues](https://img.shields.io/github/issues/mdsabibahamedsad/Open-Agent.svg)](https://github.com/mdsabibahamedsad/Open-Agent/issues)
-[![CI](https://github.com/mdsabibahamedsad/Open-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/mdsabibahamedsad/Open-Agent/actions)
+<p align="center">
+  <a href="https://github.com/mdsabibahamedsad/Open-Agent/stargazers">
+    <img src="https://img.shields.io/github/stars/mdsabibahamedsad/Open-Agent?style=for-the-badge&logo=github&color=ffcc33" alt="GitHub stars">
+  </a>
+  <a href="https://github.com/mdsabibahamedsad/Open-Agent/network/members">
+    <img src="https://img.shields.io/github/forks/mdsabibahamedsad/Open-Agent?style=for-the-badge&logo=github" alt="GitHub forks">
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-2ea44f?style=for-the-badge" alt="MIT license">
+  </a>
+  <a href="https://github.com/mdsabibahamedsad/Open-Agent/actions/workflows/ci.yml">
+    <img src="https://github.com/mdsabibahamedsad/Open-Agent/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI">
+  </a>
+</p>
 
-[Documentation](docs/) · [Architecture](ARCHITECTURE.md) · [Roadmap](ROADMAP.md) · [Issues](https://github.com/mdsabibahamedsad/Open-Agent/issues) · [Contributing](CONTRIBUTING.md)
+<p align="center">
+  <img src="https://img.shields.io/badge/local--first-offline--capable-6ee7ff?style=for-the-badge" alt="Local-first">
+  <img src="https://img.shields.io/badge/n8n-style_engine-8b7bff?style=for-the-badge" alt="n8n-style engine">
+  <img src="https://img.shields.io/badge/59_nodes_·_46_chat_tools-ff7ac6?style=for-the-badge" alt="59 nodes and 46 chat tools">
+  <img src="https://img.shields.io/badge/1%2C800%2B_tests-2ea44f?style=for-the-badge" alt="1,800+ tests">
+</p>
 
-> Open-Agent is an open-source AI Workforce Operating System for building autonomous agents, visual workflows, tools, MCP integrations, browser automation, coding agents, persistent memory, multi-agent teams, secure execution environments, and AI-powered automation.
+<p align="center">
+  <a href="#quick-start"><b>Quick start</b></a> ·
+  <a href="docs/">Docs</a> ·
+  <a href="ARCHITECTURE.md">Architecture</a> ·
+  <a href="ROADMAP.md">Roadmap</a> ·
+  <a href="https://github.com/mdsabibahamedsad/Open-Agent/discussions">Discussions</a> ·
+  <a href="https://github.com/mdsabibahamedsad/Open-Agent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22">Good first issues</a>
+</p>
 
-## Table of Contents
+---
 
-- [Overview](#overview)
-- [Features](#features)
-- [Architecture](#architecture)
-- [Quick Start](#quick-start)
-- [Configuration](#configuration)
-- [Usage](#usage)
-- [Project Structure](#project-structure)
-- [Development](#development)
-- [What Is OpenAgent?](#what-is-openagent)
-- [Product Vision](#product-vision)
-- [Comparison With Traditional Automation (n8n-style)](#comparison-with-traditional-automation-n8n-style)
-- [Core Capabilities](#core-capabilities)
-- [Security and Privacy](#security-and-privacy)
-- [Installation](#installation)
-- [First-Run Setup](#first-run-setup)
-- [CLI Reference](#cli-reference)
-- [Configuration](#configuration)
-- [AI Model Setup](#ai-model-setup)
-- [Browser Setup](#browser-setup)
-- [MCP Setup](#mcp-setup)
-- [Workflow Examples](#workflow-examples)
-- [Agent Examples](#agent-examples)
-- [Troubleshooting](#troubleshooting)
-- [Doctor, Repair, Update, Backup](#doctor-repair-update-backup)
-- [Git and GitHub Integration](#git-and-github-integration)
-- [Testing](#testing)
-- [Repository Structure and Architecture](#repository-structure-and-architecture)
-- [Release Process](#release-process)
-- [FAQ](#faq)
-- [Roadmap](#roadmap)
-- [Contributing](#contributing)
-- [Security](#security)
-- [License](#license)
+> ### ⭐ Star Open-Agent
+>
+> If you want automation that runs on **your** machine — no cloud account, no
+> per-task pricing, no lock-in — **star this repo**. It takes one click, and it
+> is how the next person looking for an open alternative finds us.
+>
+> [**Star Open-Agent →**](https://github.com/mdsabibahamedsad/Open-Agent/stargazers)
 
-## Overview
+## Why Open-Agent?
 
-Traditional automation executes fixed, deterministic steps. Open-Agent is designed around a different unit of work:
+| | |
+| --- | --- |
+| **Chat is the product** | Build, edit, run, debug, publish, restore and inspect from one conversation. 46 typed tools, confirmations for destructive actions, and undo through version history. The canvas is a view, not a separate workflow. |
+| **Local-first by default** | `pnpm dev` gives you the whole stack on SQLite with no Docker, no PostgreSQL, no Redis and no account. Add Ollama and it works offline. Cloud providers are optional, not required. |
+| **A real engine, not a demo** | 59 nodes, 6 triggers, n8n-style expressions, the `{ json, binary, pairedItem }` item model, retries, error workflows, binary data, sub-workflows, waits, queue mode and execution metrics. |
+| **Yours to keep** | MIT licensed. Credentials encrypted at rest. Organisation-scoped permissions and audit logs. Every run is persisted and inspectable. |
+
+## See it in action
 
 ```text
-Traditional Automation
-        ↓
-Deterministic Workflows
-        ↓
-Open-Agent
-        ↓
-AI Workers + Workflows + Tools + Memory + Browser + Code + MCP
+You  › Build a workflow: webhook → summarize with my local model → post to Slack
+
+Koro › Built "Webhook → AI → Slack" · 3 nodes · 2 connections · draft v1
+       [Open in builder]  [Run it]
+
+You  › run it
+
+Koro › ✓ Completed in 1.2s · 3/3 steps · [View run]
+
+You  › publish it
+
+Koro › Published · POST /api/v1/hooks/<path> · [Open workflow]
 ```
 
-Agents reason, plan, and use tools; workflows provide deterministic structure where you need it; memory, browser access, code execution, and integrations give agents real capabilities — all behind policy, human approval, sandboxing, and audit logging.
+No page hopping, no separate builder session. The same conversation can inspect
+the last failure, restore a previous version, list credentials, change a
+schedule, or answer "which node broke and why?".
 
-## Features
+## What you get
 
-Status reflects the actual implementation in this repository.
-
-| Capability                   | Status | Notes                                                                                                                               |
-| ---------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| AI Agents                    | ✅     | Runtime, versions, runs, lifecycle                                                                                                  |
-| Workflow Automation          | ✅     | Visual builder, versioned definitions, executions                                                                                   |
-| Model Routing                | ✅     | Multi-provider routing + adapters                                                                                                   |
-| Tool Runtime                 | ✅     | Typed tools, policies, risk levels, execution events                                                                                |
-| MCP                          | ✅     | Servers, tools, resources, prompts, policies                                                                                        |
-| Multi-Agent Orchestration    | ✅     | Runs, delegation, handoff, budgets                                                                                                  |
-| Team Management              | ✅     | Managers, contracts, reviews, escalations                                                                                           |
-| Persistent Memory            | ✅     | Scoped memory, policies, consolidation                                                                                              |
-| Browser Automation           | ✅     | Sessions, policies, artifacts                                                                                                       |
-| Coding Agent                 | ✅     | Repos, workspaces, patches, reviews, PR drafts                                                                                      |
-| Sandbox Execution            | ✅     | Profiles, Docker isolation, leases, artifacts                                                                                       |
-| Human Approval               | ✅     | Risk engine, policies, escalation, delegation                                                                                       |
-| Evaluation                   | ✅     | Rubrics, verification, self-correction, quality gates                                                                               |
-| Integrations                 | ✅     | 11 official connectors (Gmail, Slack, Discord, Telegram, GitHub, GitLab, Calendar, Drive, Notion, HubSpot, Postgres) + generic HTTP |
-| Templates / Skills / Presets | ✅     | Versioned packages, validation, install/rollback                                                                                    |
-| Marketplace                  | ✅     | Listings, publishers, reviews, moderation                                                                                           |
-| Billing & Metering           | 🚧     | Provider-neutral interfaces + disabled-by-default provider; full ledger/entitlement engine present                                  |
-| Cloud Runtime                | ✅     | Workers, queues, placements, artifacts                                                                                              |
-| Enterprise Security          | ✅     | SSO, SCIM, RBAC/ABAC, zero-trust policies, audit                                                                                    |
-| Developer SDKs               | ✅     | TypeScript + Python + REST client                                                                                                   |
-| CLI                          | ✅     | `openagent` — scaffold, validate, test, package, publish, deploy                                                                    |
-| Extension System             | ✅     | 20 extension types, manifest, signing, local registry                                                                               |
-| Developer Portal             | ✅     | Projects, extensions, API explorer, usage                                                                                           |
-| Desktop App                  | 🗺️     | Planned (`apps/desktop/` is an empty placeholder)                                                                                   |
+| Area | What is implemented |
+| --- | --- |
+| **Chat control plane** | 46 tools behind one registry: build/edit, add/update/remove/connect nodes, run, retry, cancel, publish, versions, restore, undo, export/import, test a node, node logs, schedule, variables, credentials, agents, prune, health, coverage and `open_page` |
+| **Workflow engine** | 59 nodes and 6 triggers, versioned definitions, typed ports, expressions, per-node retries, `onError`, timeouts, `executeOnce`, disabled passthrough, pinned data and partial execution |
+| **Data model** | n8n-style items (`json`, `binary`, `pairedItem`), `run_mode: each/all`, merge fan-in (`append`, `by_index`, `by_key`), binary store with retention |
+| **Durability** | Long waits resumed by the scheduler, webhook resume, sub-workflows with a parent/child execution tree, cancellation cascade, error workflows, static data |
+| **Operations** | Per-workflow concurrency, execution budgets, retention pruning, webhook rate limits and body caps, queue mode with a worker entry point, crash journal, Prometheus `/metrics` |
+| **AI** | Agents, tools, MCP servers, scoped memory, multi-agent teams, browser automation, sandboxed Python/JS code node, evaluations and human approvals |
+| **Interfaces** | Chat-first web app, visual canvas with NDV, workflow chat pages, CLI, TypeScript/Python SDKs, REST API, webhooks and schedules |
+| **Security** | Encrypted credentials, RBAC/ABAC, audit logs, secret scanning, Docker sandbox, organisation-scoped chat tools |
 
 ## Architecture
 
-```text
-                    ┌─────────────────────────┐
-                    │      Open-Agent UI      │
-                    │  Web + Developer Portal │
-                    └────────────┬────────────┘
-                                 │
-                    ┌────────────▼────────────┐
-                    │      FastAPI (/api/v1)  │
-                    └────────────┬────────────┘
-                                 │
-          ┌──────────────────────┼──────────────────────┐
-          │                      │                      │
-   ┌──────▼──────┐       ┌───────▼──────┐       ┌──────▼──────┐
-   │ Agent Engine│       │Workflow Engine│       │ Model Router│
-   │ + Teams     │       │ + Approvals   │       │ + Adapters  │
-   └──────┬──────┘       └───────┬──────┘       └──────┬──────┘
-          │                      │                      │
-          └──────────────────────┼──────────────────────┘
-                                 │
-                    ┌────────────▼────────────┐
-                    │      Tool Runtime       │
-                    └──────┬─────┬─────┬─────┘
-                           │     │     │
-                         MCP  Browser Sandbox
-                           │     │     │
-                    ┌──────▼─────▼─────▼──────┐
-                    │ Memory / Integrations   │
-                    │ Marketplace / Billing   │
-                    └──────────────────────────┘
-```
+<div align="center">
+  <img src="docs/assets/architecture.svg" alt="Architecture: chat, canvas, CLI and webhooks share one API, one chat control plane, one workflow engine and one agent runtime" width="100%">
+</div>
 
-Background execution runs on Redis-backed workers (`apps/worker`).
-PostgreSQL is the system of record (27 Alembic migrations, one canonical model per domain).
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full technical document.
+One runtime serves every surface. The chat control plane, the canvas, the CLI,
+the SDKs and webhooks all go through `FastAPI /api/v1`, and every mutating chat
+action is permission-checked, versioned and undoable. See
+[ARCHITECTURE.md](ARCHITECTURE.md) for the full technical document.
 
-## Quick Start
+## Quick start
 
-**Normal user (no tech setup):** download `OpenAgent-Setup.exe` from Releases,
-install, launch — first-run setup is automatic. Details: [INSTALLATION](docs/INSTALLATION.md).
+### Run it locally (no Docker)
 
-**Developer — web-first, no Docker required:**
+**Requirements:** Git, Node.js 20+, pnpm 8.15+, Python 3.11+.
 
 ```bash
 git clone https://github.com/mdsabibahamedsad/Open-Agent.git
@@ -147,442 +118,227 @@ pnpm install
 pnpm dev
 ```
 
-Then open **http://localhost:3000**. `pnpm dev` starts the Next.js web app
-(http://localhost:3000) and the FastAPI backend (http://localhost:8000) using
-an embedded SQLite database — no Docker, no PostgreSQL, no Redis and no
-electron/npm/Cli global install. With the default `OPENAGENT_AUTH_MODE=local`
-the app signs you in automatically as the loopback-only **Local User**, with a
-workspace and a starter workflow — no password needed. The sign-in page remains
-available at http://localhost:3000/login, and real accounts can be created at
-http://localhost:3000/register. Set `OPENAGENT_AUTH_MODE=standard` (and
-`NEXT_PUBLIC_OPENAGENT_AUTH_MODE=standard`) to require a password instead.
+Open **http://localhost:3000**. The API starts on **http://localhost:8000**
+with embedded SQLite and an auto-created local workspace, starter workflow and
+loopback-only **Local User** — no password, no Docker, no cloud.
 
-Prerequisites (developer mode only): Git, Node.js 20+, pnpm 8.15+, and
-Python 3.11+ (the FastAPI backend runs from a local virtual environment).
-Docker is optional and only needed for the PostgreSQL/Redis profile
-(`pnpm dev --db=postgres`) or the full container stack (`pnpm dev:docker`).
-Run `pnpm doctor` at any time to verify your machine. Full guides: [quick-start](docs/getting-started/quick-start.md) · [Windows](docs/getting-started/windows.md) · [macOS](docs/getting-started/macos.md) · [Linux](docs/getting-started/linux.md) · [troubleshooting](docs/getting-started/troubleshooting.md).
+| Mode | Command | What it runs |
+| --- | --- | --- |
+| Local, zero dependencies (default) | `pnpm dev` | SQLite + web + API |
+| Local with PostgreSQL + Redis | `pnpm dev --db=postgres` | Full production-shaped stack |
+| Docker, everything | `pnpm dev:docker` | Web, API, worker, Postgres, Redis |
+| Guided native setup | `pnpm setup` then `pnpm dev` | Checks tools, writes `.env` |
+| Local AI | `ollama serve` + provider config | Fully offline model |
+
+### Run the full stack with Docker
 
 ```bash
 git clone https://github.com/mdsabibahamedsad/Open-Agent.git
 cd Open-Agent
-
-cp .env.example .env
-# Edit .env — at minimum set SECRET_KEY and ENCRYPTION_KEY
-# (generate with: openssl rand -hex 32)
-
+cp .env.example .env       # set SECRET_KEY and ENCRYPTION_KEY (32+ chars)
 docker compose up -d
 ```
 
-- Web: http://localhost:3000
-- API: http://localhost:8000
-- API docs (development): http://localhost:8000/docs
+Web: http://localhost:3000 · API: http://localhost:8000 · API docs:
+http://localhost:8000/docs (development only).
 
-### Run modes
+### Build the Windows installer
 
-| Mode                    | Command                               | Details                                                |
-| ----------------------- | ------------------------------------- | ------------------------------------------------------ |
-| Local, no Docker (default) | `pnpm dev`                        | SQLite + web + API — [non-docker guide](docs/getting-started/non-docker.md) |
-| Local with PostgreSQL   | `pnpm dev --db=postgres`              | needs Postgres + Redis (see `pnpm infra:up`)           |
-| Docker (everything)     | `pnpm dev:docker` / `docker compose up --build` | [docker guide](docs/getting-started/docker.md) |
-| Guided native           | `pnpm setup` then `pnpm dev`          | [non-docker guide](docs/getting-started/non-docker.md) |
-| Local AI                | `ollama serve` + provider config      | [local-ai guide](docs/getting-started/local-ai.md)     |
+```bash
+pnpm package:windows       # produces OpenAgent-Setup.exe + checksums
+```
 
-Supported: Windows (PowerShell/WSL2), macOS (Apple Silicon + Intel), Linux — each with Docker and non-Docker paths. pnpm 8.15 is canonical; npm can run root scripts after `pnpm install`.
+The installer flow (system check → hardware → AI provider → workspace →
+browser → optional Git) is described in
+[docs/INSTALLATION.md](docs/INSTALLATION.md). Release artifacts are generated by
+the release process in [scripts/](scripts/); no prebuilt binary is checked into
+this repository.
 
-### Known limitations of the zero-dependency (SQLite) local mode
+<details>
+<summary><b>Known limits of the zero-dependency SQLite mode</b></summary>
 
-`pnpm dev` boots the full web + API stack on an embedded SQLite database, but
-some features are PostgreSQL-only and are **not** available in this mode:
-
-- **Workflow execution** runs on the in-process local engine
-  (`apps/api/src/openagent/runtime/local_engine.py`). Triggers, set, transform,
+- Workflow execution uses the in-process engine. Triggers, set, transform,
   filter, map, sort, limit, remove-duplicates, split-out, edit-fields,
   aggregate, split-in-batches, code (expressions), condition, switch, merge,
   loop, variable, delay, respond-to-webhook and HTTP request nodes execute for
-  real; nodes
-  that need an external provider (AI prompt, agent, tool, connector, coding,
-  quality gates) are recorded as `skipped` with a reason instead of being
-  faked, and human approvals park the run as `waiting`. Every node run is
-  persisted with inputs, outputs, timing and errors, and the builder can
-  test-run the unsaved canvas (`Test workflow`).
-- **Expressions follow n8n's language**: `{{ ... }}` accepts `$json`, `$node`, `$nodes`,
-  `$('Node')`, `$items()`, `$input`, `$vars`, `$parameter`, `$binary`, `$now`,
-  `$today`, `$workflow`, `$execution`, `$env`, `$itemIndex`/`$runIndex`, method
-  calls (`$json.name.toUpperCase()`, `split`, `join`, `map`, `filter`),
-  arithmetic, ternaries and optional chaining, evaluated by a closed-grammar
-  interpreter (`runtime/expressions.py`) with the legacy path resolver as a
-  fallback. Node data is readable through the n8n item envelope
-  (`runtime/items.py`). See `docs/architecture/chat-first-n8n-parity.md`.
-- **Item-based execution**: every node run records `items` (`{json, pairedItem}`)
-  next to the legacy `outputs`, and `execution.metadata.execution_data` stores
-  the n8n-shaped `{"nodes": {id: [...]}}` view. A node accepts
-  `run_mode: "each"` to run once per incoming item, `$json` reads the node's
-  first input item, branch conditions may be expressions, and a `delay` longer
-  than 10 s parks the run as `waiting`; the scheduler resumes it from the saved
-  state instead of truncating the wait. `merge` fans item lists in (`append`,
-  `by_index`, `by_key`), a delay with `wait_for_webhook` parks until
-  `POST .../executions/{id}/webhook-resume` carries the stored token, and the
-  stored per-node item lists (`execution_data` and `node_runs`) are capped at
-  100 items per node with `items_truncated` recording what was dropped.
-- **Error workflow**: set `settings.error_workflow_id` (inspector → workflow
-  settings) and a failed run launches that workflow with
-  `{execution, workflow, error, lastNodeExecuted}`; the handler never triggers
-  its own error workflow, so failures cannot loop.
-- **Node settings are enforced**: `retry_policy.max_attempts` retries a failed
-  node, `timeout_seconds` bounds it, and `On error → Continue` records the
-  failure as a warning while passing the input to the next node.
-- **Operations**: `settings.max_concurrency` caps parallel runs — extra runs
-  are persisted as `queued` and started FIFO by the scheduler tick, never
-  dropped. `settings.execution_timeout_seconds` fails an over-budget run with
-  `EXECUTION_TIMEOUT`. Terminal executions past
-  `OPENAGENT_WORKFLOW_RETENTION_SECONDS` (90 d) are pruned hourly, keeping the
-  newest `OPENAGENT_WORKFLOW_KEEP_LAST` (50) per workflow. Webhooks are limited
-  per organization (`OPENAGENT_WEBHOOK_RATE_LIMIT`, 120/min → 429) with a body
-  cap (`OPENAGENT_WEBHOOK_MAX_BODY_BYTES`, 1 MiB → 413), and
-  `GET /api/v1/operations/workflows` reports run counts, queue depth, failure
-  rate and p50/p95 duration.
-- **Node detail view (NDV)**: double-click a node (or right-click → *Input / output data*)
-  to open a 3-pane view — the data it received on the left, the
-  parameter form in the middle, and its output on the right. **Pin output**
-  keeps that output in the workflow definition (undoable, autosaved, and shown
-  again on reload); pinned data feeds previews and step-test defaults (the
-  execute-node preview resolves upstream nodes from pins) but is never read by
-  real executions. The canvas shows per-node run status, output item
-  counts, error tooltips and a live chip while a run is in flight, and the run
-  panel's **Debug in editor** opens the NDV on the failing step.
-- **Test step** runs a single node with JSON input from the inspector
-  (`POST /workflows/{id}/execute-node`); the preview rebuilds that node's
-  upstream inputs from pinned data (`use_pinned`) or caller-supplied
-  `upstream` output so "execute this node" works mid-graph, and the workflow
-  list has n8n's
-  **Active** switch: publishing activates webhooks, unpublishing stops them.
-- **Production webhooks**: publishing a workflow activates its Webhook trigger
-  at `POST /api/v1/hooks/<path>` (any method body is parsed as JSON; an
-  optional plain shared secret is checked via `X-OpenAgent-Secret` or
-  `?token=`). A `respond_to_webhook` node defines the HTTP response (status,
-  body, headers); otherwise the run summary is returned. Unpublished workflows
-  never listen. The exact URL is shown in the builder's inspector.
-- **Memory search** uses PostgreSQL-specific SQL (`ILIKE`). Memory create/list
-insist on the PostgreSQL/Redis profile (`pnpm dev --db=postgres`) for full
-fidelity; SQLite stores and returns rows but its raw-SQL search is limited.
-- **Organizations are not auto-provisioned** by registration; org-scoped pages
-need an organization row (PostgreSQL + `pnpm db:seed`).
-- Redis-backed workers/schedulers are optional and only run with
-`pnpm dev:worker` (requires Redis).
+  real. Provider nodes (AI prompt, agent, tool, connector, coding, quality
+  gates) are recorded as `skipped` with a reason instead of faked.
+- Memory search uses PostgreSQL-specific SQL; create/list work on SQLite but
+  search is limited.
+- Redis-backed workers and schedulers need `pnpm dev:worker` and Redis.
+- Organisations are not auto-provisioned by registration; org-scoped pages need
+  the PostgreSQL profile and `pnpm db:seed`.
 
-### Automate locally — no Docker required
+</details>
 
-The CLI is also a local-first automation platform (SQLite/JSON + Ollama + local
-workflow engine). No Docker, no cloud account needed:
+## The chat control plane
 
-```bash
-npm install -g @openagent/cli   # official package (NOT `openagent` — that name
-                                # is an unrelated registry placeholder)
-
-openagent init
-
-openagent start
-```
-
-**Windows, zero terminal:** download `OpenAgent-Setup.exe` from
-[releases](https://github.com/mdsabibahamedsad/Open-Agent/releases),
-double-click, click **Install OpenAgent** — runtime, database, local AI,
-browser, shortcuts, health check and dashboard are all configured
-automatically. Full guide: [one-click Windows install](docs/getting-started/windows-one-click.md).
-`openagent setup --yes` performs the same flow from a shell
-(`--offline` and `--skip-model` supported).
-
-Then you get:
+The assistant is not a sidebar bolted onto a workflow editor. It is the surface
+that owns the lifecycle:
 
 ```text
-Dashboard → http://localhost:5678
-API       → http://localhost:5678/api
-Webhook   → http://localhost:5678/webhook/:workflowId
+build / edit / duplicate / delete / publish / unpublish
+run / retry / cancel / inspect / diagnose / test one node
+versions / restore / undo / export / import
+add / update / remove / connect / disconnect nodes
+schedule / variables / credentials / agents / node logs
+prune / health / operations / coverage / open page
 ```
 
-Quick-start example (Schedule → Web Search → AI Agent → File):
-
-```bash
-openagent workflow list
-openagent workflow run daily-news-digest
-openagent logs --limit 5
-openagent doctor
-```
-
-`openagent init` creates `.openagent/` (`agents/ workflows/ nodes/ memory/
-credentials/ logs/ schedules/ executions/ workspace/`) plus `openagent.config.ts`.
-Workflows are plain JSON, so they version-control cleanly. With Ollama running
-(`ollama run qwen2.5`), AI nodes use your local model automatically; without a
-reachable model they degrade to a clearly-labeled heuristic fallback instead of
-failing. See `openagent ask --help`, `openagent workflow generate --help`, and
-`openagent autonomous --help` for AI-driven automation.
-
-### Build an extension in minutes
-
-```bash
-npm install -g @openagent/cli   # once published; or: pnpm --filter @openagent/cli build
-
-openagent init --kind tool --language ts --name my-tool --yes
-cd my-tool
-openagent validate
-openagent test
-openagent package
-openagent publish
-```
-
-### Use the SDKs
-
-TypeScript:
-
-```ts
-import { OpenAgent } from "@openagent/sdk";
-
-const client = new OpenAgent({ apiKey: process.env.OPENAGENT_API_KEY });
-
-const agent = await client.agents.create({
-  name: "Research Agent",
-  model: "smart",
-  instructions: "Research and summarize information.",
-});
-```
-
-Python:
-
-```python
-from openagent import OpenAgent
-
-client = OpenAgent(api_key=os.environ["OPENAGENT_API_KEY"])
-
-agent = client.agents.create(
-    name="Research Agent",
-    model="smart",
-)
-```
-
-## Configuration
-
-All settings come from environment variables (see [.env.example](.env.example)). The main groups:
-
-| Group         | Variables                                          | Notes                                                         |
-| ------------- | -------------------------------------------------- | ------------------------------------------------------------- |
-| App           | `OPENAGENT_ENV`, `LOG_LEVEL`, `API_URL`, `WEB_URL` | `development` enables `/docs`                                 |
-| Database      | `DATABASE_URL`                                     | PostgreSQL 15+ (`postgresql+asyncpg://…`)                     |
-| Queue/cache   | `REDIS_URL`                                        | Redis 7+                                                      |
-| Security      | `SECRET_KEY`, `ENCRYPTION_KEY`                     | Min 32 chars; never commit real values                        |
-| CORS          | `CORS_ORIGINS`                                     | Allowed web origins                                           |
-| LLM providers | Provider keys per `docs/`                          | Model Router selects across configured providers              |
-| Local models  | Ollama-compatible endpoint                         | Supported via Model Router adapters — see `docs/`             |
-| Browser       | Playwright/Chromium settings                       | Policies gate navigation and extraction                       |
-| Sandbox       | Docker image policies, profiles                    | `TEST`/`BUILD` profiles; host execution refused in production |
-
-## Usage
-
-- **Agents** — autonomous workers with instructions, tools, memory, budgets, and run history.
-- **Workflows** — deterministic graphs with custom nodes, approvals, and quality gates.
-- **Tools** — typed capabilities with schemas, risk levels, and policies; every call flows through the Tool Runtime.
-- **MCP** — connect Model Context Protocol servers for tools, resources, and prompts.
-- **Memory** — scoped persistent memory with importance, conflicts, and consolidation.
-- **Multi-agent** — orchestrate teams with delegation, handoff contracts, and spend budgets.
-- **Sandbox** — isolated code execution with profiles, leases, and artifact capture.
-- **Integrations** — OAuth/API-key/webhook connectors with health checks and rate limits.
-- **Marketplace** — publish and install versioned agents, tools, connectors, and templates.
-
-Start with the 14 runnable examples in [`examples/`](examples/) and the 10 starter templates in [`templates/`](templates/).
-
-## Project Structure
+Try these in `/assistant` (or press `Ctrl/Cmd + J` anywhere):
 
 ```text
-Open-Agent/
-├── apps/
-│   ├── web/          # Next.js 14 dashboard + developer portal
-│   ├── api/          # FastAPI backend (27 migrations, 68 test files)
-│   └── worker/       # Redis-backed background jobs
-├── packages/         # 25 workspace packages
-│   ├── sdk/          # TypeScript SDK (OpenAgent class)
-│   ├── api-client/   # Stable REST client
-│   ├── sdk-types/    # Canonical public types
-│   ├── extension-sdk/# defineAgent/defineTool/… builders
-│   ├── developer-tools/ # validator, scanner, docgen, mocks
-│   ├── cli/          # `openagent` command
-│   ├── python-sdk/   # `openagent` PyPI package
-│   ├── agent-runtime/ workflow-engine/ model-router/
-│   ├── tool-system/ mcp/ memory/ browser/ sandbox/
-│   ├── evaluator/ connector-sdk/ config/ core/
-│   ├── types/ logger/ database/ security/
-├── integrations/     # Provider implementations
-├── marketplace/      # Official sample packages
-├── examples/         # 14 runnable examples
-├── templates/        # 10 starter templates
-├── tests/            # Cross-cutting tests
-├── docs/             # Guides, API, architecture, security
-├── infrastructure/   # Docker, deployment assets
-├── scripts/          # Operational scripts (packaging, commerce, ops)
-├── .github/workflows/# CI (Node + Python + web build)
-├── ARCHITECTURE.md  ROADMAP.md  CHANGELOG.md
-├── CONTRIBUTING.md  SECURITY.md  CODE_OF_CONDUCT.md
-└── LICENSE (MIT)
+Build a workflow that triages support emails
+Show the versions of my main workflow
+Duplicate my main workflow and publish it
+Debug my last failed run
+Which nodes can read a file?
+Set concurrency to 2 for Lead intake
 ```
 
-`apps/desktop/` holds the desktop controller (lifecycle, supervision, updates, first-run wizard); `apps/docs/` hosts the documentation site.
+**Safety:** destructive tools return a signed, 5-minute confirmation token
+before they run. Every mutation is organisation-scoped, permission-checked,
+audit-logged and written as a new version, so "undo" is just restore.
+Generated definitions land on the canvas as undoable drafts — never as a
+silent overwrite.
+
+## The workflow engine
+
+- **59 nodes, 6 triggers** generated from one manifest shared by the API, web
+  palette, chat catalogue and both validators.
+- **n8n-style expressions**: `{{ $json.name }}`, `$node`, `$nodes`, `$('Node')`,
+  `$items()`, `$input`, `$vars`, `$binary`, `$now`, `$today`, `$workflow`,
+  `$execution`, `$env`, method calls, ternaries and optional chaining —
+  evaluated by a closed-grammar interpreter.
+- **Items are the contract**: every node run records `{ json, binary, pairedItem }`
+  and supports `run_mode: "each"`.
+- **Node semantics**: retries with backoff, `onError` continue/error-output,
+  `executeOnce`, `alwaysOutputData`, per-node timeout and disabled passthrough.
+- **Durability**: delays longer than 10 s park as `waiting` and resume from the
+  saved state; `wait_for_webhook` resumes through
+  `POST /executions/{id}/webhook-resume`.
+- **Sub-workflows**: parent/root execution tree, depth limit, cycle rejection,
+  cancel cascade, static data with `$getWorkflowStaticData`.
+- **Binary data**: local file store with retention, convert/extract/file nodes,
+  webhook uploads, `$binary` pass-through.
+- **Code node**: real Python and JavaScript in a throwaway guarded process
+  (Docker required in production), with expression mode unchanged.
+- **Production operations**: queue mode, production vs test webhook URLs,
+  `save_execution_data` modes, crash journal, graceful drain, Prometheus
+  `/metrics` and `/operations/workflows` (queue depth, failure rate, p50/p95).
+- **Debugging**: NDV with input/output panes, pin output, debug-in-editor,
+  per-node item counts, error tooltips and "Ask Koro to fix" on failures.
+
+## Local models and offline mode
+
+Koro talks to any OpenAI-compatible endpoint. Run it entirely locally:
+
+```bash
+winget install Ollama.Ollama      # or https://ollama.com/download
+ollama run qwen2.5
+pnpm setup:koro                   # pulls a small model and checks the endpoint
+```
+
+Or point it at LM Studio, LocalAI, or a hosted API (OpenAI, OpenRouter, Groq,
+Mistral, DeepSeek, Together…). Settings are per organisation and API keys are
+encrypted at rest. **Without a reachable model the assistant still works in
+command mode** — run, publish, inspect, rename, schedule, test a node, set
+concurrency — and says so honestly instead of pretending to generate code.
+
+## How it compares
+
+| | n8n | Open-Agent |
+| --- | --- | --- |
+| Visual workflow builder | Mature | Implemented (`/workflows/<id>/edit`) |
+| Node library | 400+ integrations | 59 local-first nodes + generic HTTP/MCP; breadth is tracked honestly in the [parity matrix](docs/FEATURE_PARITY_MATRIX.md) |
+| Expressions | n8n expression language | n8n-style closed-grammar interpreter with `$json`, `$node`, `$('Node')` and more |
+| Workflow import/export | n8n JSON | n8n-format import/export plus curl import |
+| Chat-driven authoring | Assistant (hosted) | Implemented locally, 46 tools, offline command mode |
+| AI agents | Add-on nodes | First-class runtime: runs, budgets, memory, teams |
+| Local execution | Server/cloud-oriented | SQLite engine, no Docker, no account |
+| License | Sustainable Use (fair-code) | MIT |
+
+Open-Agent does **not** claim feature-for-feature parity with n8n. The
+[parity matrix](docs/FEATURE_PARITY_MATRIX.md) lists what exists, what is
+partial and what is missing — including agent nodes in the workflow engine,
+resume-at-node approvals and the long tail of integrations.
+
+## Star goals: 300,000
+
+The north star is **300,000 stars** — enough for Open-Agent to be the default
+open automation layer instead of a niche alternative. We are at the start; the
+badge above is live.
+
+| Milestone | What we ship |
+| ---: | --- |
+| ⭐ **100** | Weekly changelog and a "built with Open-Agent" showcase |
+| **1,000** | Community roadmap vote and monthly office hours |
+| **5,000** | Hosted playground — try it without installing anything |
+| **10,000** | Community node registry with one-command install |
+| **50,000** | 200+ node library and managed upgrade paths |
+| **100,000** | Enterprise hardening: SSO/SCIM, HA queue mode, long-run retention |
+| **300,000** | The goal: the default open layer for AI automation |
+
+[![Star History Chart](https://api.star-history.com/svg?repos=mdsabibahamedsad/Open-Agent&type=Date)](https://star-history.com/#mdsabibahamedsad/Open-Agent&Date)
+
+**How you can help:** star the repo, share the one-prompt demo, open a
+[good first issue](https://github.com/mdsabibahamedsad/Open-Agent/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22),
+add a node or a template, or tell us which integration you need most in
+[Discussions](https://github.com/mdsabibahamedsad/Open-Agent/discussions).
+
+## Documentation
+
+| Start here | Deep dives |
+| --- | --- |
+| [Quick start](docs/getting-started/quick-start.md) | [Architecture](ARCHITECTURE.md) |
+| [Windows](docs/getting-started/windows.md) · [macOS](docs/getting-started/macos.md) · [Linux](docs/getting-started/linux.md) | [Chat-first n8n parity blueprint](docs/architecture/chat-first-n8n-parity.md) |
+| [Non-Docker setup](docs/getting-started/non-docker.md) | [n8n parity roadmap](docs/architecture/n8n-parity-roadmap.md) |
+| [Local AI](docs/getting-started/local-ai.md) | [Feature parity matrix](docs/FEATURE_PARITY_MATRIX.md) |
+| [Troubleshooting](docs/getting-started/troubleshooting.md) | [Node reference](docs/workflows/nodes.md) |
+| [CLI reference](docs/CLI.md) | [Security](SECURITY.md) · [Threat model](docs/developers/threat-model.md) |
 
 ## Development
 
 ```bash
-git clone https://github.com/mdsabibahamedsad/Open-Agent.git
-cd Open-Agent
-
 pnpm setup         # deps + .env with fresh dev secrets (never overwrites .env)
-pnpm doctor        # verify environment (read-only)
-
-# Option A — local, no Docker (default): embedded SQLite + web + API
-pnpm dev
-
-# Option B — PostgreSQL + Redis (needs Docker or local servers)
-pnpm infra:up
-pnpm db:setup      # migrate + seed
-pnpm dev --db=postgres
-
-# Option C — Docker for everything
-pnpm dev:docker    # or: docker compose up --build
-```
-
-Manual equivalents (what the scripts do under the hood):
-
-```bash
-cp .env.example .env
-docker compose up -d          # Postgres + Redis
-
-# Backend
-cd apps/api
-python -m venv .venv && .venv/Scripts/activate   # Windows; use `source` on Unix
-pip install -e ".[dev]"
-alembic upgrade head
-uvicorn openagent.main:app --reload --port 8000
-
-# Frontend (new shell)
-cd apps/web && pnpm dev
-
-# Worker (new shell)
-cd apps/worker && python -m worker.main
-```
-
-Verify:
-
-```bash
+pnpm doctor        # verify the environment (read-only)
+pnpm dev           # SQLite + web + API
 pnpm typecheck     # all workspace packages
-pnpm test          # all workspace tests
-cd apps/api && pytest -q
-cd apps/web && npx tsc --noEmit
+pnpm test          # unit + API tests
+pnpm lint
 ```
 
-## What Is OpenAgent?
+The suite currently covers **1,800+ automated tests** (API + web), with
+typecheck and a production build in CI. Focused checks:
 
-OpenAgent is designed as an AI-native automation platform: deterministic
-workflow structure where you need repeatability, plus AI agents that can
-reason, plan, use tools, observe results, correct course, and remember —
-all local-first, behind policy, approvals, sandboxing, and audit logging.
+```bash
+apps/api/.venv/Scripts/python.exe -m pytest apps/api/tests -q   # API
+pnpm --filter @openagent/web typecheck
+pnpm --filter @openagent/web test
+pnpm --filter @openagent/web build
+```
 
-## Product Vision
-
-Automation that starts from a **goal**, not a blank canvas:
+## Project layout
 
 ```text
-Traditional node-based automation:
-
-Trigger → Node → Node → Node → Output
-(fixed path; every branch drawn by hand)
-
-OpenAgent's model:
-
-Goal → AI reasoning → tool discovery → workflow planning
-→ execution → observation → correction → memory → final result
-(deterministic nodes where it matters; agents where judgment matters)
+Open-Agent/
+├── apps/
+│   ├── web/          Next.js 15 app: chat, canvas, runs, settings
+│   ├── api/          FastAPI: engine, chat control plane, node registry
+│   └── worker/       Redis-backed background jobs
+├── packages/         SDKs, CLI, workflow engine, model router, MCP, sandbox
+├── integrations/     Provider implementations
+├── examples/         Runnable examples
+├── templates/        Starter workflows
+├── docs/             Guides, architecture, parity matrix, node reference
+├── scripts/          Packaging, release and operations
+└── .github/          CI, issue templates, release automation
 ```
 
-Compared with traditional node-based automation, OpenAgent focuses more
-heavily on agent behavior (planning, tool use, recovery) while keeping
-workflows as the durable, auditable substrate. Potential advantages include
-faster builds from natural language, self-recovery at runtime, and local
-execution without forced cloud dependence. Trade-offs include less
-step-by-step predictability when agents act autonomously, and higher local
-compute needs for capable models — which is why approvals, budgets, and the
-human-readable execution log exist.
+## Reference
 
-## Comparison With Traditional Automation (n8n-style)
-
-| Capability | Traditional node automation (e.g. n8n) | OpenAgent |
-|---|---|---|
-| Visual workflows | Implemented, mature | Implemented (`apps/web` builder + versioned definitions) |
-| AI agents | Add-on nodes | Implemented (first-class runtime, runs, budgets) |
-| MCP | Varies by version | Implemented (servers, tools, resources, CLI mgmt) |
-| Local-first execution | Usually server/cloud-oriented | Implemented (SQLite/JSON engine, no Docker needed) |
-| CLI | Limited or none | Implemented (full `openagent` CLI, any directory) |
-| Desktop app | Usually none | In Progress (controller + Windows installer; no Electron shell) |
-| Browser automation | Varies | Implemented (Playwright engine, CLI-managed) |
-| Memory | Varies | Implemented (scoped persistent memory + search) |
-| Plugin system | Mature registries | Implemented (registry, `.oaext` packages, marketplace) |
-| Deployment | Self-host/cloud | In Progress (installer + portable + Docker; cloud planned) |
-
-Status labels above reflect this repository. OpenAgent is not claimed to
-match any other product feature-for-feature.
-
-## Core Capabilities
-
-- **AI workflow automation** — versioned DAG definitions, schedules, approvals, quality gates; generate from prompts (`openagent workflow generate "…"`) or build visually.
-- **AI agents** — `openagent agent create --name X`, `agent run <id> --input …`; models, system prompts, tools, memory, iteration budgets.
-- **Autonomous execution** — `openagent autonomous "goal" --max-steps 10`: plan → act → observe → retry, ending with `FINAL:`.
-- **MCP** — `openagent mcp {list,add,remove,test,doctor}` against local `.openagent/mcp.json` or server catalog.
-- **Browser automation** — `openagent browser {doctor,install,update}`; Playwright Chromium managed for you.
-- **Local AI** — `openagent model {detect,list,install,use,doctor}`; Ollama auto-detected, hardware profile (LOW/BALANCED/POWER) picks the default model; cloud via `OPENAI_API_KEY`, hybrid supported.
-- **Cloud AI** — OpenAI-compatible endpoints through the model router; keys stay in local config, never in source.
-- **Memory** — `openagent memory {get,set,search}`; scoped, persistent, file-backed.
-- **Multi-agent architecture** — managers, delegation, handoffs, budgets (see `docs/multi-agent-architecture.md`).
-- **Workflow engine** — `packages/workflow-engine`: validation, execution, retries, schedules, artifacts.
-- **CLI** — full reference in [docs/CLI.md](docs/CLI.md); works from any directory.
-- **Desktop application** — Node controller (`apps/desktop`: lifecycle, supervisor, health, updates, first-run) + Windows installer; opens the dashboard after health checks, shows diagnostics instead of a blank window on backend failure.
-- **Plugin system** — `.oaext` deterministic packages (`openagent package`, `inspect`), local registry, marketplace listings.
-- **Developer SDK** — TypeScript (`packages/sdk`), Python (`packages/python-sdk`), extension SDK builders, REST API + stable `api-client`.
-- **API** — FastAPI (`apps/api`), versioned routes, auto docs at `/docs` in development.
-
-## Security and Privacy
-
-Local-first: workflows, agents, memory, and credentials live under
-`%LOCALAPPDATA%\OpenAgent\data` (or `OPENAGENT_DATA_DIR`), never in the repo.
-Secret scanning blocks publishes and auto-pushes; logs redact credentials;
-`.gitignore` rules are generated by `openagent git --init`. See
-[SECURITY.md](SECURITY.md) and [docs/GIT.md](docs/GIT.md).
-
-## Installation
-
-**Normal user:** download `OpenAgent-Setup.exe` from GitHub Releases →
-install (per-user, no admin) → launch. First-run wizard: system check →
-hardware → AI provider (Local / Cloud / Both / Skip) → workspace → browser →
-optional Git → complete. Full guide: [docs/INSTALLATION.md](docs/INSTALLATION.md),
-[docs/WINDOWS.md](docs/WINDOWS.md).
-
-**Developer:**
-
-```cmd
-git clone https://github.com/mdsabibahamedsad/Open-Agent.git
-cd Open-Agent
-setup.cmd
-openagent-dev.cmd doctor
-```
-
-**Portable:** extract `OpenAgent-Portable.zip`, run `bin\openagent.cmd start`.
-No global installation of anything. The npm package (`@openagent/cli`) is
-optional and developer-only — and only after it is actually published.
-
-## First-Run Setup
-
-`openagent setup` (flags: `--dev`, `--production`, `--minimal`, `--offline`,
-`--yes`, `--ai-mode`, `--model`, `--start`) performs system check, port
-selection, runtime layout, AI/browser configuration, and a success test
-(a real `hello-ai` workflow execution). Re-run any time; `--offline` names
-exactly what cannot be installed without internet.
-
-## CLI Reference
+<details>
+<summary><b>CLI</b></summary>
 
 ```cmd
 openagent setup | start | stop | restart | status
@@ -597,222 +353,91 @@ openagent update [--apply] | openagent version
 openagent git {status,remote,connect,auth,enable-auto-sync,disable-auto-sync,sync}
 ```
 
-Details: [docs/CLI.md](docs/CLI.md). Every command is real — anything not
-implemented reports `NOT IMPLEMENTED` instead of faking success.
+Every command is real; anything not implemented reports `NOT IMPLEMENTED`
+instead of faking success. Details: [docs/CLI.md](docs/CLI.md).
 
-## Configuration
+</details>
 
-`.env.example` is committed; `.env` is generated by setup (never overwritten,
-never committed). `OPENAGENT_DATA_DIR`, `OPENAGENT_PORT`, provider keys, and
-per-project `.openagent/config.json` cover the rest. Ports roll forward
-automatically when busy and persist to config.
+<details>
+<summary><b>SDKs</b></summary>
 
-## AI Model Setup
+```ts
+import { OpenAgent } from "@openagent/sdk";
 
-```cmd
-openagent model detect    # Ollama / LM Studio / OPENAI_API_KEY, + HW profile
-openagent model install   # pulls the recommended model (asks first for large ones)
-openagent model use ollama:qwen2.5
-openagent model doctor
+const client = new OpenAgent({ apiKey: process.env.OPENAGENT_API_KEY });
+const agent = await client.agents.create({
+  name: "Research Agent",
+  model: "smart",
+  instructions: "Research and summarize information.",
+});
 ```
 
-### Koro — automation copilot (local model or any endpoint)
+```python
+from openagent import OpenAgent
 
-Koro lives in the workflow builder and drives workflows end to end: list,
-inspect the last run, run, publish/unpublish, and build or edit complete
-workflows (triggers, conditions, branches, data steps, HTTP calls) from a
-plain-language request. Generated definitions are validated before they are
-saved as a draft version. Koro talks to any OpenAI-compatible endpoint, so it
-can build automations with whatever AI you already run: Ollama or LM Studio
-locally, or a hosted API (OpenAI, OpenRouter, Groq, Mistral, DeepSeek,
-Together…). The default is Ollama with `qwen2.5:0.5b-instruct` (~400 MB
-quantised, CPU friendly):
-
-```cmd
-winget install Ollama.Ollama   # or https://ollama.com/download
-pnpm setup:koro                # pulls qwen2.5:0.5b-instruct and checks the endpoint
+client = OpenAgent(api_key=os.environ["OPENAGENT_API_KEY"])
+agent = client.agents.create(name="Research Agent", model="smart")
 ```
 
-Open a workflow → **Koro** in the builder toolbar. Use the settings button in
-the panel header to set the base URL, model and (for hosted APIs) an API key;
-settings are stored per organisation and the key is encrypted at rest. Ask it
-to “build an automation for new leads” or “edit this to add a delay”. Without
-a reachable model, Koro keeps working in command mode: “run My First Workflow”,
-“publish it”, “summarize the last run”, “create a workflow called Daily
-digest”, “test the Send notification node”, “rename this workflow to Intake
-v2”, “set concurrency to 2”, “set a timeout of 5 minutes”, “when this fails run
-Failure handler”; building custom automations needs a model.
+</details>
 
-Defaults come from `.env`: `OPENAGENT_KORO_BASE_URL` (default
-`http://127.0.0.1:11434/v1`), `OPENAGENT_KORO_MODEL`,
-`OPENAGENT_KORO_API_KEY` (fallback for self-hosted endpoints), and
-`OPENAGENT_KORO_TIMEOUT_SECONDS`. Actions run server-side, scoped to the
-organisation and re-checked against the caller's workflow permissions; the
-model only sees workflow names, ids and statuses — never definitions or
-credentials.
+<details>
+<summary><b>Configuration</b></summary>
 
-### Assistant — the full-page chat
+All settings come from environment variables — see [.env.example](.env.example).
+The important groups: `SECRET_KEY` and `ENCRYPTION_KEY` (32+ chars),
+`DATABASE_URL`, `REDIS_URL`, `CORS_ORIGINS`, provider keys, Ollama-compatible
+endpoints, binary/code-runner limits and workflow retention. `.env` is generated
+by setup and never committed.
 
-The same copilot is available outside the builder at **`/assistant`** (sidebar:
-*Assistant*), with a chat-history rail like n8n's assistant. Each conversation
-is saved per user and organisation in the `conversations` / `messages` tables,
-so transcripts survive reloads and can be renamed or deleted. From there it
-builds workflows as drafts, creates agents, runs and publishes automations, and
-links directly to the workflow, run or agent it changed.
+</details>
 
-Koro is also docked on every page: the **Koro** button in the top bar or
-`Ctrl/Cmd + J` opens the same copilot and saved history as a right-hand drawer.
-On a workflow it knows the route, step outline, validation state and last run,
-so “explain this workflow” or “what could fail here?” is answered in context.
-Failed steps in the test-run panel get an **Ask Koro to fix** button that sends
-the error, code and payloads along with the question. Context is read-only
-(never parameters or credentials) and is not stored; graph edits still happen
-in the builder's Koro panel so they stay undoable on the canvas.
-
-### Workflow chat — talk to a workflow
-
-A **Chat Trigger** turns any workflow into a chatbot. Every message runs the
-real graph with the n8n-style item
-`{ json: { chatInput, sessionId, action: "sendMessage", files?, metadata? } }`,
-and the reply streams token by token from a `prompt` node. The model comes from
-the same per-organisation settings as Koro, so it can be a local Ollama or
-LM Studio endpoint, LocalAI, or any OpenAI-compatible API; the chat route never
-leaves your machine when the endpoint is local.
-
-Two surfaces use the same trigger and the same conversation state:
-
-- **Studio Chat tab** — in the workflow builder's right panel, next to the
-  node inspector and checks, against the canvas as currently saved/edited.
-- **Hosted page** — `/chat/<workflowId>` runs the published version and reads
-  the trigger's title, welcome message and starter prompts.
-
-Sessions, titles and transcripts live in this browser (`localStorage`, keyed
-per workflow) and survive reloads; each turn sends the trimmed transcript as
-replayed history, so no server-side session store is involved. Replies render
-markdown, tables and copyable code fences, attachments (text, CSV, JSON, PDF,
-images) are passed as data URLs, and every answer carries a steps pill and
-**Inspect in canvas** link back to the run's execution. Without a reachable
-model the chat still runs the graph and explains which step was skipped.
-
-## Browser Setup
-
-```cmd
-openagent browser doctor
-openagent browser install   # Playwright Chromium, no manual steps
-```
-
-## MCP Setup
-
-```cmd
-openagent mcp add my-server --transport stdio --command my-mcp-server
-openagent mcp test my-server
-openagent mcp doctor
-```
-
-## Workflow Examples
-
-```cmd
-openagent init --yes --name demo --kind tool --language ts .
-openagent workflow generate "when a webhook arrives, summarize with AI, save to file" --run
-openagent workflow run daily-news-digest
-openagent ask "run my daily-news-digest workflow" --run
-```
-
-## Agent Examples
-
-```cmd
-openagent agent create --name researcher --model ollama:qwen2.5
-openagent agent run <id> --input '{"goal":"summarize today"}'
-openagent autonomous "triage the inbox" --max-steps 10
-openagent memory set tone concise
-```
-
-## Troubleshooting
+<details>
+<summary><b>Troubleshooting</b></summary>
 
 Start with `openagent doctor` (repair with `--fix`), then `openagent repair`,
-then `openagent logs --tail`. Common cases: CLI not found (restart terminal;
-never install the `openagent` placeholder package), port busy (auto-rolls),
-Ollama missing (`openagent model install`), browser missing
-(`openagent browser install`). Full guide: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+then `openagent logs --tail`. Common cases: port busy (rolls forward), Ollama
+missing (`openagent model install`), browser missing
+(`openagent browser install`). Full guide:
+[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
-## Doctor, Repair, Update, Backup
-
-- `openagent doctor` checks OS/CPU/RAM/runtime/Node/npm/Git/CLI/PATH/database/ports/filesystem/browser/AI/MCP/backend/frontend/engine/memory/plugins/GitHub-auth/disk with ✓/!/✗ and fixes.
-- `openagent repair` recreates dirs, validates config (corrupt files preserved as `*.corrupt`), clears stale pids/cache — never deletes workflows without confirmation.
-- `openagent update` compares against GitHub releases (npm only as fallback), snapshots data, verifies checksums, migrates, health-checks, rolls back on failure.
-- `openagent backup create` / `openagent restore <id>` cover workflows, agents, settings, database, plugin config; secrets stay encrypted.
-
-## Git and GitHub Integration
-
-Optional, auto-sync OFF by default. `openagent git status` (read-only),
-`--init`, `remote` (never overwrites), `connect <url>` (refuses overwrite
-without `--force`), `auth` (gh/SSH/credential-manager guidance),
-`enable-auto-sync` / `disable-auto-sync`, `sync` (secret scan → typecheck →
-tests → build → commit generated from actual files → plain push, never
-`--force`). Any failure stops before commit/push. Details: [docs/GIT.md](docs/GIT.md).
-
-## Testing
-
-```bash
-pnpm typecheck        # all packages
-pnpm lint
-pnpm test             # unit (vitest) + API (pytest)
-pnpm test:unit
-pnpm test:integration
-```
-
-The CLI package adds `test` (vitest, incl. secret-scan/packaging/local-engine
-suites) and the desktop package covers lifecycle + update-channel logic.
-E2E paths exercised in CI and release validation: setup → doctor → workflow
-run → agent run → backup/restore → update check → git sync gates.
-
-## Repository Structure and Architecture
-
-See [Project Structure](#project-structure) above and
-[ARCHITECTURE.md](ARCHITECTURE.md). One core engine
-(`packages/workflow-engine` + providers/tools/memory) serves the CLI, the
-desktop controller, the FastAPI backend, and the Next.js frontend — no
-parallel implementations.
-
-## Release Process
-
-`node scripts/version.mjs` (single version source) →
-`scripts/release-check.mjs` → `npm run package:windows`
-(`openagent-win-x64.zip` + `.sha256`, NSIS staging, `OpenAgent-Setup.exe` via
-`makensis`) → GitHub release with checksums → `openagent update` serves it.
-`npm pack` in `packages/cli` validates the optional npm artifact (bin + dist).
-
-## FAQ
-
-**Do I need Node.js?** Only for developer mode. Normal install bundles its runtime.
-**Do I need Docker/PostgreSQL?** No — SQLite + embedded queue by default; Docker is for full-stack development.
-**Which `openagent` npm package?** `@openagent/cli` (developers only, after publication). The bare `openagent` name is an unrelated placeholder — never install it.
-**Where is my data?** `%LOCALAPPDATA%\OpenAgent\data` (preserved across updates/uninstalls).
-**How do I update?** `openagent update --apply`, or re-run `OpenAgent-Setup.exe`.
-
-## Roadmap
-
-Phases 01–24 are implemented, including the full Developer Platform (MP28).
-See [ROADMAP.md](ROADMAP.md) for the phase-by-phase breakdown. Next up: production reliability hardening, then a versioned production release.
+</details>
 
 ## Contributing
 
-We welcome contributions. Please read [CONTRIBUTING.md](CONTRIBUTING.md), then:
+Contributions are welcome — code, docs, nodes, templates, bug reports and
+honest feedback.
 
-1. Fork the repository
-2. Create a feature branch
-3. Implement with tests
-4. Run lint + typecheck + tests
-5. Open a pull request using the template
+1. Fork the repository and create a feature branch.
+2. Implement the change with tests.
+3. Run `pnpm lint`, `pnpm typecheck` and `pnpm test`.
+4. Open a pull request using the template.
 
-Extension authors: start at [`docs/developers/`](docs/developers/) and the [security guide](docs/developers/security.md).
+Read [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[Code of Conduct](CODE_OF_CONDUCT.md) first. Extension authors: start at
+[docs/developers/](docs/developers/) and the
+[security guide](docs/developers/security.md).
+
+<div align="center">
+  <a href="https://github.com/mdsabibahamedsad/Open-Agent/graphs/contributors">
+    <img src="https://contrib.rocks/image?repo=mdsabibahamedsad/Open-Agent" alt="Contributors">
+  </a>
+</div>
 
 ## Security
 
-See [SECURITY.md](SECURITY.md) for supported versions and responsible disclosure.
-Security-sensitive extension behavior (tool/MCP/sandbox policy, signing, supply chain) is documented in [`docs/developers/threat-model.md`](docs/developers/threat-model.md).
-Never commit secrets — see `.env.example` for the full variable list.
+See [SECURITY.md](SECURITY.md) for supported versions and responsible
+disclosure. Never commit secrets — use `.env.example` as the variable list.
+Security-sensitive extension behavior is documented in
+[docs/developers/threat-model.md](docs/developers/threat-model.md).
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+<div align="center">
+  <sub>Built for people who want their automations to belong to them.</sub><br>
+  <a href="https://github.com/mdsabibahamedsad/Open-Agent/stargazers"><b>⭐ Star Open-Agent</b></a>
+</div>
