@@ -44,6 +44,7 @@ coverage
 # Database
 *.sqlite
 *.db
+apps/api/data/
 
 # Docker
 .docker

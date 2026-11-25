@@ -141,6 +141,18 @@ export function AssistantWorkspace() {
   const [pinned, setPinned] = useLocalStorage<string[]>('oa:assistant-pinned', []);
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
+  // Legacy routes forward to /assistant?prompt=...; prefill the composer with
+  // that intent and drop the param so a reload does not overwrite typing.
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const prompt = params.get('prompt');
+    if (!prompt) return;
+    setDraft(prompt);
+    params.delete('prompt');
+    const query = params.toString();
+    window.history.replaceState(null, '', query ? `/assistant?${query}` : '/assistant');
+  }, []);
+
   // Replay a saved transcript into the thread.
   React.useEffect(() => {
     if (!activeId) return;

@@ -81,6 +81,14 @@ No page hopping, no separate builder session. The same conversation can inspect
 the last failure, restore a previous version, list credentials, change a
 schedule, or answer "which node broke and why?".
 
+## Screenshots
+
+Both images are the real local build — no mockups.
+
+| Chat builds it | The canvas shows it |
+| --- | --- |
+| <img src="docs/assets/assistant-chat.png" alt="The Open-Agent assistant building a support triage workflow from one prompt, with an action card linking to the builder" width="100%"> | <img src="docs/assets/workflow-builder.png" alt="The generated workflow on the Open-Agent canvas, with the node palette, checks, AI assistant and workflow settings" width="100%"> |
+
 ## What you get
 
 | Area | What is implemented |
